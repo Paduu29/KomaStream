@@ -73,6 +73,7 @@ data class ReaderPage(
     val id: String,
     val numberLabel: String,
     val imageUrl: String,
+    val offlineFileName: String = "",
 )
 
 data class ReaderData(

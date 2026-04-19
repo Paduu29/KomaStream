@@ -4,6 +4,19 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
+def envOrNull = { String name ->
+    def value = System.getenv(name)
+    return (value != null && !value.trim().isEmpty()) ? value : null
+}
+
+def ciVersionCode = envOrNull("VERSION_CODE")?.toInteger()
+def ciVersionName = envOrNull("VERSION_NAME")
+def keystorePath = envOrNull("ANDROID_KEYSTORE_PATH")
+def keystorePassword = envOrNull("ANDROID_KEYSTORE_PASSWORD")
+def keyAlias = envOrNull("ANDROID_KEY_ALIAS")
+def keyPassword = envOrNull("ANDROID_KEY_PASSWORD")
+def hasReleaseSigning = keystorePath && keystorePassword && keyAlias && keyPassword
+
 android {
     namespace 'com.paudinc.mangascraper'
     compileSdk 36
@@ -12,8 +25,19 @@ android {
         applicationId "com.paudinc.mangascraper"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode ciVersionCode ?: 1
+        versionName ciVersionName ?: "1.0"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -23,6 +47,9 @@ android {
         }
         release {
             minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

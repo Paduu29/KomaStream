@@ -182,6 +182,18 @@ class InMangaService {
         )
     }
 
+    fun downloadBytes(url: String, referer: String? = null): ByteArray {
+        ensureSession()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", MOBILE_USER_AGENT)
+            .apply { if (referer != null) header("Referer", referer.toAbsoluteUrl()) }
+            .build()
+        client.newCall(request).execute().use { response ->
+            return response.body?.bytes().orEmpty()
+        }
+    }
+
     private fun ensureSession() {
         getDocument("/")
     }
