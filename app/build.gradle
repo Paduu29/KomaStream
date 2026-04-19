@@ -28,7 +28,7 @@ android {
         minSdk 24
         targetSdk 34
         versionCode ciVersionCode ?: 1
-        versionName ciVersionName ?: "1.0"
+        versionName ciVersionName ?: "1.1"
     }
 
     signingConfigs {
