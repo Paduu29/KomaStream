@@ -41,6 +41,13 @@
     <string name="previous">Anterior</string>
     <string name="next">Siguiente</string>
     <string name="resume">Continuar</string>
+    <string name="download">Descargar</string>
+    <string name="remove_download">Eliminar descarga</string>
+    <string name="offline_available">Disponible sin conexión</string>
+    <string name="chapter_downloaded">Capítulo descargado</string>
+    <string name="chapter_removed">Capítulo sin conexión eliminado</string>
+    <string name="could_not_download_chapter">No se pudo descargar el capítulo</string>
+    <string name="could_not_remove_download">No se pudo eliminar el capítulo sin conexión</string>
     <string name="theme">Tema</string>
     <string name="light">Claro</string>
     <string name="dark">Oscuro</string>

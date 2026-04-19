@@ -2,10 +2,12 @@
 
 package com.paudinc.mangascraper
 
+import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,7 +43,9 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
@@ -82,6 +86,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
@@ -92,6 +97,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -177,6 +183,7 @@ fun MangaScraperApp() {
     val context = LocalContext.current
     val service = remember { InMangaService() }
     val libraryStore = remember { LibraryStore(context) }
+    val offlineStore = remember { OfflineChapterStore(context) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var navigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
@@ -194,6 +201,7 @@ fun MangaScraperApp() {
     var catalogHasMore by remember { mutableStateOf(false) }
     var catalogLoadingMore by remember { mutableStateOf(false) }
     var libraryState by remember { mutableStateOf(libraryStore.read()) }
+    var downloadedChapterPaths by remember { mutableStateOf(offlineStore.getDownloadedChapterPaths()) }
     var selectedDetail by remember { mutableStateOf<MangaDetail?>(null) }
     var readerData by remember { mutableStateOf<ReaderData?>(null) }
     var readerInitialPageIndex by remember { mutableStateOf(0) }
@@ -202,6 +210,10 @@ fun MangaScraperApp() {
 
     fun showError(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    fun refreshOfflineDownloads() {
+        downloadedChapterPaths = offlineStore.getDownloadedChapterPaths()
     }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
@@ -315,7 +327,11 @@ fun MangaScraperApp() {
     fun openReader(path: String) {
         scope.launch {
             loading = true
-            runCatching { withContext(Dispatchers.IO) { service.fetchReaderData(path) } }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    offlineStore.loadChapter(path) ?: service.fetchReaderData(path)
+                }
+            }
                 .onSuccess {
                     readerData = it
                     readerInitialPageIndex = libraryStore.getChapterProgress(it.chapterPath)
@@ -337,6 +353,42 @@ fun MangaScraperApp() {
                 }
                 .onFailure { showError(it.message ?: strings.couldNotOpenChapter) }
             loading = false
+        }
+    }
+
+    fun downloadChapter(path: String) {
+        if (downloadedChapterPaths.contains(path)) return
+        scope.launch {
+            loading = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val reader = service.fetchReaderData(path)
+                    val pageBytes = reader.pages.map { page ->
+                        service.downloadBytes(page.imageUrl, referer = path)
+                    }
+                    offlineStore.saveChapter(reader, pageBytes)
+                }
+            }
+                .onSuccess {
+                    refreshOfflineDownloads()
+                    snackbarHostState.showSnackbar(strings.chapterDownloaded)
+                }
+                .onFailure { showError(it.message ?: strings.couldNotDownloadChapter) }
+            loading = false
+        }
+    }
+
+    fun removeDownloadedChapter(path: String) {
+        if (downloadedChapterPaths.contains(path).not()) return
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { offlineStore.removeChapter(path) }
+            }
+                .onSuccess {
+                    refreshOfflineDownloads()
+                    snackbarHostState.showSnackbar(strings.chapterRemoved)
+                }
+                .onFailure { showError(it.message ?: strings.couldNotRemoveDownload) }
         }
     }
 
@@ -374,7 +426,9 @@ fun MangaScraperApp() {
             is Screen.Reader -> {
                 if (readerData?.chapterPath != currentScreen.chapterPath) {
                     runCatching {
-                        withContext(Dispatchers.IO) { service.fetchReaderData(currentScreen.chapterPath) }
+                        withContext(Dispatchers.IO) {
+                            offlineStore.loadChapter(currentScreen.chapterPath) ?: service.fetchReaderData(currentScreen.chapterPath)
+                        }
                     }.onSuccess {
                         readerData = it
                         readerInitialPageIndex = libraryStore.getChapterProgress(currentScreen.chapterPath)
@@ -527,6 +581,7 @@ fun MangaScraperApp() {
                                 detail = detail,
                                 isFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath },
                                 readChapters = libraryState.readChapters,
+                                downloadedChapters = downloadedChapterPaths,
                                 onToggleFavorite = {
                                     val wasFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath }
                                     val currentReading = libraryState.reading.firstOrNull { item -> item.detailPath == detail.detailPath }
@@ -576,6 +631,9 @@ fun MangaScraperApp() {
                                         snackbarHostState.showSnackbar(strings.markedUntilChapter(chapterNumber, read))
                                     }
                                 },
+                                onToggleChapterDownload = { chapterPath, isDownloaded ->
+                                    if (isDownloaded) removeDownloadedChapter(chapterPath) else downloadChapter(chapterPath)
+                                },
                                 onReadChapter = ::openReader,
                             )
                         }
@@ -584,9 +642,18 @@ fun MangaScraperApp() {
                             ReaderScreen(
                                 strings = strings,
                                 reader = it,
+                                offlineStore = offlineStore,
                                 initialPageIndex = readerInitialPageIndex,
+                                isDownloaded = downloadedChapterPaths.contains(it.chapterPath),
                                 onPagePositionChanged = { pageIndex ->
                                     libraryStore.saveChapterProgress(it.chapterPath, pageIndex)
+                                },
+                                onToggleDownload = {
+                                    if (downloadedChapterPaths.contains(it.chapterPath)) {
+                                        removeDownloadedChapter(it.chapterPath)
+                                    } else {
+                                        downloadChapter(it.chapterPath)
+                                    }
                                 },
                                 onOpenChapter = ::openReader,
                                 onOpenManga = ::openDetail,
@@ -946,10 +1013,12 @@ private fun DetailScreen(
     detail: MangaDetail,
     isFavorite: Boolean,
     readChapters: Set<String>,
+    downloadedChapters: Set<String>,
     onToggleFavorite: () -> Unit,
     onToggleChapterRead: (String) -> Unit,
     onSetAllChaptersRead: (Boolean) -> Unit,
     onSetUntilChapterRead: (Double, Boolean) -> Unit,
+    onToggleChapterDownload: (String, Boolean) -> Unit,
     onReadChapter: (String) -> Unit,
 ) {
     var chapterQuery by rememberSaveable(detail.detailPath) { mutableStateOf("") }
@@ -1114,6 +1183,7 @@ private fun DetailScreen(
         items(filteredChapters) { chapter ->
             val chapterPath = buildChapterPath(detail.detailPath, chapter)
             val isRead = readChapters.contains(chapterPath)
+            val isDownloaded = downloadedChapters.contains(chapterPath)
             ElevatedCard(
                 modifier = Modifier
                     .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -1142,12 +1212,35 @@ private fun DetailScreen(
                     }
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(formatDateEu(chapter.registrationDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (isDownloaded) {
+                            Text(
+                                strings.offlineAvailable,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                         AssistChip(
                             onClick = { onToggleChapterRead(chapterPath) },
                             label = { Text(if (isRead) strings.read else strings.unread) },
                             colors = AssistChipDefaults.assistChipColors(
                                 containerColor = if (isRead) Color(0xFF1E6B47) else Color(0xFF5B6678),
                                 labelColor = Color.White,
+                            ),
+                        )
+                        AssistChip(
+                            onClick = { onToggleChapterDownload(chapterPath, isDownloaded) },
+                            label = { Text(if (isDownloaded) strings.removeDownload else strings.download) },
+                            leadingIcon = {
+                                Icon(
+                                    if (isDownloaded) Icons.Default.Delete else Icons.Default.Download,
+                                    contentDescription = null,
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = if (isDownloaded) Color(0xFF7A3045) else Color(0xFF2E5B9A),
+                                labelColor = Color.White,
+                                leadingIconContentColor = Color.White,
                             ),
                         )
                     }
@@ -1255,8 +1348,11 @@ private fun SettingsScreen(
 private fun ReaderScreen(
     strings: AppStrings,
     reader: ReaderData,
+    offlineStore: OfflineChapterStore,
     initialPageIndex: Int,
+    isDownloaded: Boolean,
     onPagePositionChanged: (Int) -> Unit,
+    onToggleDownload: () -> Unit,
     onOpenChapter: (String) -> Unit,
     onOpenManga: (String) -> Unit,
 ) {
@@ -1283,23 +1379,76 @@ private fun ReaderScreen(
         item {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(reader.chapterTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                if (isDownloaded) {
+                    Text(strings.offlineAvailable, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onOpenManga(reader.mangaDetailPath) }) { Text(strings.manga) }
+                    Button(onClick = onToggleDownload) {
+                        Icon(if (isDownloaded) Icons.Default.Delete else Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (isDownloaded) strings.removeDownload else strings.download)
+                    }
                     reader.previousChapterPath?.let { Button(onClick = { onOpenChapter(it) }) { Text(strings.previous) } }
                     reader.nextChapterPath?.let { Button(onClick = { onOpenChapter(it) }) { Text(strings.next) } }
                 }
             }
         }
         items(reader.pages) { page ->
-            ZoomableReaderPage(page)
+            ZoomableReaderPage(chapterPath = reader.chapterPath, page = page, offlineStore = offlineStore)
         }
     }
 }
 
 @Composable
-private fun ZoomableReaderPage(page: ReaderPage) {
+private fun ZoomableReaderPage(chapterPath: String, page: ReaderPage, offlineStore: OfflineChapterStore) {
     var scale by remember(page.id) { mutableStateOf(1f) }
     var offset by remember(page.id) { mutableStateOf(Offset.Zero) }
+    val offlineBytes by produceState<ByteArray?>(initialValue = null, chapterPath, page.id, page.offlineFileName) {
+        value = if (page.offlineFileName.isNotBlank()) {
+            withContext(Dispatchers.IO) { offlineStore.loadPageBytes(chapterPath, page) }
+        } else {
+            null
+        }
+    }
+    val offlineBitmap = remember(offlineBytes) {
+        offlineBytes?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+    }
+    val imageModifier = Modifier
+        .fillMaxWidth()
+        .graphicsLayer(
+            scaleX = scale,
+            scaleY = scale,
+            translationX = offset.x,
+            translationY = offset.y,
+        )
+        .pointerInput(page.id) {
+            awaitEachGesture {
+                var event = awaitPointerEvent()
+                while (event.changes.none { pointer -> pointer.pressed }) {
+                    event = awaitPointerEvent()
+                }
+                do {
+                    val pointerCount = event.changes.count { pointer -> pointer.pressed }
+                    val shouldHandleGesture = pointerCount > 1 || scale > 1f
+                    if (shouldHandleGesture) {
+                        val nextScale = (scale * event.calculateZoom()).coerceIn(1f, 4f)
+                        scale = nextScale
+                        offset = if (nextScale == 1f) {
+                            Offset.Zero
+                        } else {
+                            offset + event.calculatePan()
+                        }
+                        event.changes.forEach { change ->
+                            if (change.positionChanged()) {
+                                change.consume()
+                            }
+                        }
+                    }
+                    event = awaitPointerEvent()
+                } while (event.changes.any { pointer -> pointer.pressed })
+            }
+        }
 
     Box(
         modifier = Modifier
@@ -1308,46 +1457,21 @@ private fun ZoomableReaderPage(page: ReaderPage) {
             .zIndex(if (scale > 1f) 1f else 0f)
             .background(if (scale > 1f) Color.Black else Color.Transparent)
     ) {
-        AsyncImage(
-            model = page.imageUrl,
-            contentDescription = "Page ${page.numberLabel}",
-            modifier = Modifier
-                .fillMaxWidth()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
-                )
-                .pointerInput(page.id) {
-                    awaitEachGesture {
-                        var event = awaitPointerEvent()
-                        while (event.changes.none { pointer -> pointer.pressed }) {
-                            event = awaitPointerEvent()
-                        }
-                        do {
-                            val pointerCount = event.changes.count { pointer -> pointer.pressed }
-                            val shouldHandleGesture = pointerCount > 1 || scale > 1f
-                            if (shouldHandleGesture) {
-                                val nextScale = (scale * event.calculateZoom()).coerceIn(1f, 4f)
-                                scale = nextScale
-                                offset = if (nextScale == 1f) {
-                                    Offset.Zero
-                                } else {
-                                    offset + event.calculatePan()
-                                }
-                                event.changes.forEach { change ->
-                                    if (change.positionChanged()) {
-                                        change.consume()
-                                    }
-                                }
-                            }
-                            event = awaitPointerEvent()
-                        } while (event.changes.any { pointer -> pointer.pressed })
-                    }
-                },
-            contentScale = ContentScale.FillWidth,
-        )
+        if (offlineBitmap != null) {
+            Image(
+                bitmap = offlineBitmap.asImageBitmap(),
+                contentDescription = "Page ${page.numberLabel}",
+                modifier = imageModifier,
+                contentScale = ContentScale.FillWidth,
+            )
+        } else {
+            AsyncImage(
+                model = page.imageUrl,
+                contentDescription = "Page ${page.numberLabel}",
+                modifier = imageModifier,
+                contentScale = ContentScale.FillWidth,
+            )
+        }
     }
 }
 
