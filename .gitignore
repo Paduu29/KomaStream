@@ -1,0 +1,24 @@
+# Android/Gradle build output
+.gradle/
+.kotlin/
+build/
+*/build/
+
+# Local SDK config
+local.properties
+
+# IDE files
+.idea/
+*.iml
+
+# Logs and crash dumps
+*.log
+*.hprof
+java_pid*.hprof
+
+# Android Studio captures
+captures/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
