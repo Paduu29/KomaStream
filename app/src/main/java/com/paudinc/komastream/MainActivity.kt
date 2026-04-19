@@ -1,4 +1,4 @@
-package com.paudinc.mangascraper
+package com.paudinc.komastream
 
 import android.Manifest
 import android.content.pm.PackageManager

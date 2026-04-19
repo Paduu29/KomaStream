@@ -1,4 +1,4 @@
-package com.paudinc.mangascraper
+package com.paudinc.komastream
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,7 +10,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import com.paudinc.mangascraper.R
+import com.paudinc.komastream.R
 
 class DownloadChapterWorker(
     appContext: Context,

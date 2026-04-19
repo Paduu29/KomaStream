@@ -1,4 +1,4 @@
-package com.paudinc.mangascraper
+package com.paudinc.komastream
 
 enum class AppLanguage {
     EN,
