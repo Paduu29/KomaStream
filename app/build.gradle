@@ -20,7 +20,7 @@ def keyPasswordValue = envOrNull("ANDROID_KEY_PASSWORD")
 def hasReleaseSigning = keystorePath && keystorePassword && keyAliasValue && keyPasswordValue
 
 android {
-    namespace 'com.paudinc.mangascraper'
+    namespace 'com.paudinc.komastream'
     compileSdk 36
 
     defaultConfig {

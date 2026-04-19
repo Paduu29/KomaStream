@@ -1,4 +1,4 @@
-package com.paudinc.mangascraper
+package com.paudinc.komastream
 
 import android.content.Context
 import org.json.JSONArray

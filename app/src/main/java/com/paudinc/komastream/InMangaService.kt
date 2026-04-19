@@ -1,4 +1,4 @@
-package com.paudinc.mangascraper
+package com.paudinc.komastream
 
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl

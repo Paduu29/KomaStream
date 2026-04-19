@@ -1,4 +1,4 @@
-package com.paudinc.mangascraper
+package com.paudinc.komastream
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
