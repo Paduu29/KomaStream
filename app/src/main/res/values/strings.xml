@@ -42,6 +42,7 @@
     <string name="next">Next</string>
     <string name="resume">Resume</string>
     <string name="download">Download</string>
+    <string name="downloading">Downloading</string>
     <string name="remove_download">Remove download</string>
     <string name="offline_available">Available offline</string>
     <string name="chapter_downloaded">Chapter downloaded</string>

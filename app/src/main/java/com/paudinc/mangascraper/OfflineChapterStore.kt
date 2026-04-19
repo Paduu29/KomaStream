@@ -16,6 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 class OfflineChapterStore(private val context: Context) {
     private val rootDir = File(context.filesDir, "offline_chapters").apply { mkdirs() }
+    private val cryptoLock = Any()
 
     fun getDownloadedChapterPaths(): Set<String> {
         return rootDir.listFiles()
@@ -111,25 +112,32 @@ class OfflineChapterStore(private val context: Context) {
     private fun manifestFile(chapterPath: String): File = File(chapterDir(chapterPath), "manifest.json")
 
     private fun writeEncrypted(target: File, raw: ByteArray) {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val iv = cipher.iv
-        val encrypted = cipher.doFinal(raw)
+        val payload = synchronized(cryptoLock) {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+            val iv = cipher.iv
+            val encrypted = cipher.doFinal(raw)
+            iv to encrypted
+        }
         target.outputStream().use { output ->
-            output.write(iv.size)
-            output.write(iv)
-            output.write(encrypted)
+            output.write(payload.first.size)
+            output.write(payload.first)
+            output.write(payload.second)
         }
     }
 
     private fun readEncrypted(source: File): ByteArray {
         val payload = source.readBytes()
+        if (payload.size < 2) return ByteArray(0)
         val ivSize = payload.first().toInt()
+        if (ivSize <= 0 || payload.size <= 1 + ivSize) return ByteArray(0)
         val iv = payload.copyOfRange(1, 1 + ivSize)
         val data = payload.copyOfRange(1 + ivSize, payload.size)
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-        return cipher.doFinal(data)
+        return synchronized(cryptoLock) {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+            cipher.doFinal(data)
+        }
     }
 
     private fun secretKey(): SecretKey {

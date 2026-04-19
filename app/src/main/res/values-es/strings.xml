@@ -42,6 +42,7 @@
     <string name="next">Siguiente</string>
     <string name="resume">Continuar</string>
     <string name="download">Descargar</string>
+    <string name="downloading">Descargando</string>
     <string name="remove_download">Eliminar descarga</string>
     <string name="offline_available">Disponible sin conexión</string>
     <string name="chapter_downloaded">Capítulo descargado</string>

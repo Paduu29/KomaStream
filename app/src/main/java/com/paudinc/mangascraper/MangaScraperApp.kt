@@ -84,6 +84,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.produceState
@@ -110,8 +111,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -184,6 +191,7 @@ fun MangaScraperApp() {
     val service = remember { InMangaService() }
     val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
+    val workManager = remember { WorkManager.getInstance(context) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var navigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
@@ -202,6 +210,7 @@ fun MangaScraperApp() {
     var catalogLoadingMore by remember { mutableStateOf(false) }
     var libraryState by remember { mutableStateOf(libraryStore.read()) }
     var downloadedChapterPaths by remember { mutableStateOf(offlineStore.getDownloadedChapterPaths()) }
+    val downloadProgress = remember { mutableStateMapOf<String, Int>() }
     var selectedDetail by remember { mutableStateOf<MangaDetail?>(null) }
     var readerData by remember { mutableStateOf<ReaderData?>(null) }
     var readerInitialPageIndex by remember { mutableStateOf(0) }
@@ -214,6 +223,23 @@ fun MangaScraperApp() {
 
     fun refreshOfflineDownloads() {
         downloadedChapterPaths = offlineStore.getDownloadedChapterPaths()
+    }
+
+    suspend fun refreshDownloadProgress() {
+        val infos = withContext(Dispatchers.IO) {
+            workManager.getWorkInfosByTag(DownloadChapterWorker::class.java.simpleName).get()
+        }
+        val next = linkedMapOf<String, Int>()
+        infos.forEach { info ->
+            val chapterPath = info.progress.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
+                ?: info.outputData.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
+            if (chapterPath.isNullOrBlank()) return@forEach
+            if (info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED) {
+                next[chapterPath] = info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, 0).coerceIn(0, 100)
+            }
+        }
+        downloadProgress.clear()
+        downloadProgress.putAll(next)
     }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
@@ -357,35 +383,32 @@ fun MangaScraperApp() {
     }
 
     fun downloadChapter(path: String) {
-        if (downloadedChapterPaths.contains(path)) return
-        scope.launch {
-            loading = true
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val reader = service.fetchReaderData(path)
-                    val pageBytes = reader.pages.map { page ->
-                        service.downloadBytes(page.imageUrl, referer = path)
-                    }
-                    offlineStore.saveChapter(reader, pageBytes)
-                }
-            }
-                .onSuccess {
-                    refreshOfflineDownloads()
-                    snackbarHostState.showSnackbar(strings.chapterDownloaded)
-                }
-                .onFailure { showError(it.message ?: strings.couldNotDownloadChapter) }
-            loading = false
-        }
+        if (downloadedChapterPaths.contains(path) || downloadProgress.containsKey(path)) return
+        val request = OneTimeWorkRequestBuilder<DownloadChapterWorker>()
+            .setInputData(
+                Data.Builder()
+                    .putString(DownloadChapterWorker.KEY_CHAPTER_PATH, path)
+                    .build()
+            )
+            .addTag(DownloadChapterWorker::class.java.simpleName)
+            .addTag(path)
+            .build()
+        downloadProgress[path] = 0
+        workManager.enqueueUniqueWork("download:$path", ExistingWorkPolicy.KEEP, request)
     }
 
     fun removeDownloadedChapter(path: String) {
-        if (downloadedChapterPaths.contains(path).not()) return
+        if (downloadedChapterPaths.contains(path).not() && downloadProgress.containsKey(path).not()) return
         scope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { offlineStore.removeChapter(path) }
+                withContext(Dispatchers.IO) {
+                    workManager.cancelUniqueWork("download:$path")
+                    offlineStore.removeChapter(path)
+                }
             }
                 .onSuccess {
                     refreshOfflineDownloads()
+                    downloadProgress.remove(path)
                     snackbarHostState.showSnackbar(strings.chapterRemoved)
                 }
                 .onFailure { showError(it.message ?: strings.couldNotRemoveDownload) }
@@ -411,6 +434,14 @@ fun MangaScraperApp() {
                 }
         }
         searchCatalog()
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshDownloadProgress()
+            refreshOfflineDownloads()
+            delay(1000)
+        }
     }
 
     LaunchedEffect(screen) {
@@ -582,6 +613,7 @@ fun MangaScraperApp() {
                                 isFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath },
                                 readChapters = libraryState.readChapters,
                                 downloadedChapters = downloadedChapterPaths,
+                                downloadProgress = downloadProgress,
                                 onToggleFavorite = {
                                     val wasFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath }
                                     val currentReading = libraryState.reading.firstOrNull { item -> item.detailPath == detail.detailPath }
@@ -645,6 +677,7 @@ fun MangaScraperApp() {
                                 offlineStore = offlineStore,
                                 initialPageIndex = readerInitialPageIndex,
                                 isDownloaded = downloadedChapterPaths.contains(it.chapterPath),
+                                downloadPercent = downloadProgress[it.chapterPath],
                                 onPagePositionChanged = { pageIndex ->
                                     libraryStore.saveChapterProgress(it.chapterPath, pageIndex)
                                 },
@@ -1014,6 +1047,7 @@ private fun DetailScreen(
     isFavorite: Boolean,
     readChapters: Set<String>,
     downloadedChapters: Set<String>,
+    downloadProgress: Map<String, Int>,
     onToggleFavorite: () -> Unit,
     onToggleChapterRead: (String) -> Unit,
     onSetAllChaptersRead: (Boolean) -> Unit,
@@ -1184,6 +1218,7 @@ private fun DetailScreen(
             val chapterPath = buildChapterPath(detail.detailPath, chapter)
             val isRead = readChapters.contains(chapterPath)
             val isDownloaded = downloadedChapters.contains(chapterPath)
+            val downloadPercent = downloadProgress[chapterPath]
             ElevatedCard(
                 modifier = Modifier
                     .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -1229,16 +1264,30 @@ private fun DetailScreen(
                             ),
                         )
                         AssistChip(
-                            onClick = { onToggleChapterDownload(chapterPath, isDownloaded) },
-                            label = { Text(if (isDownloaded) strings.removeDownload else strings.download) },
+                            onClick = { if (downloadPercent == null) onToggleChapterDownload(chapterPath, isDownloaded) },
+                            label = {
+                                Text(
+                                    if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
+                                    else if (isDownloaded) strings.removeDownload
+                                    else strings.download
+                                )
+                            },
                             leadingIcon = {
                                 Icon(
-                                    if (isDownloaded) Icons.Default.Delete else Icons.Default.Download,
+                                    when {
+                                        downloadPercent != null -> Icons.Default.Download
+                                        isDownloaded -> Icons.Default.Delete
+                                        else -> Icons.Default.Download
+                                    },
                                     contentDescription = null,
                                 )
                             },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (isDownloaded) Color(0xFF7A3045) else Color(0xFF2E5B9A),
+                                containerColor = when {
+                                    downloadPercent != null -> Color(0xFF6A5A17)
+                                    isDownloaded -> Color(0xFF7A3045)
+                                    else -> Color(0xFF2E5B9A)
+                                },
                                 labelColor = Color.White,
                                 leadingIconContentColor = Color.White,
                             ),
@@ -1351,6 +1400,7 @@ private fun ReaderScreen(
     offlineStore: OfflineChapterStore,
     initialPageIndex: Int,
     isDownloaded: Boolean,
+    downloadPercent: Int?,
     onPagePositionChanged: (Int) -> Unit,
     onToggleDownload: () -> Unit,
     onOpenChapter: (String) -> Unit,
@@ -1379,15 +1429,24 @@ private fun ReaderScreen(
         item {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(reader.chapterTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (isDownloaded) {
+                if (downloadPercent != null) {
+                    Text("${strings.downloading} ${downloadPercent}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                } else if (isDownloaded) {
                     Text(strings.offlineAvailable, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onOpenManga(reader.mangaDetailPath) }) { Text(strings.manga) }
-                    Button(onClick = onToggleDownload) {
-                        Icon(if (isDownloaded) Icons.Default.Delete else Icons.Default.Download, contentDescription = null)
+                    Button(onClick = onToggleDownload, enabled = downloadPercent == null) {
+                        Icon(
+                            if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
+                            contentDescription = null
+                        )
                         Spacer(Modifier.width(6.dp))
-                        Text(if (isDownloaded) strings.removeDownload else strings.download)
+                        Text(
+                            if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
+                            else if (isDownloaded) strings.removeDownload
+                            else strings.download
+                        )
                     }
                     reader.previousChapterPath?.let { Button(onClick = { onOpenChapter(it) }) { Text(strings.previous) } }
                     reader.nextChapterPath?.let { Button(onClick = { onOpenChapter(it) }) { Text(strings.next) } }
