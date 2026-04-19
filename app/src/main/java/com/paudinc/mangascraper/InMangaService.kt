@@ -190,7 +190,7 @@ class InMangaService {
             .apply { if (referer != null) header("Referer", referer.toAbsoluteUrl()) }
             .build()
         client.newCall(request).execute().use { response ->
-            return response.body?.bytes().orEmpty()
+            return response.body?.bytes() ?: ByteArray(0)
         }
     }
 
