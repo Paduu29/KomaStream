@@ -11,11 +11,13 @@ def envOrNull = { String name ->
 
 def ciVersionCode = envOrNull("VERSION_CODE")?.toInteger()
 def ciVersionName = envOrNull("VERSION_NAME")
+
 def keystorePath = envOrNull("ANDROID_KEYSTORE_PATH")
 def keystorePassword = envOrNull("ANDROID_KEYSTORE_PASSWORD")
-def keyAlias = envOrNull("ANDROID_KEY_ALIAS")
-def keyPassword = envOrNull("ANDROID_KEY_PASSWORD")
-def hasReleaseSigning = keystorePath && keystorePassword && keyAlias && keyPassword
+def keyAliasValue = envOrNull("ANDROID_KEY_ALIAS")
+def keyPasswordValue = envOrNull("ANDROID_KEY_PASSWORD")
+
+def hasReleaseSigning = keystorePath && keystorePassword && keyAliasValue && keyPasswordValue
 
 android {
     namespace 'com.paudinc.mangascraper'
@@ -34,8 +36,8 @@ android {
             release {
                 storeFile file(keystorePath)
                 storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
             }
         }
     }
@@ -56,6 +58,7 @@ android {
     buildFeatures {
         compose true
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
