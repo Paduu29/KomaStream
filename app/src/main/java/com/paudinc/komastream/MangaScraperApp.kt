@@ -39,6 +39,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.DarkMode
@@ -65,6 +67,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -686,6 +689,10 @@ fun MangaScraperApp() {
                                 detail = detail,
                                 isFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath },
                                 readChapters = libraryState.readChapters,
+                                lastOpenedChapterPath = libraryState.reading
+                                    .firstOrNull { item -> item.detailPath == detail.detailPath }
+                                    ?.lastChapterPath
+                                    .orEmpty(),
                                 downloadedChapters = downloadedChapterPaths,
                                 downloadProgress = downloadProgress,
                                 onToggleFavorite = {
@@ -1135,6 +1142,7 @@ private fun DetailScreen(
     detail: MangaDetail,
     isFavorite: Boolean,
     readChapters: Set<String>,
+    lastOpenedChapterPath: String,
     downloadedChapters: Set<String>,
     downloadProgress: Map<String, Int>,
     onToggleFavorite: () -> Unit,
@@ -1146,6 +1154,8 @@ private fun DetailScreen(
 ) {
     var chapterQuery by rememberSaveable(detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.detailPath) { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val filteredChapters = remember(detail.chapters, chapterQuery) {
         val normalizedQuery = chapterQuery.trim().replace(",", ".")
         if (normalizedQuery.isBlank()) {
@@ -1157,232 +1167,282 @@ private fun DetailScreen(
             }
         }
     }
+    val targetUnreadChapterPath = remember(detail.detailPath, detail.chapters, readChapters, lastOpenedChapterPath) {
+        resolveTargetUnreadChapterPath(
+            detailPath = detail.detailPath,
+            chapters = detail.chapters,
+            readChapters = readChapters,
+            lastOpenedChapterPath = lastOpenedChapterPath,
+        )
+    }
+    val targetUnreadIndex = remember(filteredChapters, targetUnreadChapterPath, detail.detailPath) {
+        targetUnreadChapterPath?.let { path ->
+            filteredChapters
+                .indexOfFirst { chapter -> buildChapterPath(detail.detailPath, chapter) == path }
+                .takeIf { it >= 0 }
+        }
+    }
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-            Box {
-                AsyncImage(
-                    model = detail.bannerUrl.ifBlank { detail.coverUrl },
-                    contentDescription = detail.title,
-                    modifier = Modifier.fillMaxWidth().height(240.dp),
-                    contentScale = ContentScale.Crop,
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B1220))))
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp).align(Alignment.BottomStart),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
+    LaunchedEffect(detail.detailPath, chapterQuery, targetUnreadIndex) {
+        if (chapterQuery.isNotBlank()) return@LaunchedEffect
+        val targetIndex = targetUnreadIndex ?: return@LaunchedEffect
+        val chapterStartIndex = 2
+        listState.scrollToItem((targetIndex + chapterStartIndex).coerceAtLeast(0))
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+        ) {
+            item {
+                Box {
                     AsyncImage(
-                        model = detail.coverUrl,
+                        model = detail.bannerUrl.ifBlank { detail.coverUrl },
                         contentDescription = detail.title,
-                        modifier = Modifier.size(width = 102.dp, height = 146.dp).clip(RoundedCornerShape(20.dp)),
+                        modifier = Modifier.fillMaxWidth().height(240.dp),
                         contentScale = ContentScale.Crop,
                     )
-                    Spacer(Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            detail.title,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "${detail.status} | ${detail.periodicity}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(
-                        onClick = onToggleFavorite,
-                        modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp)
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B1220))))
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp).align(Alignment.BottomStart),
+                        verticalAlignment = Alignment.Bottom,
                     ) {
-                        Icon(
-                            if (isFavorite) Icons.Default.Favorite else Icons.Default.BookmarkBorder,
-                            contentDescription = "Favorite",
-                            tint = if (isFavorite) Color(0xFFE85A5A) else MaterialTheme.colorScheme.onSurface,
+                        AsyncImage(
+                            model = detail.coverUrl,
+                            contentDescription = detail.title,
+                            modifier = Modifier.size(width = 102.dp, height = 146.dp).clip(RoundedCornerShape(20.dp)),
+                            contentScale = ContentScale.Crop,
                         )
-                    }
-                }
-            }
-        }
-        item {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(detail.description.ifBlank { strings.noDescription })
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TagChip(
-                        label = strings.publishedDate(formatDateEu(detail.publicationDate)),
-                        containerColor = Color(0xFF274777),
-                        labelColor = Color(0xFFE7F0FF),
-                    )
-                    detail.status.takeIf { it.isNotBlank() }?.let {
-                        TagChip(
-                            label = it,
-                            containerColor = statusTagColor(it),
-                            labelColor = Color.White,
-                        )
-                    }
-                    detail.periodicity.takeIf { it.isNotBlank() }?.let {
-                        TagChip(
-                            label = it,
-                            containerColor = periodicityTagColor(it),
-                            labelColor = Color.White,
-                        )
-                    }
-                }
-                HorizontalDivider()
-                Text(strings.chapters, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                OutlinedTextField(
-                    value = chapterQuery,
-                    onValueChange = { chapterQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(strings.searchChapter) },
-                    placeholder = { Text(strings.searchChapterPlaceholder) },
-                    singleLine = true,
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AssistChip(
-                        onClick = { onSetAllChaptersRead(true) },
-                        label = { Text(strings.markAllRead) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF1E6B47),
-                            labelColor = Color.White,
-                        ),
-                    )
-                    AssistChip(
-                        onClick = { onSetAllChaptersRead(false) },
-                        label = { Text(strings.markAllUnread) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color(0xFF7A3045),
-                            labelColor = Color.White,
-                        ),
-                    )
-                }
-                OutlinedTextField(
-                    value = bulkChapterInput,
-                    onValueChange = { bulkChapterInput = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(strings.untilChapter) },
-                    placeholder = { Text(strings.untilChapterPlaceholder) },
-                    singleLine = true,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            parseChapterInput(bulkChapterInput)?.let { onSetUntilChapterRead(it, true) }
-                        }
-                    ) {
-                        Icon(Icons.Default.DoneAll, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.readToX)
-                    }
-                    Button(
-                        onClick = {
-                            parseChapterInput(bulkChapterInput)?.let { onSetUntilChapterRead(it, false) }
-                        }
-                    ) {
-                        Text(strings.unreadToX)
-                    }
-                }
-                Text(
-                    if (chapterQuery.isBlank()) {
-                        strings.chaptersCount(detail.chapters.size)
-                    } else {
-                        strings.resultsCount(filteredChapters.size)
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-        if (filteredChapters.isEmpty()) {
-            item {
-                EmptyCard(strings.noChaptersFound(chapterQuery))
-            }
-        }
-        items(filteredChapters) { chapter ->
-            val chapterPath = buildChapterPath(detail.detailPath, chapter)
-            val isRead = readChapters.contains(chapterPath)
-            val isDownloaded = downloadedChapters.contains(chapterPath)
-            val downloadPercent = downloadProgress[chapterPath]
-            ElevatedCard(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .fillMaxWidth()
-                    .border(cardBorder(), RoundedCornerShape(22.dp))
-                    .clickable { onReadChapter(chapterPath) },
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = if (isRead) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-                ),
-            ) {
-                Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (isRead) Icons.Default.Bookmark else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = if (isRead) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            strings.chapterTitle(chapter.chapterLabel),
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isRead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(strings.pagesCount(chapter.pagesCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(formatDateEu(chapter.registrationDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (isDownloaded) {
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                strings.offlineAvailable,
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
+                                detail.title,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "${detail.status} | ${detail.periodicity}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        IconButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)),
+                        ) {
+                            Icon(
+                                if (isFavorite) Icons.Default.Favorite else Icons.Default.BookmarkBorder,
+                                contentDescription = "Favorite",
+                                tint = if (isFavorite) Color(0xFFE85A5A) else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TagChip(
+                            label = strings.publishedDate(formatDateEu(detail.publicationDate)),
+                            containerColor = Color(0xFF274777),
+                            labelColor = Color(0xFFE7F0FF),
+                        )
+                    Text(detail.description.ifBlank { strings.noDescription })
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        detail.status.takeIf { it.isNotBlank() }?.let {
+                            TagChip(
+                                label = it,
+                                containerColor = statusTagColor(it),
+                                labelColor = Color.White,
+                            )
+                        }
+                        detail.periodicity.takeIf { it.isNotBlank() }?.let {
+                            TagChip(
+                                label = it,
+                                containerColor = periodicityTagColor(it),
+                                labelColor = Color.White,
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                    Text(strings.chapters, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = chapterQuery,
+                        onValueChange = { chapterQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(strings.searchChapter) },
+                        placeholder = { Text(strings.searchChapterPlaceholder) },
+                        singleLine = true,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         AssistChip(
-                            onClick = { onToggleChapterRead(chapterPath) },
-                            label = { Text(if (isRead) strings.read else strings.unread) },
+                            onClick = { onSetAllChaptersRead(true) },
+                            label = { Text(strings.markAllRead) },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (isRead) Color(0xFF1E6B47) else Color(0xFF5B6678),
+                                containerColor = Color(0xFF1E6B47),
                                 labelColor = Color.White,
                             ),
                         )
                         AssistChip(
-                            onClick = { if (downloadPercent == null) onToggleChapterDownload(chapterPath, isDownloaded) },
-                            label = {
-                                Text(
-                                    if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
-                                    else if (isDownloaded) strings.removeDownload
-                                    else strings.download
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    when {
-                                        downloadPercent != null -> Icons.Default.Download
-                                        isDownloaded -> Icons.Default.Delete
-                                        else -> Icons.Default.Download
-                                    },
-                                    contentDescription = null,
-                                )
-                            },
+                            onClick = { onSetAllChaptersRead(false) },
+                            label = { Text(strings.markAllUnread) },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = when {
-                                    downloadPercent != null -> Color(0xFF6A5A17)
-                                    isDownloaded -> Color(0xFF7A3045)
-                                    else -> Color(0xFF2E5B9A)
-                                },
+                                containerColor = Color(0xFF7A3045),
                                 labelColor = Color.White,
-                                leadingIconContentColor = Color.White,
                             ),
                         )
                     }
+                    OutlinedTextField(
+                        value = bulkChapterInput,
+                        onValueChange = { bulkChapterInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(strings.untilChapter) },
+                        placeholder = { Text(strings.untilChapterPlaceholder) },
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                parseChapterInput(bulkChapterInput)?.let { onSetUntilChapterRead(it, true) }
+                            }
+                        ) {
+                            Icon(Icons.Default.DoneAll, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.readToX)
+                        }
+                        Button(
+                            onClick = {
+                                parseChapterInput(bulkChapterInput)?.let { onSetUntilChapterRead(it, false) }
+                            }
+                        ) {
+                            Text(strings.unreadToX)
+                        }
+                    }
+                    Text(
+                        if (chapterQuery.isBlank()) {
+                            strings.chaptersCount(detail.chapters.size)
+                        } else {
+                            strings.resultsCount(filteredChapters.size)
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
+            }
+            if (filteredChapters.isEmpty()) {
+                item {
+                    EmptyCard(strings.noChaptersFound(chapterQuery))
+                }
+            }
+            items(filteredChapters) { chapter ->
+                val chapterPath = buildChapterPath(detail.detailPath, chapter)
+                val isRead = readChapters.contains(chapterPath)
+                val isDownloaded = downloadedChapters.contains(chapterPath)
+                val downloadPercent = downloadProgress[chapterPath]
+                ElevatedCard(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .fillMaxWidth()
+                        .border(cardBorder(), RoundedCornerShape(22.dp))
+                        .clickable { onReadChapter(chapterPath) },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = if (isRead) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                    ),
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (isRead) Icons.Default.Bookmark else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = if (isRead) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                strings.chapterTitle(chapter.chapterLabel),
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isRead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(strings.pagesCount(chapter.pagesCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(formatDateEu(chapter.registrationDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (isDownloaded) {
+                                Text(
+                                    strings.offlineAvailable,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            AssistChip(
+                                onClick = { onToggleChapterRead(chapterPath) },
+                                label = { Text(if (isRead) strings.read else strings.unread) },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = if (isRead) Color(0xFF1E6B47) else Color(0xFF5B6678),
+                                    labelColor = Color.White,
+                                ),
+                            )
+                            AssistChip(
+                                onClick = { if (downloadPercent == null) onToggleChapterDownload(chapterPath, isDownloaded) },
+                                label = {
+                                    Text(
+                                        if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
+                                        else if (isDownloaded) strings.removeDownload
+                                        else strings.download
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        when {
+                                            downloadPercent != null -> Icons.Default.Download
+                                            isDownloaded -> Icons.Default.Delete
+                                            else -> Icons.Default.Download
+                                        },
+                                        contentDescription = null,
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = when {
+                                        downloadPercent != null -> Color(0xFF6A5A17)
+                                        isDownloaded -> Color(0xFF7A3045)
+                                        else -> Color(0xFF2E5B9A)
+                                    },
+                                    labelColor = Color.White,
+                                    leadingIconContentColor = Color.White,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            SmallFloatingActionButton(
+                onClick = { scope.launch { listState.animateScrollToItem(0) } },
+            ) {
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = strings.scrollToTop)
+            }
+            SmallFloatingActionButton(
+                onClick = {
+                    scope.launch {
+                        val lastIndex = listState.layoutInfo.totalItemsCount.dec().coerceAtLeast(0)
+                        listState.animateScrollToItem(lastIndex)
+                    }
+                },
+            ) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = strings.scrollToBottom)
             }
         }
     }
@@ -1853,7 +1913,45 @@ private fun buildChapterPath(detailPath: String, chapter: MangaChapter): String 
 }
 
 private fun parseChapterInput(value: String): Double? {
-    return value.trim().replace(",", ".").toDoubleOrNull()
+    val normalized = value
+        .trim()
+        .replace(",", ".")
+        .replace(Regex("(?<=\\d)-(?=\\d)"), ".")
+    return Regex("\\d+(?:\\.\\d+)?")
+        .find(normalized)
+        ?.value
+        ?.toDoubleOrNull()
+}
+
+private fun resolveTargetUnreadChapterPath(
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    readChapters: Set<String>,
+    lastOpenedChapterPath: String,
+): String? {
+    val chapterEntries = chapters.map { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        Triple(path, chapter, chapterValue(chapter))
+    }
+    val unreadEntries = chapterEntries.filter { (path, _, _) -> path !in readChapters }
+    if (unreadEntries.isEmpty()) return null
+
+    if (lastOpenedChapterPath.isNotBlank()) {
+        val lastReadValue = chapterEntries.firstOrNull { (path, _, _) -> path == lastOpenedChapterPath }?.third
+        if (lastReadValue != null) {
+            unreadEntries
+                .filter { (_, _, value) -> value > lastReadValue }
+                .minByOrNull { (_, _, value) -> value }
+                ?.let { return it.first }
+
+            unreadEntries
+                .filter { (_, _, value) -> value < lastReadValue }
+                .maxByOrNull { (_, _, value) -> value }
+                ?.let { return it.first }
+        }
+    }
+
+    return unreadEntries.minByOrNull { (_, _, value) -> value }?.first
 }
 
 private fun chapterValue(chapter: MangaChapter): Double {

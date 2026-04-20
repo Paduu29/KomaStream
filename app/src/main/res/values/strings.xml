@@ -70,6 +70,8 @@
     <string name="update_install_permission_required">Allow installs from this app, then tap install again.</string>
     <string name="release_page">Release page</string>
     <string name="updater_not_configured">GitHub Releases are not configured for this build.</string>
+    <string name="scroll_to_top">Scroll to top</string>
+    <string name="scroll_to_bottom">Scroll to bottom</string>
     <string name="language">Language</string>
     <string name="english">English</string>
     <string name="spanish">Spanish</string>

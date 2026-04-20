@@ -319,12 +319,27 @@ class InMangaService {
                     )
                 )
             }
-        }.sortedByDescending { it.chapterNumberUrl.replace(",", "").toFloatOrNull() ?: 0f }
+        }.sortedByDescending {
+            parseChapterNumber(it.chapterNumberUrl)
+                ?: parseChapterNumber(it.chapterLabel)
+                ?: Double.NEGATIVE_INFINITY
+        }
     }
 
     private fun buildChapterPath(mangaDetailPath: String, chapterLabel: String, chapterId: String): String {
         val chapterNumberUrl = chapterLabel.replace(",", "").trim()
         return "${mangaDetailPath.substringBeforeLast("/")}/$chapterNumberUrl/$chapterId".normalizePath()
+    }
+
+    private fun parseChapterNumber(raw: String): Double? {
+        val normalized = raw
+            .trim()
+            .replace(',', '.')
+            .replace(Regex("(?<=\\d)-(?=\\d)"), ".")
+        return Regex("\\d+(?:\\.\\d+)?")
+            .find(normalized)
+            ?.value
+            ?.toDoubleOrNull()
     }
 
     private fun String.toAbsoluteUrl(): String {
