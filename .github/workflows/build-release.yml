@@ -68,12 +68,22 @@ jobs:
           name: ${{ steps.version.outputs.apk_name }}
           path: app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}
 
+      - name: Prepare release notes from tag message
+        shell: bash
+        run: |
+          TAG_MESSAGE="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          if [ -n "$TAG_MESSAGE" ]; then
+            printf '%s\n' "$TAG_MESSAGE" > release-notes.txt
+          else
+            printf 'Release %s\n' "${{ steps.version.outputs.version_name }}" > release-notes.txt
+          fi
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version_name }}
           name: KomaStream v${{ steps.version.outputs.version_name }}
-          generate_release_notes: true
+          body_path: release-notes.txt
           files: app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
