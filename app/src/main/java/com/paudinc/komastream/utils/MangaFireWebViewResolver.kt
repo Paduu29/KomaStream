@@ -1,6 +1,9 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.utils
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -9,11 +12,16 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.paudinc.komastream.models.ReaderData
+import com.paudinc.komastream.models.ReaderPage
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -56,7 +64,9 @@ class MangaFireWebViewResolver(
 
         return ReaderData(
             providerId = providerId,
-            mangaTitle = mangaTitle.ifBlank { detailPath.substringAfterLast('/').substringBeforeLast('.').replace('-', ' ') },
+            mangaTitle = mangaTitle.ifBlank {
+                detailPath.substringAfterLast('/').substringBeforeLast('.').replace('-', ' ')
+            },
             mangaDetailPath = detailPath,
             chapterTitle = chapterContext?.label ?: normalizedChapterPath.substringAfterLast('/'),
             chapterPath = normalizedChapterPath,
@@ -203,7 +213,7 @@ class MangaFireWebViewResolver(
         )
     }
 
-    private fun getDocument(path: String): org.jsoup.nodes.Document {
+    private fun getDocument(path: String): Document {
         val request = Request.Builder()
             .url(toAbsoluteUrl(path))
             .header("User-Agent", USER_AGENT)
@@ -234,7 +244,7 @@ class MangaFireWebViewResolver(
         }
     }
 
-    private fun org.json.JSONArray.toReaderPages(chapterPath: String): List<ReaderPage> =
+    private fun JSONArray.toReaderPages(chapterPath: String): List<ReaderPage> =
         buildList(length()) {
             for (index in 0 until length()) {
                 val entry = optJSONArray(index) ?: continue
@@ -269,13 +279,13 @@ class MangaFireWebViewResolver(
 
     private fun descramble(imageBytes: ByteArray, offset: Int): ByteArray {
         if (offset <= 0) return imageBytes
-        val source = android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return imageBytes
-        val result = android.graphics.Bitmap.createBitmap(source.width, source.height, android.graphics.Bitmap.Config.ARGB_8888)
+        val source = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return imageBytes
+        val result = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
         val pieceWidth = min(200, ceil(source.width / 5.0).toInt())
         val pieceHeight = min(200, ceil(source.height / 5.0).toInt())
         val xMax = ceil(source.width / pieceWidth.toDouble()).toInt() - 1
         val yMax = ceil(source.height / pieceHeight.toDouble()).toInt() - 1
-        val canvas = android.graphics.Canvas(result)
+        val canvas = Canvas(result)
         for (y in 0..yMax) {
             for (x in 0..xMax) {
                 val dstX = pieceWidth * x
@@ -284,13 +294,13 @@ class MangaFireWebViewResolver(
                 val srcY = pieceHeight * y
                 val tileWidth = min(pieceWidth, source.width - srcX)
                 val tileHeight = min(pieceHeight, source.height - srcY)
-                val tile = android.graphics.Bitmap.createBitmap(source, srcX, srcY, tileWidth, tileHeight)
+                val tile = Bitmap.createBitmap(source, srcX, srcY, tileWidth, tileHeight)
                 canvas.drawBitmap(tile, dstX.toFloat(), dstY.toFloat(), null)
                 tile.recycle()
             }
         }
-        val output = java.io.ByteArrayOutputStream()
-        result.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, output)
+        val output = ByteArrayOutputStream()
+        result.compress(Bitmap.CompressFormat.JPEG, 95, output)
         source.recycle()
         result.recycle()
         return output.toByteArray()

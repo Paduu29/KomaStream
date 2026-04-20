@@ -1,4 +1,4 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.updater
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.paudinc.komastream.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
