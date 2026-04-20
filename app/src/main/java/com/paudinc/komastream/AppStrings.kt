@@ -58,6 +58,18 @@ data class AppStrings(
     val exportBackup: String,
     val importBackup: String,
     val backupDescription: String,
+    val updates: String,
+    val checkForUpdates: String,
+    val currentVersion: String,
+    val updateAvailable: String,
+    val noUpdateAvailable: String,
+    val downloadUpdate: String,
+    val installUpdate: String,
+    val releaseNotes: String,
+    val updateDownloadStarted: String,
+    val updateInstallPermissionRequired: String,
+    val releasePage: String,
+    val updaterNotConfigured: String,
     val languageLabel: String,
     val english: String,
     val spanish: String,
@@ -103,6 +115,8 @@ data class AppStrings(
     fun chapterTitle(label: String) = chapterTitleTemplate.format(label)
     fun publishedDate(date: String) = publishedDateTemplate.format(date)
     fun noChaptersFound(query: String) = noChaptersFoundTemplate.format(query)
+    fun currentVersionLabel(version: String) = currentVersion.format(version)
+    fun updateAvailableLabel(version: String) = updateAvailable.format(version)
     fun markedUntilChapter(number: Double, read: Boolean) =
         if (read) markedUntilReadTemplate.format(number)
         else markedUntilUnreadTemplate.format(number)
@@ -165,6 +179,18 @@ fun appStrings(): AppStrings {
         exportBackup = stringResource(R.string.export_backup),
         importBackup = stringResource(R.string.import_backup),
         backupDescription = stringResource(R.string.backup_description),
+        updates = stringResource(R.string.updates),
+        checkForUpdates = stringResource(R.string.check_for_updates),
+        currentVersion = stringResource(R.string.current_version),
+        updateAvailable = stringResource(R.string.update_available),
+        noUpdateAvailable = stringResource(R.string.no_update_available),
+        downloadUpdate = stringResource(R.string.download_update),
+        installUpdate = stringResource(R.string.install_update),
+        releaseNotes = stringResource(R.string.release_notes),
+        updateDownloadStarted = stringResource(R.string.update_download_started),
+        updateInstallPermissionRequired = stringResource(R.string.update_install_permission_required),
+        releasePage = stringResource(R.string.release_page),
+        updaterNotConfigured = stringResource(R.string.updater_not_configured),
         languageLabel = stringResource(R.string.language),
         english = stringResource(R.string.english),
         spanish = stringResource(R.string.spanish),
