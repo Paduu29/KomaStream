@@ -109,3 +109,13 @@ Network requests are performed directly between the user’s device and third-pa
 
 ```bash
 sh gradlew :app:assembleDebug
+```
+Project Status
+
+KomaStream is an actively maintained personal Android project.
+Functionality and integrations may change over time.
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
+
