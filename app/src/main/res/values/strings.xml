@@ -78,6 +78,11 @@
     <string name="scroll_to_top">Scroll to top</string>
     <string name="scroll_to_bottom">Scroll to bottom</string>
     <string name="language">Language</string>
+    <string name="auto_jump_to_unread">Auto-jump to unread chapter</string>
+    <string name="auto_jump_to_unread_enabled">Open manga at the next unread chapter when applicable.</string>
+    <string name="auto_jump_to_unread_disabled">Always open manga at the top of the detail page.</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
     <string name="english">English</string>
     <string name="spanish">Spanish</string>
     <string name="no_description">No description available.</string>

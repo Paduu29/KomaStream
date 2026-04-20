@@ -13,6 +13,7 @@ class LibraryStore(context: Context) {
             reading = parseList(prefs.getString("reading", "[]").orEmpty()),
             readChapters = parseReadChapters(prefs.getString("readChapters", "[]").orEmpty()),
             useDarkTheme = prefs.getBoolean("useDarkTheme", false),
+            autoJumpToUnread = prefs.getBoolean("autoJumpToUnread", true),
             appLanguage = AppLanguage.valueOf(prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name),
         )
     }
@@ -83,6 +84,10 @@ class LibraryStore(context: Context) {
 
     fun setDarkTheme(enabled: Boolean) {
         prefs.edit().putBoolean("useDarkTheme", enabled).apply()
+    }
+
+    fun setAutoJumpToUnread(enabled: Boolean) {
+        prefs.edit().putBoolean("autoJumpToUnread", enabled).apply()
     }
 
     fun setAppLanguage(language: AppLanguage) {

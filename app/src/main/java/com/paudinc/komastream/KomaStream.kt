@@ -68,6 +68,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -135,8 +137,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private enum class RootTab(val label: String) { Home("Home"), Library("Library"), Catalog("Catalog") }
 
@@ -732,6 +735,7 @@ fun KomaStream() {
                                 strings = strings,
                                 detail = detail,
                                 isFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath },
+                                autoJumpToUnread = libraryState.autoJumpToUnread,
                                 readChapters = libraryState.readChapters,
                                 lastOpenedChapterPath = libraryState.reading
                                     .firstOrNull { item -> item.detailPath == detail.detailPath }
@@ -815,6 +819,7 @@ fun KomaStream() {
                             strings = strings,
                             appLanguage = libraryState.appLanguage,
                             useDarkTheme = libraryState.useDarkTheme,
+                            autoJumpToUnread = libraryState.autoJumpToUnread,
                             versionName = BuildConfig.VERSION_NAME,
                             updateState = updateState,
                             onLanguageChange = { language ->
@@ -825,6 +830,10 @@ fun KomaStream() {
                             },
                             onThemeChange = { enabled ->
                                 libraryStore.setDarkTheme(enabled)
+                                libraryState = libraryStore.read()
+                            },
+                            onAutoJumpToUnreadChange = { enabled ->
+                                libraryStore.setAutoJumpToUnread(enabled)
                                 libraryState = libraryStore.read()
                             },
                             onExportBackup = {
@@ -1046,43 +1055,13 @@ private fun LibraryScreen(
                     item { EmptyCard(strings.readingHint) }
                 } else {
                     items(libraryState.reading) { saved ->
-                        ElevatedCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(cardBorder(), RoundedCornerShape(22.dp))
-                                .combinedClickable(
-                                    onClick = { onOpenManga(saved.detailPath) },
-                                    onLongClick = { onRemoveFromContinueReading(saved) },
-                                ),
-                            shape = RoundedCornerShape(22.dp),
-                        ) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(
-                                    model = saved.coverUrl,
-                                    contentDescription = saved.title,
-                                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)),
-                                    contentScale = ContentScale.Crop,
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(saved.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(
-                                        saved.lastChapterTitle.ifBlank { strings.noChapterSavedYet },
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                IconButton(onClick = { onRemoveFromContinueReading(saved) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
-                                }
-                                Button(onClick = { if (saved.lastChapterPath.isNotBlank()) onOpenChapter(saved.lastChapterPath) }) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(strings.resume)
-                                }
-                            }
-                        }
+                        ContinueReadingCard(
+                            manga = saved,
+                            strings = strings,
+                            onOpen = { onOpenManga(saved.detailPath) },
+                            onResume = { if (saved.lastChapterPath.isNotBlank()) onOpenChapter(saved.lastChapterPath) },
+                            onRemove = { onRemoveFromContinueReading(saved) },
+                        )
                     }
                 }
             }
@@ -1286,6 +1265,7 @@ private fun DetailScreen(
     strings: AppStrings,
     detail: MangaDetail,
     isFavorite: Boolean,
+    autoJumpToUnread: Boolean,
     readChapters: Set<String>,
     lastOpenedChapterPath: String,
     downloadedChapters: Set<String>,
@@ -1301,6 +1281,7 @@ private fun DetailScreen(
     var bulkChapterInput by rememberSaveable(detail.detailPath) { mutableStateOf("") }
     var hasAutoPositionedChapterList by rememberSaveable(detail.detailPath, chapterQuery) { mutableStateOf(false) }
     var suppressAutoPositioning by rememberSaveable(detail.detailPath) { mutableStateOf(false) }
+    val initialIsFavorite = rememberSaveable(detail.detailPath) { isFavorite }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val filteredChapters = remember(detail.chapters, chapterQuery) {
@@ -1314,12 +1295,21 @@ private fun DetailScreen(
             }
         }
     }
-    val targetUnreadChapterPath = remember(detail.detailPath, detail.chapters, readChapters, lastOpenedChapterPath) {
+    val targetUnreadChapterPath = remember(
+        detail.detailPath,
+        detail.chapters,
+        readChapters,
+        lastOpenedChapterPath,
+        initialIsFavorite,
+        autoJumpToUnread,
+    ) {
         resolveTargetUnreadChapterPath(
             detailPath = detail.detailPath,
             chapters = detail.chapters,
             readChapters = readChapters,
             lastOpenedChapterPath = lastOpenedChapterPath,
+            isFavorite = initialIsFavorite,
+            autoJumpToUnread = autoJumpToUnread,
         )
     }
     val targetUnreadIndex = remember(filteredChapters, targetUnreadChapterPath, detail.detailPath) {
@@ -1607,10 +1597,12 @@ private fun SettingsScreen(
     strings: AppStrings,
     appLanguage: AppLanguage,
     useDarkTheme: Boolean,
+    autoJumpToUnread: Boolean,
     versionName: String,
     updateState: AppUpdateUiState,
     onLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
+    onAutoJumpToUnreadChange: (Boolean) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -1732,6 +1724,36 @@ private fun SettingsScreen(
                         }
                     }
                     Text(if (useDarkTheme) strings.darkThemeActive else strings.lightThemeActive, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item {
+            ElevatedCard(
+                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.autoJumpToUnreadLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onAutoJumpToUnreadChange(true) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (autoJumpToUnread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (autoJumpToUnread) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) { Text(strings.on) }
+                        Button(
+                            onClick = { onAutoJumpToUnreadChange(false) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!autoJumpToUnread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (!autoJumpToUnread) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) { Text(strings.off) }
+                    }
+                    Text(
+                        if (autoJumpToUnread) strings.autoJumpToUnreadEnabled else strings.autoJumpToUnreadDisabled,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -2048,61 +2070,165 @@ private fun MangaCoverCard(manga: MangaSummary, onClick: () -> Unit) {
 }
 
 @Composable
+private fun ContinueReadingCard(
+    manga: SavedManga,
+    strings: AppStrings,
+    onOpen: () -> Unit,
+    onResume: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    var menuExpanded by rememberSaveable(manga.detailPath) { mutableStateOf(false) }
+
+    Box {
+        ElevatedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(cardBorder(), RoundedCornerShape(22.dp))
+                .combinedClickable(
+                    onClick = onOpen,
+                    onLongClick = { menuExpanded = true },
+                ),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(
+                    model = manga.coverUrl,
+                    contentDescription = manga.title,
+                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(manga.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        manga.lastChapterTitle.ifBlank { strings.noChapterSavedYet },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
+                }
+                Button(onClick = onResume, enabled = manga.lastChapterPath.isNotBlank()) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text(strings.resume)
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(strings.manga) },
+                onClick = {
+                    menuExpanded = false
+                    onOpen()
+                },
+            )
+            if (manga.lastChapterPath.isNotBlank()) {
+                DropdownMenuItem(
+                    text = { Text(strings.resume) },
+                    onClick = {
+                        menuExpanded = false
+                        onResume()
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(strings.removeFromContinueReading) },
+                onClick = {
+                    menuExpanded = false
+                    onRemove()
+                },
+            )
+        }
+    }
+}
+
+@Composable
 private fun FavoriteMangaCard(
     manga: SavedManga,
     strings: AppStrings,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(cardBorder(), RoundedCornerShape(24.dp))
-            .combinedClickable(
-                onClick = onOpen,
-                onLongClick = onRemove,
-            ),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = manga.coverUrl,
-                contentDescription = manga.title,
-                modifier = Modifier.size(width = 86.dp, height = 120.dp).clip(RoundedCornerShape(18.dp)),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    manga.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+    var menuExpanded by rememberSaveable(manga.detailPath) { mutableStateOf(false) }
+
+    Box {
+        ElevatedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(cardBorder(), RoundedCornerShape(24.dp))
+                .combinedClickable(
+                    onClick = onOpen,
+                    onLongClick = { menuExpanded = true },
+                ),
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(
+                    model = manga.coverUrl,
+                    contentDescription = manga.title,
+                    modifier = Modifier.size(width = 86.dp, height = 120.dp).clip(RoundedCornerShape(18.dp)),
+                    contentScale = ContentScale.Crop,
                 )
-                if (manga.lastChapterTitle.isNotBlank()) {
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        strings.latestProgress,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        manga.lastChapterTitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        manga.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                } else {
-                    Text(
-                        strings.noChapterOpenedYet,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (manga.lastChapterTitle.isNotBlank()) {
+                        Text(
+                            strings.latestProgress,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            manga.lastChapterTitle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else {
+                        Text(
+                            strings.noChapterOpenedYet,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromFavorites)
                 }
             }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Delete, contentDescription = strings.removeFromFavorites)
-            }
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(strings.manga) },
+                onClick = {
+                    menuExpanded = false
+                    onOpen()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(strings.removeFromFavorites) },
+                onClick = {
+                    menuExpanded = false
+                    onRemove()
+                },
+            )
         }
     }
 }
@@ -2215,11 +2341,18 @@ private fun resolveTargetUnreadChapterPath(
     chapters: List<MangaChapter>,
     readChapters: Set<String>,
     lastOpenedChapterPath: String,
+    isFavorite: Boolean,
+    autoJumpToUnread: Boolean,
 ): String? {
+    if (!autoJumpToUnread) return null
+
     val chapterEntries = chapters.map { chapter ->
         val path = buildChapterPath(detailPath, chapter)
         Triple(path, chapter, chapterValue(chapter))
     }
+    val hasReadProgress = lastOpenedChapterPath.isNotBlank() || chapterEntries.any { (path, _, _) -> path in readChapters }
+    if (!isFavorite && !hasReadProgress) return null
+
     val unreadEntries = chapterEntries.filter { (path, _, _) -> path !in readChapters }
     if (unreadEntries.isEmpty()) return null
 
@@ -2248,7 +2381,7 @@ private fun chapterValue(chapter: MangaChapter): Double {
 }
 
 private fun defaultBackupFileName(): String {
-    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+    val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
     return "KomaStream-$timestamp.json"
 }
 

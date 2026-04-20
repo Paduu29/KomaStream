@@ -68,18 +68,13 @@ jobs:
           name: ${{ steps.version.outputs.apk_name }}
           path: app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}
 
-      - name: Prepare release notes from tag message
+      - name: Prepare release notes from tagged commit message
         shell: bash
         run: |
-          TAG_REF="refs/tags/$GITHUB_REF_NAME"
-          if git rev-parse -q --verify "${TAG_REF}^{tag}" >/dev/null; then
-            TAG_MESSAGE="$(git cat-file tag "$TAG_REF" | sed '1,/^$/d')"
-          else
-            TAG_MESSAGE=""
-          fi
+          COMMIT_MESSAGE="$(git log -1 --format=%B "$GITHUB_SHA" | sed '/^[[:space:]]*$/d')"
 
-          if [ -n "$TAG_MESSAGE" ]; then
-            printf '%s\n' "$TAG_MESSAGE" > release-notes.txt
+          if [ -n "$COMMIT_MESSAGE" ]; then
+            printf '%s\n' "$COMMIT_MESSAGE" > release-notes.txt
           else
             printf 'Release %s\n' "${{ steps.version.outputs.version_name }}" > release-notes.txt
           fi
