@@ -32,12 +32,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -1162,6 +1165,8 @@ private fun DetailScreen(
 ) {
     var chapterQuery by rememberSaveable(detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.detailPath) { mutableStateOf("") }
+    var hasAutoPositionedChapterList by rememberSaveable(detail.detailPath, chapterQuery) { mutableStateOf(false) }
+    var suppressAutoPositioning by rememberSaveable(detail.detailPath) { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val filteredChapters = remember(detail.chapters, chapterQuery) {
@@ -1193,9 +1198,12 @@ private fun DetailScreen(
 
     LaunchedEffect(detail.detailPath, chapterQuery, targetUnreadIndex) {
         if (chapterQuery.isNotBlank()) return@LaunchedEffect
+        if (suppressAutoPositioning) return@LaunchedEffect
+        if (hasAutoPositionedChapterList) return@LaunchedEffect
         val targetIndex = targetUnreadIndex ?: return@LaunchedEffect
         val chapterStartIndex = 2
         listState.scrollToItem((targetIndex + chapterStartIndex).coerceAtLeast(0))
+        hasAutoPositionedChapterList = true
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1438,15 +1446,19 @@ private fun DetailScreen(
             horizontalAlignment = Alignment.End,
         ) {
             SmallFloatingActionButton(
-                onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                onClick = {
+                    suppressAutoPositioning = true
+                    scope.launch { listState.scrollToItem(0) }
+                },
             ) {
                 Icon(Icons.Default.KeyboardArrowUp, contentDescription = strings.scrollToTop)
             }
             SmallFloatingActionButton(
                 onClick = {
+                    suppressAutoPositioning = true
                     scope.launch {
                         val lastIndex = listState.layoutInfo.totalItemsCount.dec().coerceAtLeast(0)
-                        listState.animateScrollToItem(lastIndex)
+                        listState.scrollToItem(lastIndex)
                     }
                 },
             ) {
@@ -1621,15 +1633,24 @@ private fun ReaderScreen(
     onOpenManga: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val restoredPageIndex = remember(reader.chapterPath, initialPageIndex, reader.pages.size) {
+        if (reader.pages.isEmpty()) {
+            0
+        } else if (initialPageIndex in reader.pages.indices) {
+            initialPageIndex
+        } else {
+            0
+        }
+    }
 
-    LaunchedEffect(reader.chapterPath, initialPageIndex, reader.pages.size) {
-        listState.scrollToItem((initialPageIndex + 1).coerceAtMost(reader.pages.size))
+    LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
+        listState.scrollToItem((restoredPageIndex + 1).coerceAtMost(reader.pages.size))
     }
 
     LaunchedEffect(reader.chapterPath, listState) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .map { index -> (index - 1).coerceAtLeast(0) }
-            .filter { pageIndex -> reader.pages.isNotEmpty() }
+            .filter { pageIndex -> pageIndex in reader.pages.indices }
             .distinctUntilChanged()
             .collect { pageIndex -> onPagePositionChanged(pageIndex) }
     }
@@ -1648,7 +1669,10 @@ private fun ReaderScreen(
                 } else if (isDownloaded) {
                     Text(strings.offlineAvailable, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Button(onClick = { onOpenManga(reader.mangaDetailPath) }) { Text(strings.manga) }
                     Button(onClick = onToggleDownload, enabled = downloadPercent == null) {
                         Icon(
@@ -1662,19 +1686,133 @@ private fun ReaderScreen(
                             else strings.download
                         )
                     }
-                    reader.previousChapterPath?.let { Button(onClick = { onOpenChapter(it) }) { Text(strings.previous) } }
-                    reader.nextChapterPath?.let { Button(onClick = { onOpenChapter(it) }) { Text(strings.next) } }
                 }
+                ReaderChapterNavigationButtons(
+                    currentChapterPath = reader.chapterPath,
+                    previousChapterPath = reader.previousChapterPath,
+                    nextChapterPath = reader.nextChapterPath,
+                    strings = strings,
+                    onOpenChapter = onOpenChapter,
+                )
             }
         }
-        items(reader.pages) { page ->
+        itemsIndexed(
+            items = reader.pages,
+            key = { index, page -> "${reader.chapterPath}:${page.id}:$index" }
+        ) { _, page ->
             ZoomableReaderPage(chapterPath = reader.chapterPath, page = page, offlineStore = offlineStore)
+        }
+        item {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                HorizontalDivider()
+                Text(
+                    text = reader.chapterTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ReaderChapterNavigationButtons(
+                    currentChapterPath = reader.chapterPath,
+                    previousChapterPath = reader.previousChapterPath,
+                    nextChapterPath = reader.nextChapterPath,
+                    strings = strings,
+                    onOpenChapter = onOpenChapter,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ZoomableReaderPage(chapterPath: String, page: ReaderPage, offlineStore: OfflineChapterStore) {
+private fun ReaderChapterNavigationButtons(
+    currentChapterPath: String,
+    previousChapterPath: String?,
+    nextChapterPath: String?,
+    strings: AppStrings,
+    onOpenChapter: (String) -> Unit,
+) {
+    val currentChapterValue = parseChapterInput(currentChapterPath.substringBeforeLast("/").substringAfterLast("/"))
+    val validPreviousChapterPath = previousChapterPath?.takeIf { previousPath ->
+        val previousChapterValue = parseChapterInput(previousPath.substringBeforeLast("/").substringAfterLast("/"))
+        currentChapterValue == null || (previousChapterValue != null && previousChapterValue < currentChapterValue)
+    }
+    val validNextChapterPath = nextChapterPath?.takeIf { nextPath ->
+        val nextChapterValue = parseChapterInput(nextPath.substringBeforeLast("/").substringAfterLast("/"))
+        currentChapterValue == null || (nextChapterValue != null && nextChapterValue > currentChapterValue)
+    }
+
+    if (validPreviousChapterPath != null && validNextChapterPath != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { onOpenChapter(validPreviousChapterPath) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            ) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null)
+                Text(strings.previous)
+            }
+            Button(
+                onClick = { onOpenChapter(validNextChapterPath) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            ) {
+                Text(strings.next)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            }
+        }
+        return
+    }
+
+    validPreviousChapterPath?.let {
+        Button(
+            onClick = { onOpenChapter(it) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        ) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null)
+            Text(strings.previous)
+        }
+    }
+    validNextChapterPath?.let {
+        Button(
+            onClick = { onOpenChapter(it) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        ) {
+            Text(strings.next)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun ZoomableReaderPage(
+    chapterPath: String,
+    page: ReaderPage,
+    offlineStore: OfflineChapterStore,
+) {
     var scale by remember(page.id) { mutableStateOf(1f) }
     var offset by remember(page.id) { mutableStateOf(Offset.Zero) }
     val offlineBytes by produceState<ByteArray?>(initialValue = null, chapterPath, page.id, page.offlineFileName) {
