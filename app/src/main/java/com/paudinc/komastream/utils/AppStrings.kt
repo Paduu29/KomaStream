@@ -1,7 +1,8 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.utils
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import com.paudinc.komastream.R
 
 data class AppStrings(
     val appName: String,

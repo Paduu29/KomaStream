@@ -1,8 +1,10 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.utils
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.paudinc.komastream.models.ReaderData
+import com.paudinc.komastream.models.ReaderPage
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

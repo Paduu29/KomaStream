@@ -1,4 +1,4 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.models
 
 enum class AppLanguage {
     EN,

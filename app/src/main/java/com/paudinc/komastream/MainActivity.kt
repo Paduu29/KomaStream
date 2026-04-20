@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import com.paudinc.komastream.models.AppLanguage
 
 class MainActivity : AppCompatActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(

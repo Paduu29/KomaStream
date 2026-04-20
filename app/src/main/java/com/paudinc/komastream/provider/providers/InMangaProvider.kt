@@ -1,5 +1,18 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.provider.providers
 
+import com.paudinc.komastream.models.AppLanguage
+import com.paudinc.komastream.models.CatalogFilterOptions
+import com.paudinc.komastream.models.CatalogSearchResult
+import com.paudinc.komastream.models.CategoryOption
+import com.paudinc.komastream.models.ChapterSummary
+import com.paudinc.komastream.models.FilterOption
+import com.paudinc.komastream.models.HomeFeed
+import com.paudinc.komastream.models.MangaChapter
+import com.paudinc.komastream.models.MangaDetail
+import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.models.MangaSummary
+import com.paudinc.komastream.models.ReaderData
+import com.paudinc.komastream.models.ReaderPage
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.JavaNetCookieJar
@@ -8,15 +21,16 @@ import okhttp3.Request
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.net.CookieManager
 import java.net.CookiePolicy
 
-class InMangaService : MangaProvider {
+class InMangaProvider : MangaProvider {
     override val id: String = "inmanga-es"
     override val displayName: String = "InManga"
     override val language: AppLanguage = AppLanguage.ES
     override val websiteUrl: String = "https://inmanga.com"
-    override val logoUrl: String = "https://inmanga.com/favicon.ico"
+    override val logoUrl: String = "https://assets.intomanga.com/Content/img/OnMangaLogo.png"
     private val baseUrl = "https://inmanga.com"
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
@@ -286,13 +300,15 @@ class InMangaService : MangaProvider {
             ChapterSummary(
                 providerId = id,
                 mangaTitle = anchor.selectFirst("strong")?.text()?.trim().orEmpty(),
-                chapterLabel = anchor.selectFirst("small strong, .recent-chapter-container-footer strong")?.text().orEmpty(),
+                chapterLabel = anchor.selectFirst("small strong, .recent-chapter-container-footer strong")?.text()
+                    .orEmpty(),
                 chapterNumberUrl = parts.getOrNull(3).orEmpty(),
                 chapterId = parts.getOrNull(4).orEmpty(),
                 mangaPath = parts.take(3).joinToString("/", prefix = "/"),
                 chapterPath = chapterPath,
                 coverUrl = anchor.selectFirst("img")?.attr("abs:src").orEmpty(),
-                registrationLabel = anchor.selectFirst("[data-registrationdate]")?.attr("data-registrationdate").orEmpty(),
+                registrationLabel = anchor.selectFirst("[data-registrationdate]")?.attr("data-registrationdate")
+                    .orEmpty(),
             )
         }
     }
@@ -314,7 +330,7 @@ class InMangaService : MangaProvider {
         }
     }
 
-    private fun extractCheckboxLabel(document: Document, input: org.jsoup.nodes.Element): String {
+    private fun extractCheckboxLabel(document: Document, input: Element): String {
         val explicitLabel = input.id().takeIf { it.isNotBlank() }
             ?.let { document.selectFirst("label[for=$it]")?.text()?.trim() }
             .orEmpty()

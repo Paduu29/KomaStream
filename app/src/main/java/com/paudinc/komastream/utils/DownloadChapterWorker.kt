@@ -1,4 +1,4 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.utils
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

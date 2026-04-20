@@ -1,6 +1,9 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.utils
 
 import android.content.Context
+import com.paudinc.komastream.models.AppLanguage
+import com.paudinc.komastream.models.LibraryState
+import com.paudinc.komastream.models.SavedManga
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -28,7 +31,9 @@ class LibraryStore(context: Context) {
             useDarkTheme = prefs.getBoolean("useDarkTheme", false),
             autoJumpToUnread = prefs.getBoolean("autoJumpToUnread", true),
             selectedProviderId = selectedProviderId,
-            appLanguage = AppLanguage.valueOf(prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name),
+            appLanguage = AppLanguage.valueOf(
+                prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name
+            ),
         )
     }
 

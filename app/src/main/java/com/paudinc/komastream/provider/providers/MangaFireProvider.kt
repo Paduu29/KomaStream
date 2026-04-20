@@ -1,6 +1,19 @@
-package com.paudinc.komastream
+package com.paudinc.komastream.provider.providers
 
 import android.content.Context
+import com.paudinc.komastream.models.AppLanguage
+import com.paudinc.komastream.models.CatalogFilterOptions
+import com.paudinc.komastream.models.CatalogSearchResult
+import com.paudinc.komastream.models.CategoryOption
+import com.paudinc.komastream.models.ChapterSummary
+import com.paudinc.komastream.models.FilterOption
+import com.paudinc.komastream.models.HomeFeed
+import com.paudinc.komastream.models.MangaChapter
+import com.paudinc.komastream.models.MangaDetail
+import com.paudinc.komastream.utils.MangaFireWebViewResolver
+import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.models.MangaSummary
+import com.paudinc.komastream.models.ReaderData
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -8,6 +21,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.net.URLEncoder
 
 class MangaFireProvider(
     context: Context? = null,
@@ -273,7 +287,7 @@ class MangaFireProvider(
     }
 
     private fun String.urlEncode(): String =
-        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
+        URLEncoder.encode(this, Charsets.UTF_8.name())
 
     private data class MangaFireCard(
         val title: String,
