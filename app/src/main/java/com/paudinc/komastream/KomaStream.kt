@@ -515,7 +515,7 @@ fun KomaStream() {
         }
     }
 
-    fun openReader(providerId: String, path: String) {
+    fun openReader(providerId: String, path: String, replace: Boolean = false) {
         scope.launch {
             loading = true
             val provider = providerRegistry.get(providerId)
@@ -545,7 +545,12 @@ fun KomaStream() {
                         )
                     )
                     libraryState = libraryStore.read()
-                    pushScreen(Screen.Reader(providerId, path))
+                    val next = Screen.Reader(providerId, path)
+                    navigationStack = if (replace && navigationStack.lastOrNull() is Screen.Reader) {
+                        navigationStack.dropLast(1) + next
+                    } else {
+                        navigationStack + next
+                    }
                 }
                 .onFailure {
                     Log.e("KomaStream", "Could not open chapter $providerId:$path", it)
@@ -927,7 +932,7 @@ fun KomaStream() {
                                         downloadChapter(it.providerId, it.chapterPath)
                                     }
                                 },
-                                onOpenChapter = { chapterPath -> openReader(it.providerId, chapterPath) },
+                                onOpenChapter = { chapterPath -> openReader(it.providerId, chapterPath, replace = true) },
                                 onOpenManga = { detailPath -> openDetail(it.providerId, detailPath) },
                             )
                         }
