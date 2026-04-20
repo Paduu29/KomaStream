@@ -155,10 +155,29 @@ class InMangaService {
         val mangaDetailPath = controls.select(".chapterControlsContainer a.blue").attr("href").normalizePath()
         val chapterOptions = controls.select("#ChapList option")
         val selectedIndex = chapterOptions.indexOfFirst { it.hasAttr("selected") }
-        val previousChapterPath = chapterOptions.getOrNull(selectedIndex - 1)?.let {
+        val currentChapterValue = chapterOptions.getOrNull(selectedIndex)?.let { option ->
+            parseChapterNumber(option.text())
+        }
+        val chapterEntries = chapterOptions.mapIndexedNotNull { index, option ->
+            val chapterValue = parseChapterNumber(option.text()) ?: return@mapIndexedNotNull null
+            Triple(index, option, chapterValue)
+        }
+        val previousChapterPath = currentChapterValue?.let { currentValue ->
+            chapterEntries
+                .filter { (_, _, value) -> value < currentValue }
+                .maxByOrNull { (_, _, value) -> value }
+                ?.second
+                ?.let { buildChapterPath(mangaDetailPath, it.text(), it.attr("value")) }
+        } ?: chapterOptions.getOrNull(selectedIndex - 1)?.let {
             buildChapterPath(mangaDetailPath, it.text(), it.attr("value"))
         }
-        val nextChapterPath = chapterOptions.getOrNull(selectedIndex + 1)?.let {
+        val nextChapterPath = currentChapterValue?.let { currentValue ->
+            chapterEntries
+                .filter { (_, _, value) -> value > currentValue }
+                .minByOrNull { (_, _, value) -> value }
+                ?.second
+                ?.let { buildChapterPath(mangaDetailPath, it.text(), it.attr("value")) }
+        } ?: chapterOptions.getOrNull(selectedIndex + 1)?.let {
             buildChapterPath(mangaDetailPath, it.text(), it.attr("value"))
         }
         val pages = controls.select("#PageList option").map { option ->
