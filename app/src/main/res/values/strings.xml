@@ -79,6 +79,9 @@
     <string name="scroll_to_bottom">Scroll to bottom</string>
     <string name="language">Language</string>
     <string name="provider">Provider</string>
+    <string name="choose_provider">Choose provider</string>
+    <string name="choose_provider_description">Pick the manga source you want to browse. You can change it later from the logo in the top bar.</string>
+    <string name="open_provider_site">Open provider site</string>
     <string name="auto_jump_to_unread">Auto-jump to unread chapter</string>
     <string name="auto_jump_to_unread_enabled">Open manga at the next unread chapter when applicable.</string>
     <string name="auto_jump_to_unread_disabled">Always open manga at the top of the detail page.</string>

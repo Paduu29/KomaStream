@@ -1,5 +1,7 @@
 package com.paudinc.komastream
 
+import android.content.Context
+
 class ProviderRegistry(
     providers: List<MangaProvider>,
 ) {
@@ -18,8 +20,12 @@ class ProviderRegistry(
 }
 
 fun createDefaultProviderRegistry(): ProviderRegistry =
+    createDefaultProviderRegistry(context = null)
+
+fun createDefaultProviderRegistry(context: Context?): ProviderRegistry =
     ProviderRegistry(
         listOf(
             InMangaService(),
+            MangaFireProvider(context),
         )
     )

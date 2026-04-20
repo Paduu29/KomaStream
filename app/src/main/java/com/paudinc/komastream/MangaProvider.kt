@@ -4,6 +4,8 @@ interface MangaProvider {
     val id: String
     val displayName: String
     val language: AppLanguage
+    val websiteUrl: String
+    val logoUrl: String
 
     fun fetchHomeFeed(): HomeFeed
     fun fetchCatalogFilterOptions(): CatalogFilterOptions
@@ -19,5 +21,5 @@ interface MangaProvider {
 
     fun fetchMangaDetail(detailPath: String): MangaDetail
     fun fetchReaderData(chapterPath: String): ReaderData
-    fun downloadBytes(url: String, referer: String? = null): ByteArray
+    fun downloadBytes(url: String, referer: String?): ByteArray
 }

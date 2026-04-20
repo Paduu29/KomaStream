@@ -79,6 +79,9 @@
     <string name="scroll_to_bottom">Ir abajo</string>
     <string name="language">Idioma</string>
     <string name="provider">Proveedor</string>
+    <string name="choose_provider">Elegir proveedor</string>
+    <string name="choose_provider_description">Elige la fuente de manga que quieres usar. Puedes cambiarla luego desde el logo en la barra superior.</string>
+    <string name="open_provider_site">Abrir sitio del proveedor</string>
     <string name="auto_jump_to_unread">Saltar automaticamente al capítulo no leído</string>
     <string name="auto_jump_to_unread_enabled">Abre el manga en el siguiente capítulo no leído cuando corresponda.</string>
     <string name="auto_jump_to_unread_disabled">Abre siempre el manga al inicio de la pantalla de detalle.</string>

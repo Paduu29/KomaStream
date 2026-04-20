@@ -121,12 +121,20 @@ class LibraryStore(context: Context) {
         prefs.edit().putString("selectedProviderId", providerId).apply()
     }
 
+    fun hasSeenProviderPicker(): Boolean =
+        prefs.getBoolean("hasSeenProviderPicker", false)
+
+    fun setHasSeenProviderPicker(seen: Boolean) {
+        prefs.edit().putBoolean("hasSeenProviderPicker", seen).apply()
+    }
+
     fun exportBackup(): String {
         return JSONObject()
             .put("favorites", JSONArray(prefs.getString("favorites", "[]").orEmpty()))
             .put("reading", JSONArray(prefs.getString("reading", "[]").orEmpty()))
             .put("readChapters", JSONArray(prefs.getString("readChapters", "[]").orEmpty()))
             .put("readProgress", JSONObject(prefs.getString("readProgress", "{}").orEmpty()))
+            .put("chapterPageCounts", JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty()))
             .put("selectedProviderId", selectedProviderId())
             .toString()
     }
@@ -138,6 +146,7 @@ class LibraryStore(context: Context) {
             .putString("reading", json.optJSONArray("reading")?.toString() ?: "[]")
             .putString("readChapters", json.optJSONArray("readChapters")?.toString() ?: "[]")
             .putString("readProgress", json.optJSONObject("readProgress")?.toString() ?: "{}")
+            .putString("chapterPageCounts", json.optJSONObject("chapterPageCounts")?.toString() ?: "{}")
             .putString("selectedProviderId", json.optString("selectedProviderId").ifBlank { defaultProviderId })
             .apply()
     }
@@ -152,6 +161,19 @@ class LibraryStore(context: Context) {
     fun getChapterProgress(providerId: String, chapterPath: String): Int {
         if (chapterPath.isBlank()) return 0
         val json = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
+        return json.optInt(qualify(providerId, chapterPath), 0).coerceAtLeast(0)
+    }
+
+    fun saveChapterPageCount(providerId: String, chapterPath: String, pageCount: Int) {
+        if (chapterPath.isBlank() || pageCount <= 0) return
+        val json = JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty())
+        json.put(qualify(providerId, chapterPath), pageCount)
+        prefs.edit().putString("chapterPageCounts", json.toString()).apply()
+    }
+
+    fun getChapterPageCount(providerId: String, chapterPath: String): Int {
+        if (chapterPath.isBlank()) return 0
+        val json = JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty())
         return json.optInt(qualify(providerId, chapterPath), 0).coerceAtLeast(0)
     }
 
