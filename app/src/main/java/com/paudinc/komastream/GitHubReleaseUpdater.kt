@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -98,6 +99,35 @@ class GitHubReleaseUpdater(
                 }
             }
         }.getOrElse { UpdateCheckResult.Error(it.message ?: "Could not check for updates") }
+    }
+
+    suspend fun fetchReleaseHistory(limit: Int = 20): Result<List<GitHubRelease>> = withContext(Dispatchers.IO) {
+        if (!isEnabled()) return@withContext Result.success(emptyList())
+
+        runCatching {
+            val request = Request.Builder()
+                .url("https://api.github.com/repos/$releaseRepo/releases?per_page=$limit")
+                .header("Accept", "application/vnd.github+json")
+                .apply {
+                    if (releaseToken.isNotBlank()) {
+                        header("Authorization", "Bearer $releaseToken")
+                    }
+                }
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    error("GitHub release history failed with HTTP ${response.code}")
+                }
+
+                val json = JSONArray(response.body?.string().orEmpty())
+                buildList(json.length()) {
+                    for (index in 0 until json.length()) {
+                        parseRelease(json.optJSONObject(index) ?: continue)?.let(::add)
+                    }
+                }
+            }
+        }
     }
 
     suspend fun downloadRelease(
