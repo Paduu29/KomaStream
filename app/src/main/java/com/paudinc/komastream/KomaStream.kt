@@ -2,6 +2,7 @@
 
 package com.paudinc.komastream
 
+import android.app.Activity
 import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,6 +60,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -70,6 +72,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -113,6 +116,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -192,8 +196,9 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun MangaScraperApp() {
+fun KomaStream() {
     val context = LocalContext.current
+    val activity = context as? Activity
     val service = remember { InMangaService() }
     val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
@@ -225,6 +230,7 @@ fun MangaScraperApp() {
     var updateState by remember {
         mutableStateOf<AppUpdateUiState>(if (updater.isEnabled()) AppUpdateUiState.Idle else AppUpdateUiState.Disabled)
     }
+    var isUpdateDialogVisible by rememberSaveable { mutableStateOf(false) }
     val strings = appStrings()
 
     fun currentReleaseForUi(): GitHubRelease? = when (val state = updateState) {
@@ -238,11 +244,19 @@ fun MangaScraperApp() {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
+    suspend fun showTransientSnackbar(message: String) {
+        snackbarHostState.currentSnackbarData?.dismiss()
+        snackbarHostState.showSnackbar(
+            message = message,
+            duration = androidx.compose.material3.SnackbarDuration.Short,
+        )
+    }
+
     fun openSettings() {
         navigationStack = navigationStack + Screen.Settings
     }
 
-    fun checkForUpdates(notifyIfCurrent: Boolean = false, showStartupToast: Boolean = false) {
+    fun checkForUpdates(notifyIfCurrent: Boolean = false, openDialogOnUpdate: Boolean = false) {
         if (!updater.isEnabled()) {
             updateState = AppUpdateUiState.Disabled
             return
@@ -259,12 +273,8 @@ fun MangaScraperApp() {
                 }
                 is UpdateCheckResult.UpdateAvailable -> {
                     updateState = AppUpdateUiState.Available(result.release)
-                    if (showStartupToast) {
-                        Toast.makeText(
-                            context,
-                            strings.updateAvailableLabel(result.release.versionLabel),
-                            Toast.LENGTH_LONG
-                        ).show()
+                    if (openDialogOnUpdate) {
+                        isUpdateDialogVisible = true
                     } else {
                         val action = snackbarHostState.showSnackbar(
                             message = strings.updateAvailableLabel(result.release.versionLabel),
@@ -294,7 +304,8 @@ fun MangaScraperApp() {
                 }
             }.onSuccess { file ->
                 updateState = AppUpdateUiState.Downloaded(release, file)
-                snackbarHostState.showSnackbar(strings.updateDownloadStarted)
+                isUpdateDialogVisible = true
+                showTransientSnackbar(strings.updateDownloadStarted)
             }.onFailure {
                 updateState = AppUpdateUiState.Available(release)
                 showError(it.message ?: strings.couldNotDownloadChapter)
@@ -508,7 +519,7 @@ fun MangaScraperApp() {
 
     LaunchedEffect(Unit) {
         refreshHome()
-        checkForUpdates(showStartupToast = true)
+        checkForUpdates(openDialogOnUpdate = true)
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { service.fetchCatalogFilterOptions() } }
                 .onSuccess {
@@ -559,10 +570,12 @@ fun MangaScraperApp() {
         }
     }
 
-    BackHandler(
-        enabled = screen !is Screen.Root || (screen is Screen.Root && (screen as Screen.Root).tab != RootTab.Home)
-    ) {
-        goBack()
+    BackHandler(enabled = true) {
+        if (screen is Screen.Root && screen.tab == RootTab.Home) {
+            activity?.finishAndRemoveTask()
+        } else {
+            goBack()
+        }
     }
 
     val lightScheme = lightColorScheme(
@@ -707,7 +720,6 @@ fun MangaScraperApp() {
                                 downloadedChapters = downloadedChapterPaths,
                                 downloadProgress = downloadProgress,
                                 onToggleFavorite = {
-                                    val wasFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath }
                                     val currentReading = libraryState.reading.firstOrNull { item -> item.detailPath == detail.detailPath }
                                     libraryStore.toggleFavorite(
                                         SavedManga(
@@ -720,19 +732,14 @@ fun MangaScraperApp() {
                                     )
                                     libraryState = libraryStore.read()
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (wasFavorite) strings.removedFromFavorites else strings.addedToFavorites
-                                        )
+                                        showTransientSnackbar(strings.favoritesUpdated)
                                     }
                                 },
                                 onToggleChapterRead = { chapterPath ->
-                                    val wasRead = libraryState.readChapters.contains(chapterPath)
                                     libraryStore.toggleChapterRead(chapterPath)
                                     libraryState = libraryStore.read()
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (wasRead) strings.markedAsUnread else strings.markedAsRead
-                                        )
+                                        showTransientSnackbar(strings.updatedReadStatus)
                                     }
                                 },
                                 onSetAllChaptersRead = { read ->
@@ -740,7 +747,7 @@ fun MangaScraperApp() {
                                     libraryStore.setChaptersRead(paths, read)
                                     libraryState = libraryStore.read()
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
+                                        showTransientSnackbar(
                                             if (read) strings.allChaptersRead else strings.allChaptersUnread
                                         )
                                     }
@@ -752,7 +759,7 @@ fun MangaScraperApp() {
                                     libraryStore.setChaptersRead(paths, read)
                                     libraryState = libraryStore.read()
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(strings.markedUntilChapter(chapterNumber, read))
+                                        showTransientSnackbar(strings.markedUntilChapter(chapterNumber, read))
                                     }
                                 },
                                 onToggleChapterDownload = { chapterPath, isDownloaded ->
@@ -804,7 +811,7 @@ fun MangaScraperApp() {
                                 exportBackupLauncher.launch(defaultBackupFileName())
                             },
                             onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
-                            onCheckForUpdates = { checkForUpdates(notifyIfCurrent = true) },
+                            onCheckForUpdates = { checkForUpdates(notifyIfCurrent = true, openDialogOnUpdate = true) },
                             onDownloadUpdate = {
                                 currentReleaseForUi()?.let(::downloadUpdate)
                             },
@@ -828,10 +835,103 @@ fun MangaScraperApp() {
                             CircularProgressIndicator(color = Color.White)
                         }
                     }
+
+                    if (isUpdateDialogVisible) {
+                        UpdateAvailableDialog(
+                            strings = strings,
+                            updateState = updateState,
+                            onDismiss = { isUpdateDialogVisible = false },
+                            onDownloadUpdate = { currentReleaseForUi()?.let(::downloadUpdate) },
+                            onInstallUpdate = {
+                                val downloaded = updateState as? AppUpdateUiState.Downloaded
+                                if (downloaded != null) {
+                                    installDownloadedUpdate(downloaded.file)
+                                }
+                            },
+                            onOpenReleasePage = { currentReleaseForUi()?.let(updater::openReleasePage) },
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun UpdateAvailableDialog(
+    strings: AppStrings,
+    updateState: AppUpdateUiState,
+    onDismiss: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onOpenReleasePage: () -> Unit,
+) {
+    val release = when (updateState) {
+        is AppUpdateUiState.Available -> updateState.release
+        is AppUpdateUiState.Downloading -> updateState.release
+        is AppUpdateUiState.Downloaded -> updateState.release
+        else -> null
+    } ?: return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true),
+        title = { Text(strings.updateDialogTitle) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = strings.updateDialogMessage(release.versionLabel),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                when (updateState) {
+                    is AppUpdateUiState.Downloading -> {
+                        Text(
+                            text = "${updateState.progressPercent}% ${strings.downloading.lowercase()}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        LinearProgressIndicator(
+                            progress = { updateState.progressPercent / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    is AppUpdateUiState.Downloaded -> {
+                        Text(
+                            text = strings.updateDownloadStarted,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    else -> Unit
+                }
+                if (release.body.isNotBlank()) {
+                    Text(
+                        text = strings.releaseNotes,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = release.body,
+                        maxLines = 10,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            when (updateState) {
+                is AppUpdateUiState.Available -> Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
+                is AppUpdateUiState.Downloaded -> Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
+                is AppUpdateUiState.Downloading -> Button(onClick = {}, enabled = false) { Text(strings.downloading) }
+                else -> Unit
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                Button(onClick = onDismiss) { Text(strings.dismiss) }
+            }
+        },
+    )
 }
 
 @Composable

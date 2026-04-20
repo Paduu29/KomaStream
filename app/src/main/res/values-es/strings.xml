@@ -70,6 +70,11 @@
     <string name="update_install_permission_required">Permite instalaciones desde esta app y luego pulsa instalar otra vez.</string>
     <string name="release_page">Página de la versión</string>
     <string name="updater_not_configured">GitHub Releases no está configurado para esta compilación.</string>
+    <string name="update_dialog_title">Actualización lista</string>
+    <string name="update_dialog_message">La versión %1$s está disponible para descargar.</string>
+    <string name="dismiss">Cerrar</string>
+    <string name="updated_read_status">Estado de lectura actualizado</string>
+    <string name="favorites_updated">Favoritos actualizados</string>
     <string name="scroll_to_top">Ir arriba</string>
     <string name="scroll_to_bottom">Ir abajo</string>
     <string name="language">Idioma</string>

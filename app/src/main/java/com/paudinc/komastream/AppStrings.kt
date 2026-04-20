@@ -70,6 +70,11 @@ data class AppStrings(
     val updateInstallPermissionRequired: String,
     val releasePage: String,
     val updaterNotConfigured: String,
+    val updateDialogTitle: String,
+    val updateDialogMessage: String,
+    val dismiss: String,
+    val updatedReadStatus: String,
+    val favoritesUpdated: String,
     val scrollToTop: String,
     val scrollToBottom: String,
     val languageLabel: String,
@@ -119,6 +124,7 @@ data class AppStrings(
     fun noChaptersFound(query: String) = noChaptersFoundTemplate.format(query)
     fun currentVersionLabel(version: String) = currentVersion.format(version)
     fun updateAvailableLabel(version: String) = updateAvailable.format(version)
+    fun updateDialogMessage(version: String) = updateDialogMessage.format(version)
     fun markedUntilChapter(number: Double, read: Boolean) =
         if (read) markedUntilReadTemplate.format(number)
         else markedUntilUnreadTemplate.format(number)
@@ -193,6 +199,11 @@ fun appStrings(): AppStrings {
         updateInstallPermissionRequired = stringResource(R.string.update_install_permission_required),
         releasePage = stringResource(R.string.release_page),
         updaterNotConfigured = stringResource(R.string.updater_not_configured),
+        updateDialogTitle = stringResource(R.string.update_dialog_title),
+        updateDialogMessage = stringResource(R.string.update_dialog_message),
+        dismiss = stringResource(R.string.dismiss),
+        updatedReadStatus = stringResource(R.string.updated_read_status),
+        favoritesUpdated = stringResource(R.string.favorites_updated),
         scrollToTop = stringResource(R.string.scroll_to_top),
         scrollToBottom = stringResource(R.string.scroll_to_bottom),
         languageLabel = stringResource(R.string.language),
