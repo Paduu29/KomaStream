@@ -9,8 +9,15 @@ def envOrNull = { String name ->
     return (value != null && !value.trim().isEmpty()) ? value : null
 }
 
+def asBuildConfigString = { String value ->
+    return "\"${(value ?: "").replace("\\", "\\\\").replace("\"", "\\\"")}\""
+}
+
 def ciVersionCode = envOrNull("VERSION_CODE")?.toInteger()
 def ciVersionName = envOrNull("VERSION_NAME")
+def githubReleaseRepo = envOrNull("GITHUB_RELEASE_REPO") ?: envOrNull("GITHUB_REPOSITORY") ?: "Paduu29/KomaStream"
+def githubReleaseAssetPattern = envOrNull("GITHUB_RELEASE_ASSET_PATTERN") ?: '.*\\.apk$'
+def githubReleaseToken = envOrNull("GITHUB_RELEASE_TOKEN")
 
 def keystorePath = envOrNull("ANDROID_KEYSTORE_PATH")
 def keystorePassword = envOrNull("ANDROID_KEYSTORE_PASSWORD")
@@ -24,11 +31,14 @@ android {
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.paudinc.mangascraper"
+        applicationId "com.paudinc.komastream"
         minSdk 24
         targetSdk 34
         versionCode ciVersionCode ?: 1
         versionName ciVersionName ?: "1.1"
+        buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
+        buildConfigField "String", "GITHUB_RELEASE_ASSET_PATTERN", asBuildConfigString(githubReleaseAssetPattern)
+        buildConfigField "String", "GITHUB_RELEASE_TOKEN", asBuildConfigString(githubReleaseToken)
     }
 
     signingConfigs {
@@ -57,6 +67,7 @@ android {
 
     buildFeatures {
         compose true
+        buildConfig true
     }
 
     compileOptions {

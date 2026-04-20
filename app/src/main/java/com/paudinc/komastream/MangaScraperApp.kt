@@ -123,6 +123,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -191,6 +192,7 @@ fun MangaScraperApp() {
     val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
+    val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var navigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
@@ -214,10 +216,86 @@ fun MangaScraperApp() {
     var readerData by remember { mutableStateOf<ReaderData?>(null) }
     var readerInitialPageIndex by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
+    var updateState by remember {
+        mutableStateOf<AppUpdateUiState>(if (updater.isEnabled()) AppUpdateUiState.Idle else AppUpdateUiState.Disabled)
+    }
     val strings = appStrings()
+
+    fun currentReleaseForUi(): GitHubRelease? = when (val state = updateState) {
+        is AppUpdateUiState.Available -> state.release
+        is AppUpdateUiState.Downloading -> state.release
+        is AppUpdateUiState.Downloaded -> state.release
+        else -> null
+    }
 
     fun showError(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    fun openSettings() {
+        navigationStack = navigationStack + Screen.Settings
+    }
+
+    fun checkForUpdates(notifyIfCurrent: Boolean = false) {
+        if (!updater.isEnabled()) {
+            updateState = AppUpdateUiState.Disabled
+            return
+        }
+        scope.launch {
+            updateState = AppUpdateUiState.Checking
+            when (val result = updater.checkForUpdate()) {
+                UpdateCheckResult.Disabled -> updateState = AppUpdateUiState.Disabled
+                UpdateCheckResult.NoUpdate -> {
+                    updateState = AppUpdateUiState.UpToDate(BuildConfig.VERSION_NAME)
+                    if (notifyIfCurrent) {
+                        snackbarHostState.showSnackbar(strings.noUpdateAvailable)
+                    }
+                }
+                is UpdateCheckResult.UpdateAvailable -> {
+                    updateState = AppUpdateUiState.Available(result.release)
+                    val action = snackbarHostState.showSnackbar(
+                        message = strings.updateAvailableLabel(result.release.versionLabel),
+                        actionLabel = strings.settings,
+                    )
+                    if (action == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                        openSettings()
+                    }
+                }
+                is UpdateCheckResult.Error -> {
+                    updateState = AppUpdateUiState.Error(result.message)
+                    if (notifyIfCurrent) {
+                        showError(result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    fun downloadUpdate(release: GitHubRelease) {
+        scope.launch {
+            updateState = AppUpdateUiState.Downloading(release, 0)
+            runCatching {
+                updater.downloadRelease(release) { progress ->
+                    updateState = AppUpdateUiState.Downloading(release, progress)
+                }
+            }.onSuccess { file ->
+                updateState = AppUpdateUiState.Downloaded(release, file)
+                snackbarHostState.showSnackbar(strings.updateDownloadStarted)
+            }.onFailure {
+                updateState = AppUpdateUiState.Available(release)
+                showError(it.message ?: strings.couldNotDownloadChapter)
+            }
+        }
+    }
+
+    fun installDownloadedUpdate(file: File) {
+        when (updater.installDownloadedUpdate(file)) {
+            InstallUpdateResult.Started -> Unit
+            InstallUpdateResult.PermissionRequired -> scope.launch {
+                snackbarHostState.showSnackbar(strings.updateInstallPermissionRequired)
+            }
+            InstallUpdateResult.Failed -> showError(strings.couldNotDownloadChapter)
+        }
     }
 
     fun refreshOfflineDownloads() {
@@ -414,12 +492,9 @@ fun MangaScraperApp() {
         }
     }
 
-    fun openSettings() {
-        pushScreen(Screen.Settings)
-    }
-
     LaunchedEffect(Unit) {
         refreshHome()
+        checkForUpdates()
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { service.fetchCatalogFilterOptions() } }
                 .onSuccess {
@@ -695,6 +770,8 @@ fun MangaScraperApp() {
                             strings = strings,
                             appLanguage = libraryState.appLanguage,
                             useDarkTheme = libraryState.useDarkTheme,
+                            versionName = BuildConfig.VERSION_NAME,
+                            updateState = updateState,
                             onLanguageChange = { language ->
                                 libraryStore.setAppLanguage(language)
                                 val languageTag = if (language == AppLanguage.ES) "es" else "en"
@@ -709,6 +786,19 @@ fun MangaScraperApp() {
                                 exportBackupLauncher.launch(defaultBackupFileName())
                             },
                             onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                            onCheckForUpdates = { checkForUpdates(notifyIfCurrent = true) },
+                            onDownloadUpdate = {
+                                currentReleaseForUi()?.let(::downloadUpdate)
+                            },
+                            onInstallUpdate = {
+                                val downloaded = updateState as? AppUpdateUiState.Downloaded
+                                if (downloaded != null) {
+                                    installDownloadedUpdate(downloaded.file)
+                                }
+                            },
+                            onOpenReleasePage = {
+                                currentReleaseForUi()?.let(updater::openReleasePage)
+                            },
                         )
                     }
 
@@ -1303,16 +1393,73 @@ private fun SettingsScreen(
     strings: AppStrings,
     appLanguage: AppLanguage,
     useDarkTheme: Boolean,
+    versionName: String,
+    updateState: AppUpdateUiState,
     onLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onOpenReleasePage: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            ElevatedCard(
+                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.updates, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(strings.currentVersionLabel(versionName), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    when (val state = updateState) {
+                        AppUpdateUiState.Disabled -> {
+                            Text(strings.updaterNotConfigured, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
+                        }
+                        AppUpdateUiState.Idle -> {
+                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
+                        }
+                        AppUpdateUiState.Checking -> {
+                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
+                            CircularProgressIndicator()
+                        }
+                        is AppUpdateUiState.UpToDate -> {
+                            Text(strings.noUpdateAvailable, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
+                        }
+                        is AppUpdateUiState.Error -> {
+                            Text(state.message, color = MaterialTheme.colorScheme.error)
+                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
+                        }
+                        is AppUpdateUiState.Available -> {
+                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
+                            Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
+                            Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                            if (state.release.body.isNotBlank()) {
+                                Text(strings.releaseNotes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(state.release.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        is AppUpdateUiState.Downloading -> {
+                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
+                            Text("${state.progressPercent}% ${strings.downloading.lowercase()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            CircularProgressIndicator(progress = { state.progressPercent / 100f })
+                        }
+                        is AppUpdateUiState.Downloaded -> {
+                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
+                            Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
+                            Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                        }
+                    }
+                }
+            }
+        }
         item {
             ElevatedCard(
                 modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
