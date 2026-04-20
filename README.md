@@ -110,7 +110,113 @@ Network requests are performed directly between the user’s device and third-pa
 ```bash
 sh gradlew :app:assembleDebug
 ```
-Project Status
+# Contributing & Setup
+
+## Getting Started
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/Paduu29/KomaStream.git
+cd KomaStream
+```
+
+### Open in Android Studio
+
+1. Open Android Studio  
+2. Select **Open**  
+3. Choose the cloned `KomaStream` directory  
+4. Let Gradle sync complete  
+
+---
+
+## Building the App
+
+### Debug Build (CLI)
+
+```bash
+./gradlew :app:assembleDebug
+```
+
+The generated APK will be located at:
+
+```
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Run on Device / Emulator
+
+- Connect an Android device with USB debugging enabled  
+  **or**
+- Start an emulator via Android Studio  
+
+Then press **Run** in Android Studio.
+
+---
+
+## Contributing
+
+Contributions are welcome, but must align with the project's scope and legal constraints.
+
+### Guidelines
+
+- Do not add or integrate sources that provide unauthorized or infringing content  
+- Keep changes focused and well-scoped  
+- Follow existing code style and architecture  
+- Test changes before submitting  
+
+### Creating a Pull Request
+
+1. Fork the repository  
+2. Create a new branch:
+
+```bash
+git checkout -b feature/your-feature-name
+```
+
+3. Make your changes  
+4. Commit with clear messages:
+
+```bash
+git commit -m "Add: short description of changes"
+```
+
+5. Push to your fork:
+
+```bash
+git push origin feature/your-feature-name
+```
+
+6. Open a Pull Request on GitHub  
+
+### Pull Request Requirements
+
+- Clear description of what was changed and why  
+- Screenshots or recordings for UI changes (if applicable)  
+- No unrelated changes bundled together  
+- Must not introduce legal or policy risks  
+
+---
+
+## Reporting Issues
+
+If you encounter bugs or have suggestions:
+
+- Open an issue on GitHub  
+- Provide clear steps to reproduce  
+- Include logs or screenshots if relevant  
+
+---
+
+## Code of Conduct
+
+By contributing, you agree to:
+
+- Act respectfully and constructively  
+- Avoid submitting harmful, illegal, or policy-violating code  
+- Follow project guidelines and maintain code quality  
+
+## Project Status
 
 KomaStream is an actively maintained personal Android project.
 Functionality and integrations may change over time.
