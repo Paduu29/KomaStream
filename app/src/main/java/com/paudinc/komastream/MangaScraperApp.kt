@@ -239,7 +239,7 @@ fun MangaScraperApp() {
         navigationStack = navigationStack + Screen.Settings
     }
 
-    fun checkForUpdates(notifyIfCurrent: Boolean = false) {
+    fun checkForUpdates(notifyIfCurrent: Boolean = false, showStartupToast: Boolean = false) {
         if (!updater.isEnabled()) {
             updateState = AppUpdateUiState.Disabled
             return
@@ -256,12 +256,20 @@ fun MangaScraperApp() {
                 }
                 is UpdateCheckResult.UpdateAvailable -> {
                     updateState = AppUpdateUiState.Available(result.release)
-                    val action = snackbarHostState.showSnackbar(
-                        message = strings.updateAvailableLabel(result.release.versionLabel),
-                        actionLabel = strings.settings,
-                    )
-                    if (action == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                        openSettings()
+                    if (showStartupToast) {
+                        Toast.makeText(
+                            context,
+                            strings.updateAvailableLabel(result.release.versionLabel),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        val action = snackbarHostState.showSnackbar(
+                            message = strings.updateAvailableLabel(result.release.versionLabel),
+                            actionLabel = strings.settings,
+                        )
+                        if (action == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            openSettings()
+                        }
                     }
                 }
                 is UpdateCheckResult.Error -> {
@@ -497,7 +505,7 @@ fun MangaScraperApp() {
 
     LaunchedEffect(Unit) {
         refreshHome()
-        checkForUpdates()
+        checkForUpdates(showStartupToast = true)
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { service.fetchCatalogFilterOptions() } }
                 .onSuccess {
