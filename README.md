@@ -4,6 +4,8 @@ KomaStream is an Android manga reader client focused on browsing, tracking, and 
 
 The app is a client interface. It does not host, upload, store, or redistribute the source catalog or chapter content it displays at runtime.
 
+Copyright (C) 2026 Paduu29
+
 ## Overview
 
 KomaStream provides a native Android interface for:
@@ -89,4 +91,4 @@ KomaStream is an actively maintained personal Android project. The codebase may 
 
 ## License
 
-This repository is currently distributed under the license included in [LICENSE](LICENSE).
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).

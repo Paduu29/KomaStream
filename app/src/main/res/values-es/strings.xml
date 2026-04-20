@@ -70,6 +70,8 @@
     <string name="update_install_permission_required">Permite instalaciones desde esta app y luego pulsa instalar otra vez.</string>
     <string name="release_page">Página de la versión</string>
     <string name="updater_not_configured">GitHub Releases no está configurado para esta compilación.</string>
+    <string name="scroll_to_top">Ir arriba</string>
+    <string name="scroll_to_bottom">Ir abajo</string>
     <string name="language">Idioma</string>
     <string name="english">Inglés</string>
     <string name="spanish">Español</string>
