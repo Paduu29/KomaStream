@@ -32,7 +32,7 @@ class MainActivity : AppCompatActivity() {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
-            MangaScraperApp()
+            KomaStream()
         }
     }
 }
