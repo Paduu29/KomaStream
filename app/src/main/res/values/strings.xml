@@ -66,6 +66,10 @@
     <string name="download_update">Download update</string>
     <string name="install_update">Install update</string>
     <string name="release_notes">Release notes</string>
+    <string name="full_changelog">Full changelog</string>
+    <string name="load_changelog">View full changelog</string>
+    <string name="loading_changelog">Loading changelog...</string>
+    <string name="changelog_unavailable">Could not load changelog.</string>
     <string name="update_download_started">Update downloaded. Tap install to continue.</string>
     <string name="update_install_permission_required">Allow installs from this app, then tap install again.</string>
     <string name="release_page">Release page</string>
