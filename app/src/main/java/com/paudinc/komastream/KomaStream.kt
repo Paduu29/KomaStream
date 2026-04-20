@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
@@ -670,7 +671,26 @@ fun KomaStream() {
                     when (val current = screen) {
                         is Screen.Root -> when (current.tab) {
                             RootTab.Home -> HomeScreen(homeFeed, strings, ::openDetail, ::openReader)
-                            RootTab.Library -> LibraryScreen(libraryState, strings, ::openDetail, ::openReader)
+                            RootTab.Library -> LibraryScreen(
+                                libraryState = libraryState,
+                                strings = strings,
+                                onOpenManga = ::openDetail,
+                                onOpenChapter = ::openReader,
+                                onRemoveFromContinueReading = { saved ->
+                                    libraryStore.removeReading(saved.detailPath)
+                                    libraryState = libraryStore.read()
+                                    scope.launch {
+                                        showTransientSnackbar(strings.removedFromContinueReading)
+                                    }
+                                },
+                                onRemoveFromFavorites = { saved ->
+                                    libraryStore.removeFavorite(saved.detailPath)
+                                    libraryState = libraryStore.read()
+                                    scope.launch {
+                                        showTransientSnackbar(strings.removedFromFavorites)
+                                    }
+                                },
+                            )
                             RootTab.Catalog -> CatalogScreen(
                                 strings,
                                 catalogQuery,
@@ -959,7 +979,14 @@ private fun HomeScreen(feed: HomeFeed?, strings: AppStrings, onOpenManga: (Strin
 }
 
 @Composable
-private fun LibraryScreen(libraryState: LibraryState, strings: AppStrings, onOpenManga: (String) -> Unit, onOpenChapter: (String) -> Unit) {
+private fun LibraryScreen(
+    libraryState: LibraryState,
+    strings: AppStrings,
+    onOpenManga: (String) -> Unit,
+    onOpenChapter: (String) -> Unit,
+    onRemoveFromContinueReading: (SavedManga) -> Unit,
+    onRemoveFromFavorites: (SavedManga) -> Unit,
+) {
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.ContinueReading) }
 
     LazyColumn(
@@ -1002,6 +1029,7 @@ private fun LibraryScreen(libraryState: LibraryState, strings: AppStrings, onOpe
                             manga = saved,
                             strings = strings,
                             onOpen = { onOpenManga(saved.detailPath) },
+                            onRemove = { onRemoveFromFavorites(saved) },
                         )
                     }
                 }
@@ -1022,7 +1050,10 @@ private fun LibraryScreen(libraryState: LibraryState, strings: AppStrings, onOpe
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(cardBorder(), RoundedCornerShape(22.dp))
-                                .clickable { onOpenManga(saved.detailPath) },
+                                .combinedClickable(
+                                    onClick = { onOpenManga(saved.detailPath) },
+                                    onLongClick = { onRemoveFromContinueReading(saved) },
+                                ),
                             shape = RoundedCornerShape(22.dp),
                         ) {
                             Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1041,6 +1072,9 @@ private fun LibraryScreen(libraryState: LibraryState, strings: AppStrings, onOpe
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
+                                }
+                                IconButton(onClick = { onRemoveFromContinueReading(saved) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
                                 }
                                 Button(onClick = { if (saved.lastChapterPath.isNotBlank()) onOpenChapter(saved.lastChapterPath) }) {
                                     Icon(Icons.Default.PlayArrow, contentDescription = null)
@@ -2018,12 +2052,16 @@ private fun FavoriteMangaCard(
     manga: SavedManga,
     strings: AppStrings,
     onOpen: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .border(cardBorder(), RoundedCornerShape(24.dp))
-            .clickable(onClick = onOpen),
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = onRemove,
+            ),
         shape = RoundedCornerShape(24.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2061,6 +2099,9 @@ private fun FavoriteMangaCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, contentDescription = strings.removeFromFavorites)
             }
         }
     }

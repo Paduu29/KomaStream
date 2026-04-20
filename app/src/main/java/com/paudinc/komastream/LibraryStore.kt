@@ -24,11 +24,21 @@ class LibraryStore(context: Context) {
         prefs.edit().putString("favorites", serialize(current)).apply()
     }
 
+    fun removeFavorite(detailPath: String) {
+        val current = read().favorites.filterNot { it.detailPath == detailPath }
+        prefs.edit().putString("favorites", serialize(current)).apply()
+    }
+
     fun upsertReading(manga: SavedManga) {
         val current = read().reading.toMutableList()
         current.removeAll { it.detailPath == manga.detailPath }
         current.add(0, manga)
         prefs.edit().putString("reading", serialize(current.take(20))).apply()
+    }
+
+    fun removeReading(detailPath: String) {
+        val current = read().reading.filterNot { it.detailPath == detailPath }
+        prefs.edit().putString("reading", serialize(current)).apply()
     }
 
     fun isFavorite(detailPath: String): Boolean {
