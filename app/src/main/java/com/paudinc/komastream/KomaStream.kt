@@ -16,6 +16,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -235,6 +238,10 @@ fun KomaStream() {
         mutableStateOf<AppUpdateUiState>(if (updater.isEnabled()) AppUpdateUiState.Idle else AppUpdateUiState.Disabled)
     }
     var isUpdateDialogVisible by rememberSaveable { mutableStateOf(false) }
+    var isChangelogDialogVisible by rememberSaveable { mutableStateOf(false) }
+    var changelogEntries by remember { mutableStateOf<List<GitHubRelease>>(emptyList()) }
+    var isLoadingChangelog by remember { mutableStateOf(false) }
+    var changelogError by remember { mutableStateOf<String?>(null) }
     val strings = appStrings()
 
     fun currentReleaseForUi(): GitHubRelease? = when (val state = updateState) {
@@ -258,6 +265,18 @@ fun KomaStream() {
 
     fun openSettings() {
         navigationStack = navigationStack + Screen.Settings
+    }
+
+    fun loadChangelogHistory() {
+        if (isLoadingChangelog) return
+        scope.launch {
+            isLoadingChangelog = true
+            changelogError = null
+            updater.fetchReleaseHistory()
+                .onSuccess { changelogEntries = it }
+                .onFailure { changelogError = it.message ?: strings.changelogUnavailable }
+            isLoadingChangelog = false
+        }
     }
 
     fun checkForUpdates(notifyIfCurrent: Boolean = false, openDialogOnUpdate: Boolean = false) {
@@ -853,6 +872,10 @@ fun KomaStream() {
                             onOpenReleasePage = {
                                 currentReleaseForUi()?.let(updater::openReleasePage)
                             },
+                            onOpenFullChangelog = {
+                                isChangelogDialogVisible = true
+                                loadChangelogHistory()
+                            },
                         )
                     }
 
@@ -880,6 +903,16 @@ fun KomaStream() {
                             onOpenReleasePage = { currentReleaseForUi()?.let(updater::openReleasePage) },
                         )
                     }
+
+                    if (isChangelogDialogVisible) {
+                        ReleaseHistoryDialog(
+                            strings = strings,
+                            releases = changelogEntries,
+                            isLoading = isLoadingChangelog,
+                            errorMessage = changelogError,
+                            onDismiss = { isChangelogDialogVisible = false },
+                        )
+                    }
                 }
             }
         }
@@ -901,13 +934,20 @@ private fun UpdateAvailableDialog(
         is AppUpdateUiState.Downloaded -> updateState.release
         else -> null
     } ?: return
+    val scrollState = rememberScrollState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true),
         title = { Text(strings.updateDialogTitle) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(
                     text = strings.updateDialogMessage(release.versionLabel),
                     style = MaterialTheme.typography.bodyLarge,
@@ -939,8 +979,6 @@ private fun UpdateAvailableDialog(
                     )
                     Text(
                         text = release.body,
-                        maxLines = 10,
-                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -959,6 +997,68 @@ private fun UpdateAvailableDialog(
                 Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
                 Button(onClick = onDismiss) { Text(strings.dismiss) }
             }
+        },
+    )
+}
+
+@Composable
+private fun ReleaseHistoryDialog(
+    strings: AppStrings,
+    releases: List<GitHubRelease>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+) {
+    val scrollState = rememberScrollState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true),
+        title = { Text(strings.fullChangelog) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                when {
+                    isLoading -> {
+                        Text(strings.loadingChangelog, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        CircularProgressIndicator()
+                    }
+                    errorMessage != null -> {
+                        Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                    }
+                    releases.isEmpty() -> {
+                        Text(strings.changelogUnavailable, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    else -> {
+                        releases.forEachIndexed { index, release ->
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(release.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                if (release.publishedAt.isNotBlank()) {
+                                    Text(
+                                        formatDateEu(release.publishedAt),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                if (release.body.isNotBlank()) {
+                                    Text(release.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (index != releases.lastIndex) {
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) { Text(strings.dismiss) }
         },
     )
 }
@@ -1609,6 +1709,7 @@ private fun SettingsScreen(
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit,
     onOpenReleasePage: () -> Unit,
+    onOpenFullChangelog: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1663,6 +1764,7 @@ private fun SettingsScreen(
                             Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
                         }
                     }
+                    Button(onClick = onOpenFullChangelog) { Text(strings.loadChangelog) }
                 }
             }
         }

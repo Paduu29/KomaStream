@@ -66,6 +66,10 @@
     <string name="download_update">Descargar actualización</string>
     <string name="install_update">Instalar actualización</string>
     <string name="release_notes">Notas de la versión</string>
+    <string name="full_changelog">Historial completo de cambios</string>
+    <string name="load_changelog">Ver historial completo</string>
+    <string name="loading_changelog">Cargando historial...</string>
+    <string name="changelog_unavailable">No se pudo cargar el historial.</string>
     <string name="update_download_started">Actualización descargada. Pulsa instalar para continuar.</string>
     <string name="update_install_permission_required">Permite instalaciones desde esta app y luego pulsa instalar otra vez.</string>
     <string name="release_page">Página de la versión</string>
