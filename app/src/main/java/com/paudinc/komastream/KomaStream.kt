@@ -149,8 +149,8 @@ private enum class CatalogMode { Basic, Advanced }
 
 private sealed interface Screen {
     data class Root(val tab: RootTab) : Screen
-    data class Detail(val detailPath: String) : Screen
-    data class Reader(val chapterPath: String) : Screen
+    data class Detail(val providerId: String, val detailPath: String) : Screen
+    data class Reader(val providerId: String, val chapterPath: String) : Screen
     data object Settings : Screen
 }
 
@@ -158,16 +158,16 @@ private val ScreenSaver = Saver<Screen, List<String>>(
     save = { screen ->
         when (screen) {
             is Screen.Root -> listOf("root", screen.tab.name)
-            is Screen.Detail -> listOf("detail", screen.detailPath)
-            is Screen.Reader -> listOf("reader", screen.chapterPath)
+            is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
+            is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
             Screen.Settings -> listOf("settings")
         }
     },
     restore = { saved ->
         when (saved.firstOrNull()) {
             "root" -> Screen.Root(RootTab.valueOf(saved.getOrElse(1) { RootTab.Home.name }))
-            "detail" -> Screen.Detail(saved.getOrElse(1) { "/" })
-            "reader" -> Screen.Reader(saved.getOrElse(1) { "/" })
+            "detail" -> Screen.Detail(saved.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, saved.getOrElse(2) { "/" })
+            "reader" -> Screen.Reader(saved.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, saved.getOrElse(2) { "/" })
             "settings" -> Screen.Settings
             else -> Screen.Root(RootTab.Home)
         }
@@ -179,8 +179,8 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
         stack.map { screen ->
             when (screen) {
                 is Screen.Root -> listOf("root", screen.tab.name)
-                is Screen.Detail -> listOf("detail", screen.detailPath)
-                is Screen.Reader -> listOf("reader", screen.chapterPath)
+                is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
+                is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
                 Screen.Settings -> listOf("settings")
             }
         }
@@ -189,8 +189,8 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
         saved.map { item ->
             when (item.firstOrNull()) {
                 "root" -> Screen.Root(RootTab.valueOf(item.getOrElse(1) { RootTab.Home.name }))
-                "detail" -> Screen.Detail(item.getOrElse(1) { "/" })
-                "reader" -> Screen.Reader(item.getOrElse(1) { "/" })
+                "detail" -> Screen.Detail(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
+                "reader" -> Screen.Reader(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
                 "settings" -> Screen.Settings
                 else -> Screen.Root(RootTab.Home)
             }
@@ -203,7 +203,7 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
 fun KomaStream() {
     val context = LocalContext.current
     val activity = context as? Activity
-    val service = remember { InMangaService() }
+    val providerRegistry = remember { createDefaultProviderRegistry() }
     val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
@@ -236,6 +236,9 @@ fun KomaStream() {
     }
     var isUpdateDialogVisible by rememberSaveable { mutableStateOf(false) }
     val strings = appStrings()
+    val currentProvider = remember(libraryState.selectedProviderId) {
+        providerRegistry.get(libraryState.selectedProviderId)
+    }
 
     fun currentReleaseForUi(): GitHubRelease? = when (val state = updateState) {
         is AppUpdateUiState.Available -> state.release
@@ -337,11 +340,14 @@ fun KomaStream() {
         }
         val next = linkedMapOf<String, Int>()
         infos.forEach { info ->
+            val providerId = info.progress.getString(DownloadChapterWorker.KEY_PROVIDER_ID)
+                ?: info.outputData.getString(DownloadChapterWorker.KEY_PROVIDER_ID)
             val chapterPath = info.progress.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
                 ?: info.outputData.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
-            if (chapterPath.isNullOrBlank()) return@forEach
+            if (providerId.isNullOrBlank() || chapterPath.isNullOrBlank()) return@forEach
             if (info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED) {
-                next[chapterPath] = info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, 0).coerceIn(0, 100)
+                next[qualifyProviderValue(providerId, chapterPath)] =
+                    info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, 0).coerceIn(0, 100)
             }
         }
         downloadProgress.clear()
@@ -399,7 +405,7 @@ fun KomaStream() {
     fun refreshHome() {
         scope.launch {
             loading = true
-            runCatching { withContext(Dispatchers.IO) { service.fetchHomeFeed() } }
+            runCatching { withContext(Dispatchers.IO) { currentProvider.fetchHomeFeed() } }
                 .onSuccess { homeFeed = it }
                 .onFailure { showError(it.message ?: strings.couldNotLoadHome) }
             loading = false
@@ -416,7 +422,7 @@ fun KomaStream() {
             }
             runCatching {
                 withContext(Dispatchers.IO) {
-                    service.searchCatalog(
+                    currentProvider.searchCatalog(
                         query = catalogQuery,
                         categoryIds = selectedCategoryIds.toList(),
                         sortBy = selectedSortOptionId,
@@ -428,7 +434,7 @@ fun KomaStream() {
             }
                 .onSuccess { result ->
                     catalogResults = if (loadMore) {
-                        (catalogResults + result.items).distinctBy { it.detailPath }
+                        (catalogResults + result.items).distinctBy { "${it.providerId}:${it.detailPath}" }
                     } else {
                         result.items
                     }
@@ -443,36 +449,41 @@ fun KomaStream() {
         }
     }
 
-    fun openDetail(path: String) {
+    fun openDetail(providerId: String, path: String) {
         scope.launch {
             loading = true
-            runCatching { withContext(Dispatchers.IO) { service.fetchMangaDetail(path) } }
+            val provider = providerRegistry.get(providerId)
+            runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
                 .onSuccess {
                     selectedDetail = it
-                    pushScreen(Screen.Detail(path))
+                    pushScreen(Screen.Detail(providerId, path))
                 }
                 .onFailure { showError(it.message ?: strings.couldNotOpenManga) }
             loading = false
         }
     }
 
-    fun openReader(path: String) {
+    fun openReader(providerId: String, path: String) {
         scope.launch {
             loading = true
+            val provider = providerRegistry.get(providerId)
             runCatching {
                 withContext(Dispatchers.IO) {
-                    offlineStore.loadChapter(path) ?: service.fetchReaderData(path)
+                    offlineStore.loadChapter(providerId, path) ?: provider.fetchReaderData(path)
                 }
             }
                 .onSuccess {
                     readerData = it
-                    readerInitialPageIndex = libraryStore.getChapterProgress(it.chapterPath)
-                    libraryStore.markChapterRead(it.chapterPath)
+                    readerInitialPageIndex = libraryStore.getChapterProgress(it.providerId, it.chapterPath)
+                    libraryStore.markChapterRead(it.providerId, it.chapterPath)
                     val cover = selectedDetail?.coverUrl
-                        ?: libraryState.reading.firstOrNull { item -> item.detailPath == it.mangaDetailPath }?.coverUrl
+                        ?: libraryState.reading.firstOrNull { item ->
+                            item.providerId == it.providerId && item.detailPath == it.mangaDetailPath
+                        }?.coverUrl
                         .orEmpty()
                     libraryStore.upsertReading(
                         SavedManga(
+                            providerId = it.providerId,
                             title = it.mangaTitle,
                             detailPath = it.mangaDetailPath,
                             coverUrl = cover,
@@ -481,53 +492,59 @@ fun KomaStream() {
                         )
                     )
                     libraryState = libraryStore.read()
-                    pushScreen(Screen.Reader(path))
+                    pushScreen(Screen.Reader(providerId, path))
                 }
                 .onFailure { showError(it.message ?: strings.couldNotOpenChapter) }
             loading = false
         }
     }
 
-    fun downloadChapter(path: String) {
-        if (downloadedChapterPaths.contains(path) || downloadProgress.containsKey(path)) return
+    fun downloadChapter(providerId: String, path: String) {
+        val key = qualifyProviderValue(providerId, path)
+        if (downloadedChapterPaths.contains(key) || downloadProgress.containsKey(key)) return
         val request = OneTimeWorkRequestBuilder<DownloadChapterWorker>()
             .setInputData(
                 Data.Builder()
+                    .putString(DownloadChapterWorker.KEY_PROVIDER_ID, providerId)
                     .putString(DownloadChapterWorker.KEY_CHAPTER_PATH, path)
                     .build()
             )
             .addTag(DownloadChapterWorker::class.java.simpleName)
-            .addTag(path)
+            .addTag(key)
             .build()
-        downloadProgress[path] = 0
-        workManager.enqueueUniqueWork("download:$path", ExistingWorkPolicy.KEEP, request)
+        downloadProgress[key] = 0
+        workManager.enqueueUniqueWork("download:$key", ExistingWorkPolicy.KEEP, request)
     }
 
-    fun removeDownloadedChapter(path: String) {
-        if (downloadedChapterPaths.contains(path).not() && downloadProgress.containsKey(path).not()) return
+    fun removeDownloadedChapter(providerId: String, path: String) {
+        val key = qualifyProviderValue(providerId, path)
+        if (downloadedChapterPaths.contains(key).not() && downloadProgress.containsKey(key).not()) return
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    workManager.cancelUniqueWork("download:$path")
-                    offlineStore.removeChapter(path)
+                    workManager.cancelUniqueWork("download:$key")
+                    offlineStore.removeChapter(providerId, path)
                 }
             }
                 .onSuccess {
                     refreshOfflineDownloads()
-                    downloadProgress.remove(path)
+                    downloadProgress.remove(key)
                     snackbarHostState.showSnackbar(strings.chapterRemoved)
                 }
                 .onFailure { showError(it.message ?: strings.couldNotRemoveDownload) }
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(currentProvider.id) {
+        selectedDetail = null
+        readerData = null
         refreshHome()
         checkForUpdates(openDialogOnUpdate = true)
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { service.fetchCatalogFilterOptions() } }
+            runCatching { withContext(Dispatchers.IO) { currentProvider.fetchCatalogFilterOptions() } }
                 .onSuccess {
                     catalogFilterOptions = it
+                    selectedCategoryIds = selectedCategoryIds.intersect(it.categories.map { category -> category.id }.toSet())
                     if (it.sortOptions.any { option -> option.id == selectedSortOptionId }.not()) {
                         selectedSortOptionId = it.sortOptions.firstOrNull()?.id ?: "2"
                     }
@@ -550,22 +567,25 @@ fun KomaStream() {
     LaunchedEffect(screen) {
         when (val currentScreen = screen) {
             is Screen.Detail -> {
-                if (selectedDetail?.detailPath != currentScreen.detailPath) {
+                if (selectedDetail?.providerId != currentScreen.providerId || selectedDetail?.detailPath != currentScreen.detailPath) {
                     runCatching {
-                        withContext(Dispatchers.IO) { service.fetchMangaDetail(currentScreen.detailPath) }
+                        withContext(Dispatchers.IO) {
+                            providerRegistry.get(currentScreen.providerId).fetchMangaDetail(currentScreen.detailPath)
+                        }
                     }.onSuccess { selectedDetail = it }
                 }
             }
 
             is Screen.Reader -> {
-                if (readerData?.chapterPath != currentScreen.chapterPath) {
+                if (readerData?.providerId != currentScreen.providerId || readerData?.chapterPath != currentScreen.chapterPath) {
                     runCatching {
                         withContext(Dispatchers.IO) {
-                            offlineStore.loadChapter(currentScreen.chapterPath) ?: service.fetchReaderData(currentScreen.chapterPath)
+                            offlineStore.loadChapter(currentScreen.providerId, currentScreen.chapterPath)
+                                ?: providerRegistry.get(currentScreen.providerId).fetchReaderData(currentScreen.chapterPath)
                         }
                     }.onSuccess {
                         readerData = it
-                        readerInitialPageIndex = libraryStore.getChapterProgress(currentScreen.chapterPath)
+                        readerInitialPageIndex = libraryStore.getChapterProgress(currentScreen.providerId, currentScreen.chapterPath)
                     }
                 }
             }
@@ -680,14 +700,14 @@ fun KomaStream() {
                                 onOpenManga = ::openDetail,
                                 onOpenChapter = ::openReader,
                                 onRemoveFromContinueReading = { saved ->
-                                    libraryStore.removeReading(saved.detailPath)
+                                    libraryStore.removeReading(saved.providerId, saved.detailPath)
                                     libraryState = libraryStore.read()
                                     scope.launch {
                                         showTransientSnackbar(strings.removedFromContinueReading)
                                     }
                                 },
                                 onRemoveFromFavorites = { saved ->
-                                    libraryStore.removeFavorite(saved.detailPath)
+                                    libraryStore.removeFavorite(saved.providerId, saved.detailPath)
                                     libraryState = libraryStore.read()
                                     scope.launch {
                                         showTransientSnackbar(strings.removedFromFavorites)
@@ -734,19 +754,26 @@ fun KomaStream() {
                             DetailScreen(
                                 strings = strings,
                                 detail = detail,
-                                isFavorite = libraryState.favorites.any { it.detailPath == detail.detailPath },
+                                isFavorite = libraryState.favorites.any {
+                                    it.providerId == detail.providerId && it.detailPath == detail.detailPath
+                                },
                                 autoJumpToUnread = libraryState.autoJumpToUnread,
                                 readChapters = libraryState.readChapters,
                                 lastOpenedChapterPath = libraryState.reading
-                                    .firstOrNull { item -> item.detailPath == detail.detailPath }
+                                    .firstOrNull { item ->
+                                        item.providerId == detail.providerId && item.detailPath == detail.detailPath
+                                    }
                                     ?.lastChapterPath
                                     .orEmpty(),
                                 downloadedChapters = downloadedChapterPaths,
                                 downloadProgress = downloadProgress,
                                 onToggleFavorite = {
-                                    val currentReading = libraryState.reading.firstOrNull { item -> item.detailPath == detail.detailPath }
+                                    val currentReading = libraryState.reading.firstOrNull { item ->
+                                        item.providerId == detail.providerId && item.detailPath == detail.detailPath
+                                    }
                                     libraryStore.toggleFavorite(
                                         SavedManga(
+                                            providerId = detail.providerId,
                                             title = detail.title,
                                             detailPath = detail.detailPath,
                                             coverUrl = detail.coverUrl,
@@ -760,7 +787,7 @@ fun KomaStream() {
                                     }
                                 },
                                 onToggleChapterRead = { chapterPath ->
-                                    libraryStore.toggleChapterRead(chapterPath)
+                                    libraryStore.toggleChapterRead(detail.providerId, chapterPath)
                                     libraryState = libraryStore.read()
                                     scope.launch {
                                         showTransientSnackbar(strings.updatedReadStatus)
@@ -768,7 +795,7 @@ fun KomaStream() {
                                 },
                                 onSetAllChaptersRead = { read ->
                                     val paths = detail.chapters.map { buildChapterPath(detail.detailPath, it) }
-                                    libraryStore.setChaptersRead(paths, read)
+                                    libraryStore.setChaptersRead(detail.providerId, paths, read)
                                     libraryState = libraryStore.read()
                                     scope.launch {
                                         showTransientSnackbar(
@@ -780,44 +807,47 @@ fun KomaStream() {
                                     val paths = detail.chapters
                                         .filter { chapterValue(it) <= chapterNumber }
                                         .map { buildChapterPath(detail.detailPath, it) }
-                                    libraryStore.setChaptersRead(paths, read)
+                                    libraryStore.setChaptersRead(detail.providerId, paths, read)
                                     libraryState = libraryStore.read()
                                     scope.launch {
                                         showTransientSnackbar(strings.markedUntilChapter(chapterNumber, read))
                                     }
                                 },
                                 onToggleChapterDownload = { chapterPath, isDownloaded ->
-                                    if (isDownloaded) removeDownloadedChapter(chapterPath) else downloadChapter(chapterPath)
+                                    if (isDownloaded) removeDownloadedChapter(detail.providerId, chapterPath) else downloadChapter(detail.providerId, chapterPath)
                                 },
-                                onReadChapter = ::openReader,
+                                onReadChapter = { chapterPath -> openReader(detail.providerId, chapterPath) },
                             )
                         }
 
                         is Screen.Reader -> readerData?.let {
+                            val chapterKey = qualifyProviderValue(it.providerId, it.chapterPath)
                             ReaderScreen(
                                 strings = strings,
                                 reader = it,
                                 offlineStore = offlineStore,
                                 initialPageIndex = readerInitialPageIndex,
-                                isDownloaded = downloadedChapterPaths.contains(it.chapterPath),
-                                downloadPercent = downloadProgress[it.chapterPath],
+                                isDownloaded = downloadedChapterPaths.contains(chapterKey),
+                                downloadPercent = downloadProgress[chapterKey],
                                 onPagePositionChanged = { pageIndex ->
-                                    libraryStore.saveChapterProgress(it.chapterPath, pageIndex)
+                                    libraryStore.saveChapterProgress(it.providerId, it.chapterPath, pageIndex)
                                 },
                                 onToggleDownload = {
-                                    if (downloadedChapterPaths.contains(it.chapterPath)) {
-                                        removeDownloadedChapter(it.chapterPath)
+                                    if (downloadedChapterPaths.contains(chapterKey)) {
+                                        removeDownloadedChapter(it.providerId, it.chapterPath)
                                     } else {
-                                        downloadChapter(it.chapterPath)
+                                        downloadChapter(it.providerId, it.chapterPath)
                                     }
                                 },
-                                onOpenChapter = ::openReader,
-                                onOpenManga = ::openDetail,
+                                onOpenChapter = { chapterPath -> openReader(it.providerId, chapterPath) },
+                                onOpenManga = { detailPath -> openDetail(it.providerId, detailPath) },
                             )
                         }
                         Screen.Settings -> SettingsScreen(
                             strings = strings,
                             appLanguage = libraryState.appLanguage,
+                            selectedProviderId = libraryState.selectedProviderId,
+                            providersByLanguage = providerRegistry.groupedByLanguage(),
                             useDarkTheme = libraryState.useDarkTheme,
                             autoJumpToUnread = libraryState.autoJumpToUnread,
                             versionName = BuildConfig.VERSION_NAME,
@@ -835,6 +865,13 @@ fun KomaStream() {
                             onAutoJumpToUnreadChange = { enabled ->
                                 libraryStore.setAutoJumpToUnread(enabled)
                                 libraryState = libraryStore.read()
+                            },
+                            onProviderChange = { providerId ->
+                                libraryStore.setSelectedProviderId(providerId)
+                                libraryState = libraryStore.read()
+                                navigationStack = listOf(Screen.Root(RootTab.Home))
+                                selectedDetail = null
+                                readerData = null
                             },
                             onExportBackup = {
                                 exportBackupLauncher.launch(defaultBackupFileName())
@@ -964,7 +1001,12 @@ private fun UpdateAvailableDialog(
 }
 
 @Composable
-private fun HomeScreen(feed: HomeFeed?, strings: AppStrings, onOpenManga: (String) -> Unit, onOpenChapter: (String) -> Unit) {
+private fun HomeScreen(
+    feed: HomeFeed?,
+    strings: AppStrings,
+    onOpenManga: (String, String) -> Unit,
+    onOpenChapter: (String, String) -> Unit,
+) {
     if (feed == null) {
         LoadingPlaceholder()
         return
@@ -981,7 +1023,7 @@ private fun HomeScreen(feed: HomeFeed?, strings: AppStrings, onOpenManga: (Strin
         item { SectionTitle(strings.popularMangas) }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(feed.popularMangas) { MangaCoverCard(it) { onOpenManga(it.detailPath) } }
+                items(feed.popularMangas) { MangaCoverCard(it) { onOpenManga(it.providerId, it.detailPath) } }
             }
         }
     }
@@ -991,8 +1033,8 @@ private fun HomeScreen(feed: HomeFeed?, strings: AppStrings, onOpenManga: (Strin
 private fun LibraryScreen(
     libraryState: LibraryState,
     strings: AppStrings,
-    onOpenManga: (String) -> Unit,
-    onOpenChapter: (String) -> Unit,
+    onOpenManga: (String, String) -> Unit,
+    onOpenChapter: (String, String) -> Unit,
     onRemoveFromContinueReading: (SavedManga) -> Unit,
     onRemoveFromFavorites: (SavedManga) -> Unit,
 ) {
@@ -1037,7 +1079,7 @@ private fun LibraryScreen(
                         FavoriteMangaCard(
                             manga = saved,
                             strings = strings,
-                            onOpen = { onOpenManga(saved.detailPath) },
+                            onOpen = { onOpenManga(saved.providerId, saved.detailPath) },
                             onRemove = { onRemoveFromFavorites(saved) },
                         )
                     }
@@ -1058,8 +1100,8 @@ private fun LibraryScreen(
                         ContinueReadingCard(
                             manga = saved,
                             strings = strings,
-                            onOpen = { onOpenManga(saved.detailPath) },
-                            onResume = { if (saved.lastChapterPath.isNotBlank()) onOpenChapter(saved.lastChapterPath) },
+                            onOpen = { onOpenManga(saved.providerId, saved.detailPath) },
+                            onResume = { if (saved.lastChapterPath.isNotBlank()) onOpenChapter(saved.providerId, saved.lastChapterPath) },
                             onRemove = { onRemoveFromContinueReading(saved) },
                         )
                     }
@@ -1091,7 +1133,7 @@ private fun CatalogScreen(
     onClearFilters: () -> Unit,
     onSearch: () -> Unit,
     onLoadMore: () -> Unit,
-    onOpen: (String) -> Unit,
+    onOpen: (String, String) -> Unit,
 ) {
     var catalogMode by rememberSaveable { mutableStateOf(CatalogMode.Basic) }
 
@@ -1217,7 +1259,7 @@ private fun CatalogScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(cardBorder(), RoundedCornerShape(24.dp))
-                    .clickable { onOpen(manga.detailPath) },
+                    .clickable { onOpen(manga.providerId, manga.detailPath) },
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Row(modifier = Modifier.padding(14.dp)) {
@@ -1277,11 +1319,11 @@ private fun DetailScreen(
     onToggleChapterDownload: (String, Boolean) -> Unit,
     onReadChapter: (String) -> Unit,
 ) {
-    var chapterQuery by rememberSaveable(detail.detailPath) { mutableStateOf("") }
-    var bulkChapterInput by rememberSaveable(detail.detailPath) { mutableStateOf("") }
-    var hasAutoPositionedChapterList by rememberSaveable(detail.detailPath, chapterQuery) { mutableStateOf(false) }
-    var suppressAutoPositioning by rememberSaveable(detail.detailPath) { mutableStateOf(false) }
-    val initialIsFavorite = rememberSaveable(detail.detailPath) { isFavorite }
+    var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
+    var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
+    var hasAutoPositionedChapterList by rememberSaveable(detail.providerId, detail.detailPath, chapterQuery) { mutableStateOf(false) }
+    var suppressAutoPositioning by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
+    val initialIsFavorite = rememberSaveable(detail.providerId, detail.detailPath) { isFavorite }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val filteredChapters = remember(detail.chapters, chapterQuery) {
@@ -1296,6 +1338,7 @@ private fun DetailScreen(
         }
     }
     val targetUnreadChapterPath = remember(
+        detail.providerId,
         detail.detailPath,
         detail.chapters,
         readChapters,
@@ -1320,7 +1363,7 @@ private fun DetailScreen(
         }
     }
 
-    LaunchedEffect(detail.detailPath, chapterQuery, targetUnreadIndex) {
+    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex) {
         if (chapterQuery.isNotBlank()) return@LaunchedEffect
         if (suppressAutoPositioning) return@LaunchedEffect
         if (hasAutoPositionedChapterList) return@LaunchedEffect
@@ -1481,9 +1524,10 @@ private fun DetailScreen(
             }
             items(filteredChapters) { chapter ->
                 val chapterPath = buildChapterPath(detail.detailPath, chapter)
+                val chapterKey = qualifyProviderValue(detail.providerId, chapterPath)
                 val isRead = readChapters.contains(chapterPath)
-                val isDownloaded = downloadedChapters.contains(chapterPath)
-                val downloadPercent = downloadProgress[chapterPath]
+                val isDownloaded = downloadedChapters.contains(chapterKey)
+                val downloadPercent = downloadProgress[chapterKey]
                 ElevatedCard(
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -1596,6 +1640,8 @@ private fun DetailScreen(
 private fun SettingsScreen(
     strings: AppStrings,
     appLanguage: AppLanguage,
+    selectedProviderId: String,
+    providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
     useDarkTheme: Boolean,
     autoJumpToUnread: Boolean,
     versionName: String,
@@ -1603,6 +1649,7 @@ private fun SettingsScreen(
     onLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onAutoJumpToUnreadChange: (Boolean) -> Unit,
+    onProviderChange: (String) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -1661,6 +1708,46 @@ private fun SettingsScreen(
                             Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
                             Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
                             Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            ElevatedCard(
+                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.providerLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    AppLanguage.values().forEach { language ->
+                        val providers = providersByLanguage[language].orEmpty()
+                        if (providers.isEmpty()) return@forEach
+                        Text(
+                            text = if (language == AppLanguage.EN) strings.english else strings.spanish,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            providers.forEach { provider ->
+                                Button(
+                                    onClick = { onProviderChange(provider.id) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selectedProviderId == provider.id) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        },
+                                        contentColor = if (selectedProviderId == provider.id) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                    ),
+                                ) {
+                                    Text(provider.displayName)
+                                }
+                            }
                         }
                     }
                 }
@@ -1856,7 +1943,12 @@ private fun ReaderScreen(
             items = reader.pages,
             key = { index, page -> "${reader.chapterPath}:${page.id}:$index" }
         ) { _, page ->
-            ZoomableReaderPage(chapterPath = reader.chapterPath, page = page, offlineStore = offlineStore)
+            ZoomableReaderPage(
+                providerId = reader.providerId,
+                chapterPath = reader.chapterPath,
+                page = page,
+                offlineStore = offlineStore,
+            )
         }
         item {
             Column(
@@ -1965,6 +2057,7 @@ private fun ReaderChapterNavigationButtons(
 
 @Composable
 private fun ZoomableReaderPage(
+    providerId: String,
     chapterPath: String,
     page: ReaderPage,
     offlineStore: OfflineChapterStore,
@@ -1973,7 +2066,7 @@ private fun ZoomableReaderPage(
     var offset by remember(page.id) { mutableStateOf(Offset.Zero) }
     val offlineBytes by produceState<ByteArray?>(initialValue = null, chapterPath, page.id, page.offlineFileName) {
         value = if (page.offlineFileName.isNotBlank()) {
-            withContext(Dispatchers.IO) { offlineStore.loadPageBytes(chapterPath, page) }
+            withContext(Dispatchers.IO) { offlineStore.loadPageBytes(providerId, chapterPath, page) }
         } else {
             null
         }
@@ -2077,7 +2170,7 @@ private fun ContinueReadingCard(
     onResume: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    var menuExpanded by rememberSaveable(manga.detailPath) { mutableStateOf(false) }
+    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
 
     Box {
         ElevatedCard(
@@ -2156,7 +2249,7 @@ private fun FavoriteMangaCard(
     onOpen: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    var menuExpanded by rememberSaveable(manga.detailPath) { mutableStateOf(false) }
+    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
 
     Box {
         ElevatedCard(
@@ -2234,12 +2327,12 @@ private fun FavoriteMangaCard(
 }
 
 @Composable
-private fun ChapterRow(item: ChapterSummary, strings: AppStrings, onOpenChapter: (String) -> Unit) {
+private fun ChapterRow(item: ChapterSummary, strings: AppStrings, onOpenChapter: (String, String) -> Unit) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .border(cardBorder(), RoundedCornerShape(22.dp))
-            .clickable { onOpenChapter(item.chapterPath) },
+            .clickable { onOpenChapter(item.providerId, item.chapterPath) },
         shape = RoundedCornerShape(22.dp),
     ) {
         Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {

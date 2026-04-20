@@ -6,6 +6,7 @@ enum class AppLanguage {
 }
 
 data class MangaSummary(
+    val providerId: String,
     val title: String,
     val detailPath: String,
     val coverUrl: String,
@@ -38,6 +39,7 @@ data class CatalogSearchResult(
 )
 
 data class ChapterSummary(
+    val providerId: String,
     val mangaTitle: String,
     val chapterLabel: String,
     val chapterNumberUrl: String,
@@ -49,6 +51,7 @@ data class ChapterSummary(
 )
 
 data class MangaDetail(
+    val providerId: String,
     val identification: String,
     val title: String,
     val detailPath: String,
@@ -77,6 +80,7 @@ data class ReaderPage(
 )
 
 data class ReaderData(
+    val providerId: String,
     val mangaTitle: String,
     val mangaDetailPath: String,
     val chapterTitle: String,
@@ -93,6 +97,7 @@ data class HomeFeed(
 )
 
 data class SavedManga(
+    val providerId: String,
     val title: String,
     val detailPath: String,
     val coverUrl: String,
@@ -106,5 +111,6 @@ data class LibraryState(
     val readChapters: Set<String>,
     val useDarkTheme: Boolean,
     val autoJumpToUnread: Boolean,
+    val selectedProviderId: String,
     val appLanguage: AppLanguage,
 )
