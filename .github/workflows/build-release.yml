@@ -71,7 +71,13 @@ jobs:
       - name: Prepare release notes from tag message
         shell: bash
         run: |
-          TAG_MESSAGE="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          TAG_REF="refs/tags/$GITHUB_REF_NAME"
+          if git rev-parse -q --verify "${TAG_REF}^{tag}" >/dev/null; then
+            TAG_MESSAGE="$(git cat-file tag "$TAG_REF" | sed '1,/^$/d')"
+          else
+            TAG_MESSAGE=""
+          fi
+
           if [ -n "$TAG_MESSAGE" ]; then
             printf '%s\n' "$TAG_MESSAGE" > release-notes.txt
           else
