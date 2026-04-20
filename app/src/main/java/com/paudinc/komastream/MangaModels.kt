@@ -105,5 +105,6 @@ data class LibraryState(
     val reading: List<SavedManga>,
     val readChapters: Set<String>,
     val useDarkTheme: Boolean,
+    val autoJumpToUnread: Boolean,
     val appLanguage: AppLanguage,
 )

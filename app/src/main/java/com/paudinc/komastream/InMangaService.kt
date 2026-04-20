@@ -133,7 +133,7 @@ class InMangaService {
             coverUrl = document.select(".custom-bg-center img").attr("abs:src"),
             bannerUrl = document.select("img[src^=/cover/manga]").attr("abs:src")
                 .ifBlank { document.select(".custom-bg-center img").attr("abs:src") },
-            description = document.select(".panel-body").getOrNull(1)?.text().orEmpty(),
+            description = extractMangaDescription(document),
             status = stats.getOrNull(0)?.selectFirst(".label")?.text().orEmpty(),
             publicationDate = stats.getOrNull(1)?.selectFirst(".label")?.text().orEmpty(),
             periodicity = stats.getOrNull(2)?.selectFirst(".label")?.text().orEmpty(),
@@ -343,6 +343,33 @@ class InMangaService {
                 ?: parseChapterNumber(it.chapterLabel)
                 ?: Double.NEGATIVE_INFINITY
         }
+    }
+
+    private fun extractMangaDescription(document: Document): String {
+        val titleElement = document.selectFirst("h1")
+        val candidateTexts = buildList {
+            titleElement?.nextElementSiblings()
+                ?.flatMap { sibling -> sibling.select("p").ifEmpty { listOf(sibling) } }
+                ?.mapTo(this) { it.text() }
+
+            titleElement?.parent()?.select("p")?.mapTo(this) { it.text() }
+
+            document.select(
+                ".panel-body p, .panel-body, .media-body p, .media-body, .description, .sinopsis, .summary"
+            ).mapTo(this) { it.text() }
+        }
+
+        return candidateTexts
+            .map { it.replace(Regex("\\s+"), " ").trim() }
+            .filter { text ->
+                text.length >= 40 &&
+                    !text.contains("listado de capítulos", ignoreCase = true) &&
+                    !text.contains("chapters", ignoreCase = true) &&
+                    !text.contains("publicación", ignoreCase = true) &&
+                    !text.contains("publication", ignoreCase = true)
+            }
+            .maxByOrNull { it.length }
+            .orEmpty()
     }
 
     private fun buildChapterPath(mangaDetailPath: String, chapterLabel: String, chapterId: String): String {
