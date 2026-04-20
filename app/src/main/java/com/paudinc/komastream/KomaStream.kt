@@ -3,7 +3,10 @@
 package com.paudinc.komastream
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -151,6 +154,7 @@ private sealed interface Screen {
     data class Root(val tab: RootTab) : Screen
     data class Detail(val providerId: String, val detailPath: String) : Screen
     data class Reader(val providerId: String, val chapterPath: String) : Screen
+    data object ProviderPicker : Screen
     data object Settings : Screen
 }
 
@@ -160,6 +164,7 @@ private val ScreenSaver = Saver<Screen, List<String>>(
             is Screen.Root -> listOf("root", screen.tab.name)
             is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
             is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
+            Screen.ProviderPicker -> listOf("provider-picker")
             Screen.Settings -> listOf("settings")
         }
     },
@@ -168,6 +173,7 @@ private val ScreenSaver = Saver<Screen, List<String>>(
             "root" -> Screen.Root(RootTab.valueOf(saved.getOrElse(1) { RootTab.Home.name }))
             "detail" -> Screen.Detail(saved.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, saved.getOrElse(2) { "/" })
             "reader" -> Screen.Reader(saved.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, saved.getOrElse(2) { "/" })
+            "provider-picker" -> Screen.ProviderPicker
             "settings" -> Screen.Settings
             else -> Screen.Root(RootTab.Home)
         }
@@ -181,6 +187,7 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
                 is Screen.Root -> listOf("root", screen.tab.name)
                 is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
                 is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
+                Screen.ProviderPicker -> listOf("provider-picker")
                 Screen.Settings -> listOf("settings")
             }
         }
@@ -191,10 +198,11 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
                 "root" -> Screen.Root(RootTab.valueOf(item.getOrElse(1) { RootTab.Home.name }))
                 "detail" -> Screen.Detail(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
                 "reader" -> Screen.Reader(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
+                "provider-picker" -> Screen.ProviderPicker
                 "settings" -> Screen.Settings
                 else -> Screen.Root(RootTab.Home)
             }
-        }.ifEmpty { listOf(Screen.Root(RootTab.Home)) }
+        }.ifEmpty { listOf(Screen.ProviderPicker) }
     },
 )
 
@@ -203,7 +211,7 @@ private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
 fun KomaStream() {
     val context = LocalContext.current
     val activity = context as? Activity
-    val providerRegistry = remember { createDefaultProviderRegistry() }
+    val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
     val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
@@ -211,7 +219,11 @@ fun KomaStream() {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var navigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
-        mutableStateOf(listOf<Screen>(Screen.Root(RootTab.Home)))
+        mutableStateOf(
+            listOf<Screen>(
+                if (libraryStore.hasSeenProviderPicker()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
+            )
+        )
     }
     val screen = navigationStack.last()
     var homeFeed by remember { mutableStateOf<HomeFeed?>(null) }
@@ -248,6 +260,7 @@ fun KomaStream() {
     }
 
     fun showError(message: String) {
+        Log.e("KomaStream", message)
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
@@ -261,6 +274,10 @@ fun KomaStream() {
 
     fun openSettings() {
         navigationStack = navigationStack + Screen.Settings
+    }
+
+    fun openProviderPicker() {
+        navigationStack = if (screen is Screen.ProviderPicker) navigationStack else navigationStack + Screen.ProviderPicker
     }
 
     fun checkForUpdates(notifyIfCurrent: Boolean = false, openDialogOnUpdate: Boolean = false) {
@@ -407,7 +424,10 @@ fun KomaStream() {
             loading = true
             runCatching { withContext(Dispatchers.IO) { currentProvider.fetchHomeFeed() } }
                 .onSuccess { homeFeed = it }
-                .onFailure { showError(it.message ?: strings.couldNotLoadHome) }
+                .onFailure {
+                    Log.e("KomaStream", "Could not load home for provider ${currentProvider.id}", it)
+                    showError(it.message ?: strings.couldNotLoadHome)
+                }
             loading = false
         }
     }
@@ -440,7 +460,10 @@ fun KomaStream() {
                     }
                     catalogHasMore = result.hasMore
                 }
-                .onFailure { showError(it.message ?: strings.couldNotSearchCatalog) }
+                .onFailure {
+                    Log.e("KomaStream", "Could not search catalog for provider ${currentProvider.id}", it)
+                    showError(it.message ?: strings.couldNotSearchCatalog)
+                }
             if (loadMore) {
                 catalogLoadingMore = false
             } else {
@@ -458,7 +481,10 @@ fun KomaStream() {
                     selectedDetail = it
                     pushScreen(Screen.Detail(providerId, path))
                 }
-                .onFailure { showError(it.message ?: strings.couldNotOpenManga) }
+                .onFailure {
+                    Log.e("KomaStream", "Could not open manga $providerId:$path", it)
+                    showError(it.message ?: strings.couldNotOpenManga)
+                }
             loading = false
         }
     }
@@ -474,6 +500,7 @@ fun KomaStream() {
             }
                 .onSuccess {
                     readerData = it
+                    libraryStore.saveChapterPageCount(it.providerId, it.chapterPath, it.pages.size)
                     readerInitialPageIndex = libraryStore.getChapterProgress(it.providerId, it.chapterPath)
                     libraryStore.markChapterRead(it.providerId, it.chapterPath)
                     val cover = selectedDetail?.coverUrl
@@ -494,7 +521,10 @@ fun KomaStream() {
                     libraryState = libraryStore.read()
                     pushScreen(Screen.Reader(providerId, path))
                 }
-                .onFailure { showError(it.message ?: strings.couldNotOpenChapter) }
+                .onFailure {
+                    Log.e("KomaStream", "Could not open chapter $providerId:$path", it)
+                    showError(it.message ?: strings.couldNotOpenChapter)
+                }
             loading = false
         }
     }
@@ -590,7 +620,7 @@ fun KomaStream() {
                 }
             }
 
-            is Screen.Root, Screen.Settings -> Unit
+            is Screen.Root, Screen.Settings, Screen.ProviderPicker -> Unit
         }
     }
 
@@ -643,6 +673,7 @@ fun KomaStream() {
                                     is Screen.Root -> strings.appName
                                     is Screen.Detail -> selectedDetail?.title ?: strings.manga
                                     is Screen.Reader -> readerData?.chapterTitle ?: strings.reader
+                                    Screen.ProviderPicker -> strings.chooseProvider
                                     Screen.Settings -> strings.settings
                                 }
                             )
@@ -652,6 +683,8 @@ fun KomaStream() {
                                 IconButton(onClick = { openSettings() }) {
                                     Icon(Icons.Default.Settings, contentDescription = strings.settings)
                                 }
+                            } else if (screen is Screen.ProviderPicker && navigationStack.size == 1) {
+                                Spacer(Modifier.width(48.dp))
                             } else {
                                 IconButton(onClick = { goBack() }) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = strings.back)
@@ -660,6 +693,13 @@ fun KomaStream() {
                         },
                         actions = {
                             if (screen is Screen.Root) {
+                                IconButton(onClick = { openProviderPicker() }) {
+                                    AsyncImage(
+                                        model = currentProvider.logoUrl,
+                                        contentDescription = strings.providerLabel,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                                 IconButton(onClick = { refreshHome() }) {
                                     Icon(Icons.Default.Refresh, contentDescription = strings.refresh)
                                 }
@@ -692,6 +732,27 @@ fun KomaStream() {
             ) { padding ->
                 Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                     when (val current = screen) {
+                        Screen.ProviderPicker -> ProviderPickerScreen(
+                            strings = strings,
+                            selectedProviderId = libraryState.selectedProviderId,
+                            providersByLanguage = providerRegistry.groupedByLanguage(),
+                            onSelectProvider = { providerId ->
+                                libraryStore.setSelectedProviderId(providerId)
+                                libraryStore.setHasSeenProviderPicker(true)
+                                libraryState = libraryStore.read()
+                                navigationStack = listOf(Screen.Root(RootTab.Home))
+                                selectedDetail = null
+                                readerData = null
+                            },
+                            onOpenProviderSite = { url ->
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                }.onFailure {
+                                    Log.e("KomaStream", "Could not open provider site $url", it)
+                                    showError(it.message ?: strings.openProviderSite)
+                                }
+                            },
+                        )
                         is Screen.Root -> when (current.tab) {
                             RootTab.Home -> HomeScreen(homeFeed, strings, ::openDetail, ::openReader)
                             RootTab.Library -> LibraryScreen(
@@ -754,6 +815,7 @@ fun KomaStream() {
                             DetailScreen(
                                 strings = strings,
                                 detail = detail,
+                                libraryStore = libraryStore,
                                 isFavorite = libraryState.favorites.any {
                                     it.providerId == detail.providerId && it.detailPath == detail.detailPath
                                 },
@@ -846,8 +908,6 @@ fun KomaStream() {
                         Screen.Settings -> SettingsScreen(
                             strings = strings,
                             appLanguage = libraryState.appLanguage,
-                            selectedProviderId = libraryState.selectedProviderId,
-                            providersByLanguage = providerRegistry.groupedByLanguage(),
                             useDarkTheme = libraryState.useDarkTheme,
                             autoJumpToUnread = libraryState.autoJumpToUnread,
                             versionName = BuildConfig.VERSION_NAME,
@@ -865,13 +925,6 @@ fun KomaStream() {
                             onAutoJumpToUnreadChange = { enabled ->
                                 libraryStore.setAutoJumpToUnread(enabled)
                                 libraryState = libraryStore.read()
-                            },
-                            onProviderChange = { providerId ->
-                                libraryStore.setSelectedProviderId(providerId)
-                                libraryState = libraryStore.read()
-                                navigationStack = listOf(Screen.Root(RootTab.Home))
-                                selectedDetail = null
-                                readerData = null
                             },
                             onExportBackup = {
                                 exportBackupLauncher.launch(defaultBackupFileName())
@@ -1306,6 +1359,7 @@ private fun CatalogScreen(
 private fun DetailScreen(
     strings: AppStrings,
     detail: MangaDetail,
+    libraryStore: LibraryStore,
     isFavorite: Boolean,
     autoJumpToUnread: Boolean,
     readChapters: Set<String>,
@@ -1525,6 +1579,7 @@ private fun DetailScreen(
             items(filteredChapters) { chapter ->
                 val chapterPath = buildChapterPath(detail.detailPath, chapter)
                 val chapterKey = qualifyProviderValue(detail.providerId, chapterPath)
+                val pageCount = chapter.pagesCount.takeIf { it > 0 } ?: libraryStore.getChapterPageCount(detail.providerId, chapterPath)
                 val isRead = readChapters.contains(chapterPath)
                 val isDownloaded = downloadedChapters.contains(chapterKey)
                 val downloadPercent = downloadProgress[chapterKey]
@@ -1552,7 +1607,9 @@ private fun DetailScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isRead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                             )
-                            Text(strings.pagesCount(chapter.pagesCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (pageCount > 0) {
+                                Text(strings.pagesCount(pageCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(formatDateEu(chapter.registrationDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1640,8 +1697,6 @@ private fun DetailScreen(
 private fun SettingsScreen(
     strings: AppStrings,
     appLanguage: AppLanguage,
-    selectedProviderId: String,
-    providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
     useDarkTheme: Boolean,
     autoJumpToUnread: Boolean,
     versionName: String,
@@ -1649,7 +1704,6 @@ private fun SettingsScreen(
     onLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onAutoJumpToUnreadChange: (Boolean) -> Unit,
-    onProviderChange: (String) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -1708,46 +1762,6 @@ private fun SettingsScreen(
                             Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
                             Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
                             Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.providerLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    AppLanguage.values().forEach { language ->
-                        val providers = providersByLanguage[language].orEmpty()
-                        if (providers.isEmpty()) return@forEach
-                        Text(
-                            text = if (language == AppLanguage.EN) strings.english else strings.spanish,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            providers.forEach { provider ->
-                                Button(
-                                    onClick = { onProviderChange(provider.id) },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (selectedProviderId == provider.id) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                        },
-                                        contentColor = if (selectedProviderId == provider.id) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        },
-                                    ),
-                                ) {
-                                    Text(provider.displayName)
-                                }
-                            }
                         }
                     }
                 }
@@ -1855,6 +1869,113 @@ private fun SettingsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = onExportBackup) { Text(strings.exportBackup) }
                         Button(onClick = onImportBackup) { Text(strings.importBackup) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderPickerScreen(
+    strings: AppStrings,
+    selectedProviderId: String,
+    providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
+    onSelectProvider: (String) -> Unit,
+    onOpenProviderSite: (String) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                        MaterialTheme.colorScheme.background,
+                    )
+                )
+            ),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        item {
+            ElevatedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(cardBorder(), RoundedCornerShape(28.dp)),
+                shape = RoundedCornerShape(28.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(strings.chooseProvider, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(strings.chooseProviderDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        AppLanguage.values().forEach { language ->
+            val providers = providersByLanguage[language].orEmpty()
+            if (providers.isEmpty()) return@forEach
+            item {
+                Text(
+                    text = if (language == AppLanguage.EN) strings.english else strings.spanish,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            items(providers) { provider ->
+                ElevatedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            color = if (selectedProviderId == provider.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(26.dp),
+                        )
+                        .clickable { onSelectProvider(provider.id) },
+                    shape = RoundedCornerShape(26.dp),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = if (selectedProviderId == provider.id) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        }
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        AsyncImage(
+                            model = provider.logoUrl,
+                            contentDescription = provider.displayName,
+                            modifier = Modifier.size(44.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(provider.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(provider.websiteUrl, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AssistChip(
+                                onClick = { onOpenProviderSite(provider.websiteUrl) },
+                                label = { Text(strings.openProviderSite) },
+                            )
+                            if (selectedProviderId == provider.id) {
+                                Icon(
+                                    imageVector = Icons.Default.Bookmark,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2413,6 +2534,9 @@ private fun LoadingPlaceholder() {
 }
 
 private fun buildChapterPath(detailPath: String, chapter: MangaChapter): String {
+    if (chapter.path.isNotBlank()) {
+        return if (chapter.path.startsWith("/")) chapter.path else "/${chapter.path}"
+    }
     val prefix = detailPath.substringBeforeLast("/")
     val path = "$prefix/${chapter.chapterNumberUrl}/${chapter.id}".replace("//", "/")
     return if (path.startsWith("/")) path else "/$path"

@@ -68,6 +68,7 @@ data class MangaChapter(
     val id: String,
     val chapterLabel: String,
     val chapterNumberUrl: String,
+    val path: String = "",
     val pagesCount: Int,
     val registrationDate: String,
 )

@@ -20,7 +20,7 @@ class DownloadChapterWorker(
     override suspend fun doWork(): Result {
         val providerId = inputData.getString(KEY_PROVIDER_ID)?.takeIf { it.isNotBlank() } ?: return Result.failure()
         val chapterPath = inputData.getString(KEY_CHAPTER_PATH)?.takeIf { it.isNotBlank() } ?: return Result.failure()
-        val provider = createDefaultProviderRegistry().get(providerId)
+        val provider = createDefaultProviderRegistry(applicationContext).get(providerId)
         val offlineStore = OfflineChapterStore(applicationContext)
 
         return runCatching {

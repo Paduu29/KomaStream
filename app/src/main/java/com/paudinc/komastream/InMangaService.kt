@@ -15,6 +15,8 @@ class InMangaService : MangaProvider {
     override val id: String = "inmanga-es"
     override val displayName: String = "InManga"
     override val language: AppLanguage = AppLanguage.ES
+    override val websiteUrl: String = "https://inmanga.com"
+    override val logoUrl: String = "https://inmanga.com/favicon.ico"
     private val baseUrl = "https://inmanga.com"
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
@@ -91,8 +93,8 @@ class InMangaService : MangaProvider {
         sortBy: String,
         broadcastStatus: String,
         onlyFavorites: Boolean,
-        skip: Int = 0,
-        take: Int = 10
+        skip: Int,
+        take: Int
     ): CatalogSearchResult {
         ensureSession()
         val formValues = mutableListOf(
@@ -206,7 +208,7 @@ class InMangaService : MangaProvider {
         )
     }
 
-    override fun downloadBytes(url: String, referer: String? = null): ByteArray {
+    override fun downloadBytes(url: String, referer: String?): ByteArray {
         ensureSession()
         val request = Request.Builder()
             .url(url)
