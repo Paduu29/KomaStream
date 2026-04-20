@@ -20,19 +20,25 @@ class OfflineChapterStore(private val context: Context) {
 
     fun getDownloadedChapterPaths(): Set<String> {
         return rootDir.listFiles()
-            ?.mapNotNull { directory -> readManifest(directory)?.optString("chapterPath").orEmpty() }
+            ?.mapNotNull { directory ->
+                readManifest(directory)?.let { manifest ->
+                    val providerId = manifest.optString("providerId")
+                    val chapterPath = manifest.optString("chapterPath")
+                    if (providerId.isBlank() || chapterPath.isBlank()) null else qualifyProviderValue(providerId, chapterPath)
+                }
+            }
             ?.filter { it.isNotBlank() }
             ?.toSet()
             ?: emptySet()
     }
 
-    fun isChapterDownloaded(chapterPath: String): Boolean {
-        return manifestFile(chapterPath).exists()
+    fun isChapterDownloaded(providerId: String, chapterPath: String): Boolean {
+        return manifestFile(providerId, chapterPath).exists()
     }
 
     fun saveChapter(readerData: ReaderData, pageBytes: List<ByteArray>) {
         require(readerData.pages.size == pageBytes.size) { "Page payload count does not match page metadata" }
-        val chapterDir = chapterDir(readerData.chapterPath).apply {
+        val chapterDir = chapterDir(readerData.providerId, readerData.chapterPath).apply {
             mkdirs()
             listFiles()?.forEach { it.delete() }
         }
@@ -49,6 +55,7 @@ class OfflineChapterStore(private val context: Context) {
         }
 
         val manifest = JSONObject()
+            .put("providerId", readerData.providerId)
             .put("chapterPath", readerData.chapterPath)
             .put("mangaTitle", readerData.mangaTitle)
             .put("mangaDetailPath", readerData.mangaDetailPath)
@@ -60,10 +67,11 @@ class OfflineChapterStore(private val context: Context) {
         File(chapterDir, "manifest.json").writeText(manifest.toString(), StandardCharsets.UTF_8)
     }
 
-    fun loadChapter(chapterPath: String): ReaderData? {
-        val manifest = readManifest(chapterDir(chapterPath)) ?: return null
+    fun loadChapter(providerId: String, chapterPath: String): ReaderData? {
+        val manifest = readManifest(chapterDir(providerId, chapterPath)) ?: return null
         val pages = manifest.optJSONArray("pages") ?: JSONArray()
         return ReaderData(
+            providerId = manifest.optString("providerId").ifBlank { providerId },
             mangaTitle = manifest.optString("mangaTitle"),
             mangaDetailPath = manifest.optString("mangaDetailPath"),
             chapterTitle = manifest.optString("chapterTitle"),
@@ -86,15 +94,15 @@ class OfflineChapterStore(private val context: Context) {
         )
     }
 
-    fun loadPageBytes(chapterPath: String, page: ReaderPage): ByteArray? {
+    fun loadPageBytes(providerId: String, chapterPath: String, page: ReaderPage): ByteArray? {
         val fileName = page.offlineFileName.takeIf { it.isNotBlank() } ?: return null
-        val file = File(chapterDir(chapterPath), fileName)
+        val file = File(chapterDir(providerId, chapterPath), fileName)
         if (!file.exists()) return null
         return readEncrypted(file)
     }
 
-    fun removeChapter(chapterPath: String) {
-        chapterDir(chapterPath).deleteRecursively()
+    fun removeChapter(providerId: String, chapterPath: String) {
+        chapterDir(providerId, chapterPath).deleteRecursively()
     }
 
     private fun readManifest(directory: File): JSONObject? {
@@ -103,13 +111,14 @@ class OfflineChapterStore(private val context: Context) {
         return runCatching { JSONObject(file.readText(StandardCharsets.UTF_8)) }.getOrNull()
     }
 
-    private fun chapterDir(chapterPath: String): File {
-        val digest = MessageDigest.getInstance("SHA-256").digest(chapterPath.toByteArray(StandardCharsets.UTF_8))
+    private fun chapterDir(providerId: String, chapterPath: String): File {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(qualifyProviderValue(providerId, chapterPath).toByteArray(StandardCharsets.UTF_8))
         val name = digest.joinToString("") { "%02x".format(it) }
         return File(rootDir, name)
     }
 
-    private fun manifestFile(chapterPath: String): File = File(chapterDir(chapterPath), "manifest.json")
+    private fun manifestFile(providerId: String, chapterPath: String): File = File(chapterDir(providerId, chapterPath), "manifest.json")
 
     private fun writeEncrypted(target: File, raw: ByteArray) {
         val payload = synchronized(cryptoLock) {

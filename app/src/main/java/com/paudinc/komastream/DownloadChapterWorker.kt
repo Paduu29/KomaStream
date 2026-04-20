@@ -18,23 +18,24 @@ class DownloadChapterWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        val providerId = inputData.getString(KEY_PROVIDER_ID)?.takeIf { it.isNotBlank() } ?: return Result.failure()
         val chapterPath = inputData.getString(KEY_CHAPTER_PATH)?.takeIf { it.isNotBlank() } ?: return Result.failure()
-        val service = InMangaService()
+        val provider = createDefaultProviderRegistry().get(providerId)
         val offlineStore = OfflineChapterStore(applicationContext)
 
         return runCatching {
             createChannel()
-            setProgress(progressData(chapterPath, 0))
+            setProgress(progressData(providerId, chapterPath, 0))
             setForeground(createForegroundInfo(0, applicationContext.getString(R.string.downloading)))
 
-            val reader = service.fetchReaderData(chapterPath)
+            val reader = provider.fetchReaderData(chapterPath)
             val total = reader.pages.size.coerceAtLeast(1)
             val pageBytes = buildList(reader.pages.size) {
                 reader.pages.forEachIndexed { index, page ->
                     ensureStopped()
-                    add(service.downloadBytes(page.imageUrl, referer = chapterPath))
+                    add(provider.downloadBytes(page.imageUrl, referer = chapterPath))
                     val progress = (((index + 1) * 100f) / total).toInt().coerceIn(0, 100)
-                    setProgress(progressData(chapterPath, progress))
+                    setProgress(progressData(providerId, chapterPath, progress))
                     setForeground(createForegroundInfo(progress, reader.chapterTitle.ifBlank { applicationContext.getString(R.string.downloading) }))
                 }
             }
@@ -85,13 +86,15 @@ class DownloadChapterWorker(
     }
 
     companion object {
+        const val KEY_PROVIDER_ID = "provider_id"
         const val KEY_CHAPTER_PATH = "chapter_path"
         const val KEY_PROGRESS = "progress"
         private const val CHANNEL_ID = "chapter_downloads"
         private const val NOTIFICATION_ID_BASE = 7000
 
-        fun progressData(chapterPath: String, progress: Int): Data {
+        fun progressData(providerId: String, chapterPath: String, progress: Int): Data {
             return Data.Builder()
+                .putString(KEY_PROVIDER_ID, providerId)
                 .putString(KEY_CHAPTER_PATH, chapterPath)
                 .putInt(KEY_PROGRESS, progress)
                 .build()

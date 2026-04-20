@@ -11,7 +11,10 @@ import org.jsoup.nodes.Document
 import java.net.CookieManager
 import java.net.CookiePolicy
 
-class InMangaService {
+class InMangaService : MangaProvider {
+    override val id: String = "inmanga-es"
+    override val displayName: String = "InManga"
+    override val language: AppLanguage = AppLanguage.ES
     private val baseUrl = "https://inmanga.com"
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
@@ -20,7 +23,7 @@ class InMangaService {
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
 
-    fun fetchHomeFeed(): HomeFeed {
+    override fun fetchHomeFeed(): HomeFeed {
         ensureSession()
         val latest = parseChapterCards(getText("/chapter/getRecentChapters", "/", ajax = true))
         val popularChapters = parseChapterCards(getText("/chapter/getMostViewedChapters", "/", ajax = true))
@@ -28,7 +31,7 @@ class InMangaService {
         return HomeFeed(latest, popularChapters, popularMangas)
     }
 
-    fun fetchCatalogFilterOptions(): CatalogFilterOptions {
+    override fun fetchCatalogFilterOptions(): CatalogFilterOptions {
         ensureSession()
         val document = getDocument("/manga/consult", referer = "/", userAgent = DESKTOP_USER_AGENT)
         val categoryItems = linkedMapOf<String, String>()
@@ -82,7 +85,7 @@ class InMangaService {
         )
     }
 
-    fun searchCatalog(
+    override fun searchCatalog(
         query: String,
         categoryIds: List<String>,
         sortBy: String,
@@ -121,12 +124,13 @@ class InMangaService {
         )
     }
 
-    fun fetchMangaDetail(detailPath: String): MangaDetail {
+    override fun fetchMangaDetail(detailPath: String): MangaDetail {
         ensureSession()
         val document = getDocument(detailPath, referer = "/")
         val identification = document.selectFirst("#Identification")?.`val`().orEmpty()
         val stats = document.select(".list-group-item")
         return MangaDetail(
+            providerId = id,
             identification = identification,
             title = document.selectFirst("h1")?.text().orEmpty(),
             detailPath = detailPath.normalizePath(),
@@ -143,7 +147,7 @@ class InMangaService {
         )
     }
 
-    fun fetchReaderData(chapterPath: String): ReaderData {
+    override fun fetchReaderData(chapterPath: String): ReaderData {
         ensureSession()
         val chapterDocument = getDocument(chapterPath, referer = "/")
         val scriptText = chapterDocument.select("script").joinToString("\n") { it.html() }
@@ -191,6 +195,7 @@ class InMangaService {
             )
         }
         return ReaderData(
+            providerId = id,
             mangaTitle = mangaTitle,
             mangaDetailPath = mangaDetailPath,
             chapterTitle = chapterTitle,
@@ -201,7 +206,7 @@ class InMangaService {
         )
     }
 
-    fun downloadBytes(url: String, referer: String? = null): ByteArray {
+    override fun downloadBytes(url: String, referer: String? = null): ByteArray {
         ensureSession()
         val request = Request.Builder()
             .url(url)
@@ -262,6 +267,7 @@ class InMangaService {
         val doc = Jsoup.parse(html, baseUrl)
         return doc.select("a.list-group-item").map { anchor ->
             MangaSummary(
+                providerId = id,
                 title = anchor.selectFirst(".media-box-heading")?.text()?.trim().orEmpty(),
                 detailPath = anchor.attr("href").normalizePath(),
                 coverUrl = anchor.selectFirst("img")?.attr("abs:src").orEmpty(),
@@ -276,6 +282,7 @@ class InMangaService {
             val chapterPath = anchor.attr("href").normalizePath()
             val parts = chapterPath.trim('/').split("/")
             ChapterSummary(
+                providerId = id,
                 mangaTitle = anchor.selectFirst("strong")?.text()?.trim().orEmpty(),
                 chapterLabel = anchor.selectFirst("small strong, .recent-chapter-container-footer strong")?.text().orEmpty(),
                 chapterNumberUrl = parts.getOrNull(3).orEmpty(),
@@ -293,6 +300,7 @@ class InMangaService {
         return doc.select("a.manga-result").map { anchor ->
             val items = anchor.select(".list-group-item")
             MangaSummary(
+                providerId = id,
                 title = anchor.selectFirst("h4.list-group-item")?.ownText()?.trim().orEmpty(),
                 detailPath = anchor.attr("href").normalizePath(),
                 coverUrl = anchor.selectFirst("img")?.attr("data-src")?.toAbsoluteUrl().orEmpty(),
