@@ -6,14 +6,15 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Handler
+import android.util.Log
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import com.paudinc.komastream.models.ReaderData
-import com.paudinc.komastream.models.ReaderPage
+import com.paudinc.komastream.data.model.ReaderData
+import com.paudinc.komastream.data.model.ReaderPage
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -340,11 +341,11 @@ class MangaFireWebViewResolver(
         val nextPath: String?,
     )
 
-    private companion object {
-        private const val BASE_URL = "https://mangafire.to"
-        private const val HOST = "mangafire.to"
-        private const val FILE_SCHEME_PREFIX = "file://"
-        private const val USER_AGENT =
+    companion object {
+        const val BASE_URL = "https://mangafire.to"
+        const val HOST = "mangafire.to"
+        const val FILE_SCHEME_PREFIX = "file://"
+        const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
 }

@@ -1,19 +1,9 @@
 package com.paudinc.komastream.provider.providers
 
 import android.content.Context
-import com.paudinc.komastream.models.AppLanguage
-import com.paudinc.komastream.models.CatalogFilterOptions
-import com.paudinc.komastream.models.CatalogSearchResult
-import com.paudinc.komastream.models.CategoryOption
-import com.paudinc.komastream.models.ChapterSummary
-import com.paudinc.komastream.models.FilterOption
-import com.paudinc.komastream.models.HomeFeed
-import com.paudinc.komastream.models.MangaChapter
-import com.paudinc.komastream.models.MangaDetail
-import com.paudinc.komastream.utils.MangaFireWebViewResolver
+import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
-import com.paudinc.komastream.models.MangaSummary
-import com.paudinc.komastream.models.ReaderData
+import com.paudinc.komastream.utils.MangaFireWebViewResolver
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -122,11 +112,12 @@ class MangaFireProvider(
             .map { it.text().trim() }
         val publicationDate = metaValue(metaText, "Published:")
         val status = document.selectFirst(".main-inner .info > p")?.text()?.trim().orEmpty()
+        val periodicity = metaValue(metaText, "Type:")
 
         val mangaId = normalizedPath.substringAfterLast('.')
         val chaptersHtml = getJson("/ajax/manga/$mangaId/chapter/$languageCode")
-            .optString("result")
-        val chapters = parseChapterList(chaptersHtml)
+        val chaptersHtmlResult = chaptersHtml.optString("result")
+        val chapters = parseChapterList(chaptersHtmlResult)
 
         return MangaDetail(
             providerId = id,
@@ -138,7 +129,7 @@ class MangaFireProvider(
             description = description,
             status = status,
             publicationDate = publicationDate,
-            periodicity = "",
+            periodicity = periodicity,
             chapters = chapters,
         )
     }
@@ -189,6 +180,21 @@ class MangaFireProvider(
             val title = detailLink.text().trim()
             val coverUrl = item.selectFirst(".poster img")?.absUrl("src").orEmpty()
             val type = item.selectFirst(".type")?.text()?.trim().orEmpty()
+            
+            // Extract metadata from info list
+            var status = ""
+            var periodicity = ""
+            var chaptersCount = ""
+            item.select(".info-list .item").forEach { infoItem ->
+                val label = infoItem.selectFirst("b")?.text()?.trim().orEmpty().lowercase()
+                val value = infoItem.ownText().trim()
+                when {
+                    "status" in label -> status = value
+                    "period" in label -> periodicity = value
+                    "chap" in label -> chaptersCount = value
+                }
+            }
+
             val chapterLink = item.select("ul.content[data-name='chap'] a[href]")
                 .firstOrNull { link ->
                     link.selectFirst("b")?.text()?.trim()?.equals(languageCode.uppercase(), ignoreCase = true) == true
@@ -205,6 +211,9 @@ class MangaFireProvider(
                 chapterPath = normalizePath(chapterPath),
                 chapterLabel = chapterLabel,
                 chapterDate = chapterDate,
+                status = status,
+                periodicity = periodicity,
+                chaptersCount = chaptersCount,
             )
         }
 
@@ -297,6 +306,9 @@ class MangaFireProvider(
         val chapterPath: String,
         val chapterLabel: String,
         val chapterDate: String,
+        val status: String = "",
+        val periodicity: String = "",
+        val chaptersCount: String = "",
     ) {
         fun toMangaSummary(providerId: String): MangaSummary =
             MangaSummary(
@@ -304,7 +316,10 @@ class MangaFireProvider(
                 title = title,
                 detailPath = detailPath,
                 coverUrl = coverUrl,
-                status = type,
+                status = status.ifBlank { type },
+                periodicity = periodicity,
+                latestPublication = chapterDate,
+                chaptersCount = chaptersCount,
             )
 
         fun toChapterSummary(providerId: String, languageCode: String): ChapterSummary? {

@@ -1,30 +1,34 @@
 package com.paudinc.komastream.utils
 
 import android.content.Context
-import com.paudinc.komastream.models.AppLanguage
-import com.paudinc.komastream.models.LibraryState
-import com.paudinc.komastream.models.SavedManga
-import org.json.JSONArray
+import com.paudinc.komastream.data.model.AppLanguage
+import com.paudinc.komastream.data.model.LibraryState
+import com.paudinc.komastream.data.model.SavedManga
+import com.paudinc.komastream.data.repository.LibraryBackupPayloadCodec
+import com.paudinc.komastream.data.repository.LibraryJsonCodec
 import org.json.JSONObject
 
 class LibraryStore(context: Context) {
     private val prefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
     private val defaultProviderId = createDefaultProviderRegistry().defaultProvider().id
+    private val jsonCodec = LibraryJsonCodec(defaultProviderId = defaultProviderId)
+    private val backupPayloadCodec = LibraryBackupPayloadCodec()
 
-    fun read(): LibraryState {
+    fun read(filterBySelectedProvider: Boolean = true): LibraryState {
         val selectedProviderId = selectedProviderId()
-        val allFavorites = parseList(
+        val parsedFavorites = jsonCodec.parseSavedMangaList(
             value = prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = selectedProviderId,
+            fallbackProviderId = defaultProviderId,
         )
-        val allReading = parseList(
+        val parsedReading = jsonCodec.parseSavedMangaList(
             value = prefs.getString("reading", "[]").orEmpty(),
-            fallbackProviderId = selectedProviderId,
+            fallbackProviderId = defaultProviderId,
         )
+        val (allFavorites, allReading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
         return LibraryState(
-            favorites = allFavorites.filter { it.providerId == selectedProviderId },
-            reading = allReading.filter { it.providerId == selectedProviderId },
-            readChapters = parseReadChapters(
+            favorites = if (filterBySelectedProvider) allFavorites.filter { it.providerId == selectedProviderId } else allFavorites,
+            reading = if (filterBySelectedProvider) allReading.filter { it.providerId == selectedProviderId } else allReading,
+            readChapters = jsonCodec.parseReadChapters(
                 value = prefs.getString("readChapters", "[]").orEmpty(),
                 providerId = selectedProviderId,
             ),
@@ -38,73 +42,122 @@ class LibraryStore(context: Context) {
     }
 
     fun toggleFavorite(manga: SavedManga) {
-        val current = parseList(prefs.getString("favorites", "[]").orEmpty(), fallbackProviderId = selectedProviderId()).toMutableList()
-        val existingIndex = current.indexOfFirst { it.providerId == manga.providerId && it.detailPath == manga.detailPath }
-        if (existingIndex >= 0) current.removeAt(existingIndex) else current.add(0, manga)
-        prefs.edit().putString("favorites", serialize(current)).apply()
+        val current = jsonCodec.parseSavedMangaList(
+            prefs.getString("favorites", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        ).toMutableList()
+        val existing = current.any { it.providerId == manga.providerId && it.detailPath == manga.detailPath }
+        current.removeAll { it.providerId == manga.providerId && it.detailPath == manga.detailPath }
+        if (!existing) current.add(0, manga)
+        prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
     fun removeFavorite(providerId: String, detailPath: String) {
-        val current = parseList(prefs.getString("favorites", "[]").orEmpty(), fallbackProviderId = selectedProviderId())
+        val current = jsonCodec.parseSavedMangaList(
+            prefs.getString("favorites", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        )
             .filterNot { it.providerId == providerId && it.detailPath == detailPath }
-        prefs.edit().putString("favorites", serialize(current)).apply()
+        prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
     fun upsertReading(manga: SavedManga) {
-        val current = parseList(prefs.getString("reading", "[]").orEmpty(), fallbackProviderId = selectedProviderId()).toMutableList()
-        current.removeAll { it.providerId == manga.providerId && it.detailPath == manga.detailPath }
-        current.add(0, manga)
-        prefs.edit().putString("reading", serialize(current.take(20))).apply()
+        val current = jsonCodec.parseSavedMangaList(
+            prefs.getString("reading", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        ).toMutableList()
+        val existingReading = current.firstOrNull { sameStoredManga(it, manga) }
+        val mergedReading = manga.copy(
+            title = manga.title.ifBlank { existingReading?.title.orEmpty() },
+            coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl.orEmpty() },
+            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle.orEmpty() },
+            lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath.orEmpty() },
+        )
+        current.removeAll { sameStoredManga(it, mergedReading) }
+        current.add(0, mergedReading)
+
+        val favorites = jsonCodec.parseSavedMangaList(
+            prefs.getString("favorites", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        ).map { saved ->
+            if (sameStoredManga(saved, mergedReading)) {
+                saved.copy(
+                    title = saved.title.ifBlank { mergedReading.title },
+                    coverUrl = saved.coverUrl.ifBlank { mergedReading.coverUrl },
+                    detailPath = preferCanonicalDetailPath(saved, mergedReading),
+                    lastChapterTitle = mergedReading.lastChapterTitle.ifBlank { saved.lastChapterTitle },
+                    lastChapterPath = mergedReading.lastChapterPath.ifBlank { saved.lastChapterPath },
+                )
+            } else {
+                saved
+            }
+        }
+        val (canonicalFavorites, canonicalReading) = canonicalizeSavedEntries(favorites, current)
+
+        prefs.edit()
+            .putString("reading", jsonCodec.serializeSavedMangaList(canonicalReading.take(20)))
+            .putString("favorites", jsonCodec.serializeSavedMangaList(canonicalFavorites))
+            .apply()
     }
 
     fun removeReading(providerId: String, detailPath: String) {
-        val current = parseList(prefs.getString("reading", "[]").orEmpty(), fallbackProviderId = selectedProviderId())
+        val current = jsonCodec.parseSavedMangaList(
+            prefs.getString("reading", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        )
             .filterNot { it.providerId == providerId && it.detailPath == detailPath }
-        prefs.edit().putString("reading", serialize(current)).apply()
+        prefs.edit().putString("reading", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
     fun isFavorite(providerId: String, detailPath: String): Boolean {
-        return parseList(prefs.getString("favorites", "[]").orEmpty(), fallbackProviderId = selectedProviderId())
+        return jsonCodec.parseSavedMangaList(
+            prefs.getString("favorites", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        )
             .any { it.providerId == providerId && it.detailPath == detailPath }
     }
 
     fun markChapterRead(providerId: String, chapterPath: String) {
         if (chapterPath.isBlank()) return
-        val qualifiedPath = qualify(providerId, chapterPath)
-        val current = parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
-        current.remove(qualifiedPath)
+        val qualifiedPath = jsonCodec.qualify(providerId, chapterPath)
+        val current = jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
+        current.removeAll { sameStoredChapter(providerId, it, chapterPath) }
         current.add(0, qualifiedPath)
-        prefs.edit().putString("readChapters", serializeReadChapters(current.take(3000))).apply()
+        prefs.edit().putString("readChapters", jsonCodec.serializeReadChapters(current.take(3000))).apply()
     }
 
     fun toggleChapterRead(providerId: String, chapterPath: String) {
         if (chapterPath.isBlank()) return
-        val qualifiedPath = qualify(providerId, chapterPath)
-        val current = parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
-        if (current.remove(qualifiedPath).not()) {
+        val qualifiedPath = jsonCodec.qualify(providerId, chapterPath)
+        val current = jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
+        if (current.removeAll { sameStoredChapter(providerId, it, chapterPath) }.not()) {
             current.add(0, qualifiedPath)
         }
-        prefs.edit().putString("readChapters", serializeReadChapters(current.take(3000))).apply()
+        prefs.edit().putString("readChapters", jsonCodec.serializeReadChapters(current.take(3000))).apply()
     }
 
     fun isChapterRead(providerId: String, chapterPath: String): Boolean {
-        return parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).contains(qualify(providerId, chapterPath))
+        return jsonCodec.parseRawReadChapters(
+            prefs.getString("readChapters", "[]").orEmpty()
+        ).any { sameStoredChapter(providerId, it, chapterPath) }
     }
 
     fun setChaptersRead(providerId: String, chapterPaths: Collection<String>, read: Boolean) {
         val normalized = chapterPaths.filter { it.isNotBlank() }
         if (normalized.isEmpty()) return
-        val normalizedQualified = normalized.map { qualify(providerId, it) }
-        val current = parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
+        val normalizedQualified = normalized.map { jsonCodec.qualify(providerId, it) }
+        val current = jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
         if (read) {
-            normalizedQualified.forEach { path ->
-                current.remove(path)
-                current.add(0, path)
+            normalized.forEachIndexed { index, chapterPath ->
+                current.removeAll { sameStoredChapter(providerId, it, chapterPath) }
+                current.add(0, normalizedQualified[index])
             }
         } else {
-            current.removeAll(normalizedQualified.toSet())
+            current.removeAll { stored ->
+                normalized.any { chapterPath -> sameStoredChapter(providerId, stored, chapterPath) }
+            }
         }
-        prefs.edit().putString("readChapters", serializeReadChapters(current.take(3000))).apply()
+        prefs.edit().putString("readChapters", jsonCodec.serializeReadChapters(current.take(3000))).apply()
     }
 
     fun setDarkTheme(enabled: Boolean) {
@@ -134,119 +187,137 @@ class LibraryStore(context: Context) {
     }
 
     fun exportBackup(): String {
-        return JSONObject()
-            .put("favorites", JSONArray(prefs.getString("favorites", "[]").orEmpty()))
-            .put("reading", JSONArray(prefs.getString("reading", "[]").orEmpty()))
-            .put("readChapters", JSONArray(prefs.getString("readChapters", "[]").orEmpty()))
-            .put("readProgress", JSONObject(prefs.getString("readProgress", "{}").orEmpty()))
-            .put("chapterPageCounts", JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty()))
-            .put("selectedProviderId", selectedProviderId())
-            .toString()
+        return backupPayloadCodec.exportPayload(
+            favorites = prefs.getString("favorites", "[]").orEmpty(),
+            reading = prefs.getString("reading", "[]").orEmpty(),
+            readChapters = prefs.getString("readChapters", "[]").orEmpty(),
+            readProgress = prefs.getString("readProgress", "{}").orEmpty(),
+            chapterPageCounts = prefs.getString("chapterPageCounts", "{}").orEmpty(),
+            selectedProviderId = selectedProviderId(),
+        )
     }
 
-    fun importBackup(payload: String) {
-        val json = JSONObject(payload)
+    fun importBackup(
+        payload: String,
+        selectedProviderIdFallback: String = selectedProviderId(),
+    ) {
+        val importedPayload = backupPayloadCodec.importPayload(payload, selectedProviderIdFallback)
         prefs.edit()
-            .putString("favorites", json.optJSONArray("favorites")?.toString() ?: "[]")
-            .putString("reading", json.optJSONArray("reading")?.toString() ?: "[]")
-            .putString("readChapters", json.optJSONArray("readChapters")?.toString() ?: "[]")
-            .putString("readProgress", json.optJSONObject("readProgress")?.toString() ?: "{}")
-            .putString("chapterPageCounts", json.optJSONObject("chapterPageCounts")?.toString() ?: "{}")
-            .putString("selectedProviderId", json.optString("selectedProviderId").ifBlank { defaultProviderId })
+            .putString("favorites", importedPayload.favorites)
+            .putString("reading", importedPayload.reading)
+            .putString("readChapters", importedPayload.readChapters)
+            .putString("readProgress", importedPayload.readProgress)
+            .putString("chapterPageCounts", importedPayload.chapterPageCounts)
+            .putString("selectedProviderId", importedPayload.selectedProviderId)
             .apply()
     }
 
     fun saveChapterProgress(providerId: String, chapterPath: String, pageIndex: Int) {
         if (chapterPath.isBlank()) return
         val json = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
-        json.put(qualify(providerId, chapterPath), pageIndex.coerceAtLeast(0))
+        json.put(jsonCodec.qualify(providerId, chapterPath), pageIndex.coerceAtLeast(0))
         prefs.edit().putString("readProgress", json.toString()).apply()
     }
 
     fun getChapterProgress(providerId: String, chapterPath: String): Int {
         if (chapterPath.isBlank()) return 0
         val json = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
-        return json.optInt(qualify(providerId, chapterPath), 0).coerceAtLeast(0)
+        return json.optInt(jsonCodec.qualify(providerId, chapterPath), 0).coerceAtLeast(0)
     }
 
     fun saveChapterPageCount(providerId: String, chapterPath: String, pageCount: Int) {
         if (chapterPath.isBlank() || pageCount <= 0) return
         val json = JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty())
-        json.put(qualify(providerId, chapterPath), pageCount)
+        json.put(jsonCodec.qualify(providerId, chapterPath), pageCount)
         prefs.edit().putString("chapterPageCounts", json.toString()).apply()
     }
 
     fun getChapterPageCount(providerId: String, chapterPath: String): Int {
         if (chapterPath.isBlank()) return 0
         val json = JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty())
-        return json.optInt(qualify(providerId, chapterPath), 0).coerceAtLeast(0)
+        return json.optInt(jsonCodec.qualify(providerId, chapterPath), 0).coerceAtLeast(0)
     }
 
-    private fun parseList(value: String, fallbackProviderId: String): List<SavedManga> {
-        val json = JSONArray(value)
-        return buildList(json.length()) {
-            for (index in 0 until json.length()) {
-                val item = json.getJSONObject(index)
-                add(
-                    SavedManga(
-                        providerId = item.optString("providerId").ifBlank { fallbackProviderId },
-                        title = item.optString("title"),
-                        detailPath = item.optString("detailPath"),
-                        coverUrl = item.optString("coverUrl"),
-                        lastChapterTitle = item.optString("lastChapterTitle"),
-                        lastChapterPath = item.optString("lastChapterPath"),
-                    )
+    private fun canonicalizeSavedEntries(
+        favorites: List<SavedManga>,
+        reading: List<SavedManga>,
+    ): Pair<List<SavedManga>, List<SavedManga>> {
+        val canonicalByKey = (favorites + reading)
+            .groupBy { mangaKey(it.providerId, it.detailPath) }
+            .mapValues { (_, items) ->
+                items.maxWithOrNull(
+                    compareBy<SavedManga> { detailPathScore(it.providerId, it.detailPath) }
+                        .thenBy { it.detailPath.length }
                 )
             }
+
+        fun normalize(items: List<SavedManga>): List<SavedManga> {
+            return items.map { item ->
+                val canonical = canonicalByKey[mangaKey(item.providerId, item.detailPath)]
+                item.copy(detailPath = canonical?.detailPath ?: item.detailPath)
+            }.distinctBy { it.providerId to it.detailPath }
+        }
+
+        return normalize(favorites) to normalize(reading)
+    }
+
+    private fun sameStoredManga(left: SavedManga, right: SavedManga): Boolean {
+        return left.providerId == right.providerId &&
+            mangaKey(left.providerId, left.detailPath) == mangaKey(right.providerId, right.detailPath)
+    }
+
+    private fun preferCanonicalDetailPath(left: SavedManga, right: SavedManga): String {
+        return if (detailPathScore(right.providerId, right.detailPath) >= detailPathScore(left.providerId, left.detailPath)) {
+            right.detailPath
+        } else {
+            left.detailPath
         }
     }
 
-    private fun serialize(items: List<SavedManga>): String {
-        val json = JSONArray()
-        items.forEach { item ->
-            json.put(
-                JSONObject()
-                    .put("providerId", item.providerId)
-                    .put("title", item.title)
-                    .put("detailPath", item.detailPath)
-                    .put("coverUrl", item.coverUrl)
-                    .put("lastChapterTitle", item.lastChapterTitle)
-                    .put("lastChapterPath", item.lastChapterPath)
-            )
+    private fun mangaKey(providerId: String, detailPath: String): String {
+        val normalized = detailPath.trim('/')
+        return when (providerId) {
+            "inmanga-es" -> normalized.split("/").take(3).joinToString("/")
+            else -> normalized
         }
-        return json.toString()
     }
 
-    private fun parseReadChapters(value: String, providerId: String): Set<String> {
-        return parseRawReadChapters(value)
-            .mapNotNull { unqualify(providerId, it) }
-            .filter { it.isNotBlank() }
-            .toSet()
+    private fun detailPathScore(providerId: String, detailPath: String): Int {
+        val normalized = detailPath.trim('/')
+        return when (providerId) {
+            "inmanga-es" -> normalized.split("/").size
+            else -> normalized.length
+        }
     }
 
-    private fun parseRawReadChapters(value: String): Set<String> {
-        val json = JSONArray(value)
-        return buildSet(json.length()) {
-            for (index in 0 until json.length()) {
-                add(json.optString(index))
+    private fun sameStoredChapter(providerId: String, storedQualifiedPath: String, chapterPath: String): Boolean {
+        val storedPath = when {
+            "::" in storedQualifiedPath -> {
+                val prefix = "$providerId::"
+                if (!storedQualifiedPath.startsWith(prefix)) return false
+                storedQualifiedPath.removePrefix(prefix)
             }
-        }.filter { it.isNotBlank() }.toSet()
-    }
-
-    private fun serializeReadChapters(items: List<String>): String {
-        val json = JSONArray()
-        items.forEach { item -> json.put(item) }
-        return json.toString()
-    }
-
-    private fun qualify(providerId: String, value: String): String = "$providerId::$value"
-
-    private fun unqualify(providerId: String, value: String): String? {
-        val prefix = "$providerId::"
-        return when {
-            value.startsWith(prefix) -> value.removePrefix(prefix)
-            "::" !in value && providerId == defaultProviderId -> value
-            else -> null
+            providerId == defaultProviderId -> storedQualifiedPath
+            else -> return false
         }
+        return canonicalChapterKey(providerId, storedPath) == canonicalChapterKey(providerId, chapterPath)
+    }
+
+    private fun canonicalChapterKey(providerId: String, chapterPath: String): String {
+        val normalized = chapterPath.trim('/')
+        return when (providerId) {
+            "inmanga-es" -> {
+                val parts = normalized.split("/").filter { it.isNotBlank() }
+                when {
+                    parts.size >= 6 && isUuid(parts[3]) -> listOf(parts[0], parts[1], parts[2], parts[4], parts[5]).joinToString("/")
+                    else -> normalized
+                }
+            }
+            else -> normalized
+        }
+    }
+
+    private fun isUuid(value: String): Boolean {
+        return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
     }
 }

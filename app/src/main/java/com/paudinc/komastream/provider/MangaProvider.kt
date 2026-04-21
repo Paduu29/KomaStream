@@ -1,11 +1,6 @@
 package com.paudinc.komastream.provider
 
-import com.paudinc.komastream.models.AppLanguage
-import com.paudinc.komastream.models.CatalogFilterOptions
-import com.paudinc.komastream.models.CatalogSearchResult
-import com.paudinc.komastream.models.HomeFeed
-import com.paudinc.komastream.models.MangaDetail
-import com.paudinc.komastream.models.ReaderData
+import com.paudinc.komastream.data.model.*
 
 interface MangaProvider {
     val id: String

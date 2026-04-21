@@ -1,4 +1,4 @@
-package com.paudinc.komastream.models
+package com.paudinc.komastream.data.model
 
 enum class AppLanguage {
     EN,
@@ -115,3 +115,23 @@ data class LibraryState(
     val selectedProviderId: String,
     val appLanguage: AppLanguage,
 )
+
+enum class BackupOperationType {
+    IMPORT,
+    EXPORT,
+}
+
+sealed interface BackupOperationUiState {
+    data object Idle : BackupOperationUiState
+
+    data class InProgress(
+        val type: BackupOperationType,
+        val progressPercent: Int,
+    ) : BackupOperationUiState
+
+    data class Completed(
+        val type: BackupOperationType,
+        val success: Boolean,
+        val message: String,
+    ) : BackupOperationUiState
+}
