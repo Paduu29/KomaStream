@@ -86,6 +86,7 @@ class DownloadChapterWorker(
     }
 
     companion object {
+        const val TAG = "DownloadChapterWorker"
         const val KEY_PROVIDER_ID = "provider_id"
         const val KEY_CHAPTER_PATH = "chapter_path"
         const val KEY_PROGRESS = "progress"

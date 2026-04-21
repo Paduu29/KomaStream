@@ -1,2666 +1,354 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-
 package com.paudinc.komastream
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Log
-import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.SmallFloatingActionButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.zIndex
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
-import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import coil.compose.AsyncImage
-import com.paudinc.komastream.models.AppLanguage
-import com.paudinc.komastream.models.CatalogFilterOptions
-import com.paudinc.komastream.models.CategoryOption
-import com.paudinc.komastream.models.ChapterSummary
-import com.paudinc.komastream.models.FilterOption
-import com.paudinc.komastream.models.HomeFeed
-import com.paudinc.komastream.models.LibraryState
-import com.paudinc.komastream.models.MangaChapter
-import com.paudinc.komastream.models.MangaDetail
-import com.paudinc.komastream.models.MangaSummary
-import com.paudinc.komastream.models.ReaderData
-import com.paudinc.komastream.models.ReaderPage
-import com.paudinc.komastream.models.SavedManga
-import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.updater.GitHubRelease
+import com.paudinc.komastream.ui.components.BackupOperationDialog
+import com.paudinc.komastream.ui.components.LoadingPlaceholder
+import com.paudinc.komastream.ui.components.UpdateAvailableDialog
+import com.paudinc.komastream.ui.navigation.RootTab
+import com.paudinc.komastream.ui.navigation.Screen
+import com.paudinc.komastream.ui.screens.*
+import com.paudinc.komastream.ui.viewmodel.KomaViewModel
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
-import com.paudinc.komastream.updater.InstallUpdateResult
-import com.paudinc.komastream.updater.UpdateCheckResult
-import com.paudinc.komastream.utils.AppStrings
-import com.paudinc.komastream.utils.DownloadChapterWorker
-import com.paudinc.komastream.utils.LibraryStore
-import com.paudinc.komastream.utils.OfflineChapterStore
-import com.paudinc.komastream.utils.appStrings
-import com.paudinc.komastream.utils.createDefaultProviderRegistry
-import com.paudinc.komastream.utils.qualifyProviderValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.paudinc.komastream.utils.*
 
-private enum class RootTab(val label: String) { Home("Home"), Library("Library"), Catalog("Catalog") }
-
-private enum class LibraryTab(val label: String) { ContinueReading("Continue Reading"), Favorites("Favorites") }
-
-private enum class CatalogMode { Basic, Advanced }
-
-private sealed interface Screen {
-    data class Root(val tab: RootTab) : Screen
-    data class Detail(val providerId: String, val detailPath: String) : Screen
-    data class Reader(val providerId: String, val chapterPath: String) : Screen
-    data object ProviderPicker : Screen
-    data object Settings : Screen
-}
-
-private val ScreenSaver = Saver<Screen, List<String>>(
-    save = { screen ->
-        when (screen) {
-            is Screen.Root -> listOf("root", screen.tab.name)
-            is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
-            is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
-            Screen.ProviderPicker -> listOf("provider-picker")
-            Screen.Settings -> listOf("settings")
-        }
-    },
-    restore = { saved ->
-        when (saved.firstOrNull()) {
-            "root" -> Screen.Root(RootTab.valueOf(saved.getOrElse(1) { RootTab.Home.name }))
-            "detail" -> Screen.Detail(saved.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, saved.getOrElse(2) { "/" })
-            "reader" -> Screen.Reader(saved.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, saved.getOrElse(2) { "/" })
-            "provider-picker" -> Screen.ProviderPicker
-            "settings" -> Screen.Settings
-            else -> Screen.Root(RootTab.Home)
-        }
-    },
-)
-
-private val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
-    save = { stack ->
-        stack.map { screen ->
-            when (screen) {
-                is Screen.Root -> listOf("root", screen.tab.name)
-                is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
-                is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
-                Screen.ProviderPicker -> listOf("provider-picker")
-                Screen.Settings -> listOf("settings")
-            }
-        }
-    },
-    restore = { saved ->
-        saved.map { item ->
-            when (item.firstOrNull()) {
-                "root" -> Screen.Root(RootTab.valueOf(item.getOrElse(1) { RootTab.Home.name }))
-                "detail" -> Screen.Detail(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
-                "reader" -> Screen.Reader(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
-                "provider-picker" -> Screen.ProviderPicker
-                "settings" -> Screen.Settings
-                else -> Screen.Root(RootTab.Home)
-            }
-        }.ifEmpty { listOf(Screen.ProviderPicker) }
-    },
-)
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KomaStream() {
     val context = LocalContext.current
-    val activity = context as? Activity
     val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
     val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
     val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-    var navigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
-        mutableStateOf(
-            listOf<Screen>(
-                if (libraryStore.hasSeenProviderPicker()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
-            )
-        )
-    }
-    val screen = navigationStack.last()
-    var homeFeed by remember { mutableStateOf<HomeFeed?>(null) }
-    var catalogQuery by rememberSaveable { mutableStateOf("") }
-    var catalogFilterOptions by remember { mutableStateOf(CatalogFilterOptions(emptyList(), emptyList(), emptyList())) }
-    var selectedCategoryIds by rememberSaveable { mutableStateOf(setOf<String>()) }
-    var selectedSortOptionId by rememberSaveable { mutableStateOf("2") }
-    var selectedStatusOptionId by rememberSaveable { mutableStateOf("0") }
-    var onlyFavoritesFilter by rememberSaveable { mutableStateOf(false) }
-    var catalogResults by remember { mutableStateOf<List<MangaSummary>>(emptyList()) }
-    var catalogHasMore by remember { mutableStateOf(false) }
-    var catalogLoadingMore by remember { mutableStateOf(false) }
-    var libraryState by remember { mutableStateOf(libraryStore.read()) }
-    var downloadedChapterPaths by remember { mutableStateOf(offlineStore.getDownloadedChapterPaths()) }
-    val downloadProgress = remember { mutableStateMapOf<String, Int>() }
-    var selectedDetail by remember { mutableStateOf<MangaDetail?>(null) }
-    var readerData by remember { mutableStateOf<ReaderData?>(null) }
-    var readerInitialPageIndex by remember { mutableStateOf(0) }
-    var loading by remember { mutableStateOf(false) }
-    var updateState by remember {
-        mutableStateOf<AppUpdateUiState>(if (updater.isEnabled()) AppUpdateUiState.Idle else AppUpdateUiState.Disabled)
-    }
-    var isUpdateDialogVisible by rememberSaveable { mutableStateOf(false) }
     val strings = appStrings()
-    val currentProvider = remember(libraryState.selectedProviderId) {
-        providerRegistry.get(libraryState.selectedProviderId)
-    }
 
-    fun currentReleaseForUi(): GitHubRelease? = when (val state = updateState) {
-        is AppUpdateUiState.Available -> state.release
-        is AppUpdateUiState.Downloading -> state.release
-        is AppUpdateUiState.Downloaded -> state.release
-        else -> null
-    }
-
-    fun showError(message: String) {
-        Log.e("KomaStream", message)
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-    }
-
-    suspend fun showTransientSnackbar(message: String) {
-        snackbarHostState.currentSnackbarData?.dismiss()
-        snackbarHostState.showSnackbar(
-            message = message,
-            duration = androidx.compose.material3.SnackbarDuration.Short,
+    val viewModel = remember {
+        KomaViewModel(
+            context = context,
+            providerRegistry = providerRegistry,
+            libraryStore = libraryStore,
+            offlineStore = offlineStore,
+            workManager = workManager,
+            updater = updater,
+            strings = strings
         )
     }
 
-    fun openSettings() {
-        navigationStack = navigationStack + Screen.Settings
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val screen = viewModel.screen
+    val libraryController = viewModel.libraryController
+    val catalogController = viewModel.catalogController
+    val readerController = viewModel.readerController
+    val homeController = viewModel.homeController
+    val updateController = viewModel.updateController
+    val backupController = viewModel.backupController
+
+    val libraryUiState = libraryController.uiState
+    val libraryState = libraryUiState.state
+    val catalogUiState = catalogController.uiState
+    val readerUiState = readerController.uiState
+    val homeUiState = homeController.uiState
+    val backupOperationState by backupController.operationState.collectAsState()
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        uri?.let { viewModel.exportBackup(it) }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.importBackup(it) }
     }
 
-    fun openProviderPicker() {
-        navigationStack = if (screen is Screen.ProviderPicker) navigationStack else navigationStack + Screen.ProviderPicker
-    }
-
-    fun checkForUpdates(notifyIfCurrent: Boolean = false, openDialogOnUpdate: Boolean = false) {
-        if (!updater.isEnabled()) {
-            updateState = AppUpdateUiState.Disabled
-            return
-        }
-        scope.launch {
-            updateState = AppUpdateUiState.Checking
-            when (val result = updater.checkForUpdate()) {
-                UpdateCheckResult.Disabled -> updateState = AppUpdateUiState.Disabled
-                UpdateCheckResult.NoUpdate -> {
-                    updateState = AppUpdateUiState.UpToDate(BuildConfig.VERSION_NAME)
-                    if (notifyIfCurrent) {
-                        snackbarHostState.showSnackbar(strings.noUpdateAvailable)
-                    }
-                }
-                is UpdateCheckResult.UpdateAvailable -> {
-                    updateState = AppUpdateUiState.Available(result.release)
-                    if (openDialogOnUpdate) {
-                        isUpdateDialogVisible = true
-                    } else {
-                        val action = snackbarHostState.showSnackbar(
-                            message = strings.updateAvailableLabel(result.release.versionLabel),
-                            actionLabel = strings.settings,
-                        )
-                        if (action == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                            openSettings()
-                        }
-                    }
-                }
-                is UpdateCheckResult.Error -> {
-                    updateState = AppUpdateUiState.Error(result.message)
-                    if (notifyIfCurrent) {
-                        showError(result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun downloadUpdate(release: GitHubRelease) {
-        scope.launch {
-            updateState = AppUpdateUiState.Downloading(release, 0)
-            runCatching {
-                updater.downloadRelease(release) { progress ->
-                    updateState = AppUpdateUiState.Downloading(release, progress)
-                }
-            }.onSuccess { file ->
-                updateState = AppUpdateUiState.Downloaded(release, file)
-                isUpdateDialogVisible = true
-                showTransientSnackbar(strings.updateDownloadStarted)
-            }.onFailure {
-                updateState = AppUpdateUiState.Available(release)
-                showError(it.message ?: strings.couldNotDownloadChapter)
-            }
-        }
-    }
-
-    fun installDownloadedUpdate(file: File) {
-        when (updater.installDownloadedUpdate(file)) {
-            InstallUpdateResult.Started -> Unit
-            InstallUpdateResult.PermissionRequired -> scope.launch {
-                snackbarHostState.showSnackbar(strings.updateInstallPermissionRequired)
-            }
-            InstallUpdateResult.Failed -> showError(strings.couldNotDownloadChapter)
-        }
-    }
-
-    fun refreshOfflineDownloads() {
-        downloadedChapterPaths = offlineStore.getDownloadedChapterPaths()
-    }
-
-    suspend fun refreshDownloadProgress() {
-        val infos = withContext(Dispatchers.IO) {
-            workManager.getWorkInfosByTag(DownloadChapterWorker::class.java.simpleName).get()
-        }
-        val next = linkedMapOf<String, Int>()
-        infos.forEach { info ->
-            val providerId = info.progress.getString(DownloadChapterWorker.KEY_PROVIDER_ID)
-                ?: info.outputData.getString(DownloadChapterWorker.KEY_PROVIDER_ID)
-            val chapterPath = info.progress.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
-                ?: info.outputData.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
-            if (providerId.isNullOrBlank() || chapterPath.isNullOrBlank()) return@forEach
-            if (info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED) {
-                next[qualifyProviderValue(providerId, chapterPath)] =
-                    info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, 0).coerceIn(0, 100)
-            }
-        }
-        downloadProgress.clear()
-        downloadProgress.putAll(next)
-    }
-
-    val exportBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
-                writer.write(libraryStore.exportBackup())
-            } ?: error("Could not open output stream")
-        }.onSuccess {
-            scope.launch { snackbarHostState.showSnackbar(strings.backupExported) }
-        }.onFailure {
-            showError(strings.exportBackupError)
-        }
-    }
-
-    val importBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        runCatching {
-            val payload = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-                reader.readText()
-            } ?: error("Could not open input stream")
-            libraryStore.importBackup(payload)
-            libraryState = libraryStore.read()
-        }.onSuccess {
-            scope.launch { snackbarHostState.showSnackbar(strings.backupImported) }
-        }.onFailure {
-            showError(strings.invalidBackup)
-        }
-    }
-
-    fun pushScreen(next: Screen) {
-        navigationStack = navigationStack + next
-    }
-
-    fun replaceRoot(tab: RootTab) {
-        navigationStack = listOf(Screen.Root(tab))
-    }
-
-    fun goBack() {
-        navigationStack = when {
-            navigationStack.size > 1 -> navigationStack.dropLast(1)
-            screen is Screen.Root && screen.tab != RootTab.Home -> listOf(Screen.Root(RootTab.Home))
-            else -> navigationStack
-        }
-    }
-
-    fun refreshHome() {
-        scope.launch {
-            loading = true
-            runCatching { withContext(Dispatchers.IO) { currentProvider.fetchHomeFeed() } }
-                .onSuccess { homeFeed = it }
-                .onFailure {
-                    Log.e("KomaStream", "Could not load home for provider ${currentProvider.id}", it)
-                    showError(it.message ?: strings.couldNotLoadHome)
-                }
-            loading = false
-        }
-    }
-
-    fun searchCatalog(loadMore: Boolean = false) {
-        if (loadMore && (catalogLoadingMore || !catalogHasMore)) return
-        scope.launch {
-            if (loadMore) {
-                catalogLoadingMore = true
-            } else {
-                loading = true
-            }
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    currentProvider.searchCatalog(
-                        query = catalogQuery,
-                        categoryIds = selectedCategoryIds.toList(),
-                        sortBy = selectedSortOptionId,
-                        broadcastStatus = selectedStatusOptionId,
-                        onlyFavorites = onlyFavoritesFilter,
-                        skip = if (loadMore) catalogResults.size else 0,
-                    )
-                }
-            }
-                .onSuccess { result ->
-                    catalogResults = if (loadMore) {
-                        (catalogResults + result.items).distinctBy { "${it.providerId}:${it.detailPath}" }
-                    } else {
-                        result.items
-                    }
-                    catalogHasMore = result.hasMore
-                }
-                .onFailure {
-                    Log.e("KomaStream", "Could not search catalog for provider ${currentProvider.id}", it)
-                    showError(it.message ?: strings.couldNotSearchCatalog)
-                }
-            if (loadMore) {
-                catalogLoadingMore = false
-            } else {
-                loading = false
-            }
-        }
-    }
-
-    fun openDetail(providerId: String, path: String) {
-        scope.launch {
-            loading = true
-            val provider = providerRegistry.get(providerId)
-            runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
-                .onSuccess {
-                    selectedDetail = it
-                    pushScreen(Screen.Detail(providerId, path))
-                }
-                .onFailure {
-                    Log.e("KomaStream", "Could not open manga $providerId:$path", it)
-                    showError(it.message ?: strings.couldNotOpenManga)
-                }
-            loading = false
-        }
-    }
-
-    fun openReader(providerId: String, path: String, replace: Boolean = false) {
-        scope.launch {
-            loading = true
-            val provider = providerRegistry.get(providerId)
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    offlineStore.loadChapter(providerId, path) ?: provider.fetchReaderData(path)
-                }
-            }
-                .onSuccess {
-                    readerData = it
-                    libraryStore.saveChapterPageCount(it.providerId, it.chapterPath, it.pages.size)
-                    readerInitialPageIndex = libraryStore.getChapterProgress(it.providerId, it.chapterPath)
-                    libraryStore.markChapterRead(it.providerId, it.chapterPath)
-                    val cover = selectedDetail?.coverUrl
-                        ?: libraryState.reading.firstOrNull { item ->
-                            item.providerId == it.providerId && item.detailPath == it.mangaDetailPath
-                        }?.coverUrl
-                        .orEmpty()
-                    libraryStore.upsertReading(
-                        SavedManga(
-                            providerId = it.providerId,
-                            title = it.mangaTitle,
-                            detailPath = it.mangaDetailPath,
-                            coverUrl = cover,
-                            lastChapterTitle = it.chapterTitle,
-                            lastChapterPath = it.chapterPath,
-                        )
-                    )
-                    libraryState = libraryStore.read()
-                    val next = Screen.Reader(providerId, path)
-                    navigationStack = if (replace && navigationStack.lastOrNull() is Screen.Reader) {
-                        navigationStack.dropLast(1) + next
-                    } else {
-                        navigationStack + next
-                    }
-                }
-                .onFailure {
-                    Log.e("KomaStream", "Could not open chapter $providerId:$path", it)
-                    showError(it.message ?: strings.couldNotOpenChapter)
-                }
-            loading = false
-        }
-    }
-
-    fun downloadChapter(providerId: String, path: String) {
-        val key = qualifyProviderValue(providerId, path)
-        if (downloadedChapterPaths.contains(key) || downloadProgress.containsKey(key)) return
-        val request = OneTimeWorkRequestBuilder<DownloadChapterWorker>()
-            .setInputData(
-                Data.Builder()
-                    .putString(DownloadChapterWorker.KEY_PROVIDER_ID, providerId)
-                    .putString(DownloadChapterWorker.KEY_CHAPTER_PATH, path)
-                    .build()
-            )
-            .addTag(DownloadChapterWorker::class.java.simpleName)
-            .addTag(key)
-            .build()
-        downloadProgress[key] = 0
-        workManager.enqueueUniqueWork("download:$key", ExistingWorkPolicy.KEEP, request)
-    }
-
-    fun removeDownloadedChapter(providerId: String, path: String) {
-        val key = qualifyProviderValue(providerId, path)
-        if (downloadedChapterPaths.contains(key).not() && downloadProgress.containsKey(key).not()) return
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    workManager.cancelUniqueWork("download:$key")
-                    offlineStore.removeChapter(providerId, path)
-                }
-            }
-                .onSuccess {
-                    refreshOfflineDownloads()
-                    downloadProgress.remove(key)
-                    snackbarHostState.showSnackbar(strings.chapterRemoved)
-                }
-                .onFailure { showError(it.message ?: strings.couldNotRemoveDownload) }
-        }
-    }
-
-    LaunchedEffect(currentProvider.id) {
-        selectedDetail = null
-        readerData = null
-        refreshHome()
-        checkForUpdates(openDialogOnUpdate = true)
-        scope.launch {
-            runCatching { withContext(Dispatchers.IO) { currentProvider.fetchCatalogFilterOptions() } }
-                .onSuccess {
-                    catalogFilterOptions = it
-                    selectedCategoryIds = selectedCategoryIds.intersect(it.categories.map { category -> category.id }.toSet())
-                    if (it.sortOptions.any { option -> option.id == selectedSortOptionId }.not()) {
-                        selectedSortOptionId = it.sortOptions.firstOrNull()?.id ?: "2"
-                    }
-                    if (it.statusOptions.any { option -> option.id == selectedStatusOptionId }.not()) {
-                        selectedStatusOptionId = it.statusOptions.firstOrNull()?.id ?: "0"
-                    }
-                }
-        }
-        searchCatalog()
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            refreshDownloadProgress()
-            refreshOfflineDownloads()
-            delay(1000)
-        }
-    }
-
-    LaunchedEffect(screen) {
-        when (val currentScreen = screen) {
-            is Screen.Detail -> {
-                if (selectedDetail?.providerId != currentScreen.providerId || selectedDetail?.detailPath != currentScreen.detailPath) {
-                    runCatching {
-                        withContext(Dispatchers.IO) {
-                            providerRegistry.get(currentScreen.providerId).fetchMangaDetail(currentScreen.detailPath)
-                        }
-                    }.onSuccess { selectedDetail = it }
-                }
-            }
-
-            is Screen.Reader -> {
-                if (readerData?.providerId != currentScreen.providerId || readerData?.chapterPath != currentScreen.chapterPath) {
-                    runCatching {
-                        withContext(Dispatchers.IO) {
-                            offlineStore.loadChapter(currentScreen.providerId, currentScreen.chapterPath)
-                                ?: providerRegistry.get(currentScreen.providerId).fetchReaderData(currentScreen.chapterPath)
-                        }
-                    }.onSuccess {
-                        readerData = it
-                        readerInitialPageIndex = libraryStore.getChapterProgress(currentScreen.providerId, currentScreen.chapterPath)
-                    }
-                }
-            }
-
-            is Screen.Root, Screen.Settings, Screen.ProviderPicker -> Unit
-        }
-    }
-
-    BackHandler(enabled = true) {
-        if (screen is Screen.Root && screen.tab == RootTab.Home) {
-            activity?.finishAndRemoveTask()
-        } else {
-            goBack()
-        }
-    }
-
-    val lightScheme = lightColorScheme(
-        primary = Color(0xFF2C5DAA),
-        secondary = Color(0xFF5B6B86),
-        tertiary = Color(0xFF8D3B3B),
-        background = Color(0xFFF5F7FB),
-        surface = Color(0xFFFFFFFF),
-        surfaceVariant = Color(0xFFE2E8F0),
-    )
-    val darkScheme = darkColorScheme(
-        primary = Color(0xFF8DB4FF),
-        onPrimary = Color(0xFF0B1830),
-        secondary = Color(0xFFC9D6EB),
-        tertiary = Color(0xFFFFC2B8),
-        background = Color(0xFF0A101B),
-        onBackground = Color(0xFFF2F5FA),
-        surface = Color(0xFF1F2D42),
-        onSurface = Color(0xFFF2F5FA),
-        surfaceVariant = Color(0xFF2B3C56),
-        onSurfaceVariant = Color(0xFFE0E7F2),
-        outline = Color(0xFF7A90B2),
-    )
-    val colorScheme = if (libraryState.useDarkTheme) darkScheme else lightScheme
-
-    MaterialTheme(colorScheme = colorScheme) {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    MaterialTheme(
+        colorScheme = if (libraryState.useDarkTheme) darkColorScheme() else lightColorScheme()
+    ) {
+        Surface(color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbarHostState) },
+                bottomBar = {
+                    if (screen is Screen.Root) {
+                        NavigationBar {
+                            RootTab.entries.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = screen.tab == tab,
+                                    onClick = { viewModel.replaceRoot(tab) },
+                                    label = {
+                                        Text(
+                                            when (tab) {
+                                                RootTab.Home -> strings.home
+                                                RootTab.Library -> strings.library
+                                                RootTab.Catalog -> strings.catalog
+                                            }
+                                        )
+                                    },
+                                    icon = {
+                                        Icon(
+                                            when (tab) {
+                                                RootTab.Home -> Icons.Default.Home
+                                                RootTab.Library -> Icons.Default.Favorite
+                                                RootTab.Catalog -> Icons.Default.Explore
+                                            },
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
                 topBar = {
                     CenterAlignedTopAppBar(
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
                         title = {
                             Text(
-                                when (screen) {
+                                text = when (screen) {
                                     is Screen.Root -> strings.appName
-                                    is Screen.Detail -> selectedDetail?.title ?: strings.manga
-                                    is Screen.Reader -> readerData?.chapterTitle ?: strings.reader
-                                    Screen.ProviderPicker -> strings.chooseProvider
-                                    Screen.Settings -> strings.settings
-                                }
+                                    is Screen.Detail -> readerUiState.selectedDetail?.title ?: ""
+                                    is Screen.Settings -> strings.settings
+                                    is Screen.ProviderPicker -> strings.chooseProvider
+                                    is Screen.Reader -> readerUiState.readerData?.let { reader ->
+                                        buildReaderTopBarTitle(
+                                            mangaTitle = reader.mangaTitle,
+                                            chapterTitle = reader.chapterTitle,
+                                            currentPageIndex = readerUiState.currentPageIndex,
+                                            totalPages = reader.pages.size,
+                                        )
+                                    }.orEmpty()
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         },
                         navigationIcon = {
-                            if (screen is Screen.Root) {
-                                IconButton(onClick = { openSettings() }) {
-                                    Icon(Icons.Default.Settings, contentDescription = strings.settings)
-                                }
-                            } else if (screen is Screen.ProviderPicker && navigationStack.size == 1) {
-                                Spacer(Modifier.width(48.dp))
-                            } else {
-                                IconButton(onClick = { goBack() }) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = strings.back)
+                            if (screen !is Screen.Root && screen !is Screen.ProviderPicker) {
+                                IconButton(onClick = { viewModel.goBack() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                                 }
                             }
                         },
                         actions = {
                             if (screen is Screen.Root) {
-                                IconButton(onClick = { openProviderPicker() }) {
+                                IconButton(onClick = { viewModel.pushScreen(Screen.ProviderPicker) }) {
                                     AsyncImage(
-                                        model = currentProvider.logoUrl,
-                                        contentDescription = strings.providerLabel,
-                                        modifier = Modifier.size(24.dp),
+                                        model = viewModel.currentProvider.logoUrl,
+                                        contentDescription = viewModel.currentProvider.displayName,
+                                        modifier = Modifier.size(24.dp).clip(CircleShape)
                                     )
                                 }
-                                IconButton(onClick = { refreshHome() }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = strings.refresh)
+                                IconButton(onClick = { viewModel.pushScreen(Screen.Settings) }) {
+                                    Icon(Icons.Default.Settings, contentDescription = null)
                                 }
                             }
-                        },
+                        }
                     )
-                },
-                bottomBar = {
-                    if (screen is Screen.Root) {
-                        val currentTab = (screen as Screen.Root).tab
-                        NavigationBar(
-                            modifier = Modifier.navigationBarsPadding(),
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        ) {
-                            listOf(
-                                Triple(RootTab.Home, strings.home, Icons.Default.Home),
-                                Triple(RootTab.Library, strings.library, Icons.Default.Bookmark),
-                                Triple(RootTab.Catalog, strings.catalog, Icons.Default.Explore),
-                            ).forEach { (tab, label, icon) ->
-                                NavigationBarItem(
-                                    selected = currentTab == tab,
-                                    onClick = { replaceRoot(tab) },
-                                    icon = { Icon(icon, contentDescription = label) },
-                                    label = { Text(label) },
+                }
+            ) { padding ->
+                Box(modifier = Modifier.padding(padding)) {
+                    when (screen) {
+                        is Screen.Root -> {
+                            when (screen.tab) {
+                                RootTab.Home -> HomeScreen(
+                                    feed = homeUiState.feed,
+                                    strings = strings,
+                                    onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                    onOpenChapter = { id, path -> viewModel.openReader(id, path) }
+                                )
+                                RootTab.Library -> LibraryScreen(
+                                    libraryState = libraryState,
+                                    strings = strings,
+                                    selectedTab = libraryUiState.selectedTab,
+                                    onSelectTab = { viewModel.selectLibraryTab(it) },
+                                    onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                    onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                    onRemoveFromContinueReading = { viewModel.removeReading(it) },
+                                    onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
+                                )
+                                RootTab.Catalog -> CatalogScreen(
+                                    strings = strings,
+                                    query = catalogUiState.query,
+                                    categories = catalogUiState.filterOptions.categories,
+                                    sortOptions = catalogUiState.filterOptions.sortOptions,
+                                    statusOptions = catalogUiState.filterOptions.statusOptions,
+                                    selectedCategoryIds = catalogUiState.selectedCategoryIds,
+                                    selectedSortOptionId = catalogUiState.selectedSortOptionId,
+                                    selectedStatusOptionId = catalogUiState.selectedStatusOptionId,
+                                    onlyFavorites = catalogUiState.onlyFavorites,
+                                    results = catalogUiState.results,
+                                    hasMoreResults = catalogUiState.hasMoreResults,
+                                    isLoadingMore = catalogUiState.isLoadingMore,
+                                    onQueryChange = { viewModel.updateCatalogQuery(it) },
+                                    onToggleCategory = { id -> viewModel.toggleCatalogCategory(id) },
+                                    onSelectSort = { viewModel.selectCatalogSort(it) },
+                                    onSelectStatus = { viewModel.selectCatalogStatus(it) },
+                                    onToggleOnlyFavorites = { viewModel.setCatalogOnlyFavorites(it) },
+                                    onClearFilters = { viewModel.clearCatalogFilters() },
+                                    onSearch = { viewModel.searchCatalog() },
+                                    onLoadMore = { viewModel.searchCatalog(loadMore = true) },
+                                    onOpen = { id, path -> viewModel.openDetail(id, path) }
                                 )
                             }
                         }
-                    }
-                },
-            ) { padding ->
-                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    when (val current = screen) {
-                        Screen.ProviderPicker -> ProviderPickerScreen(
-                            strings = strings,
-                            selectedProviderId = libraryState.selectedProviderId,
-                            providersByLanguage = providerRegistry.groupedByLanguage(),
-                            onSelectProvider = { providerId ->
-                                libraryStore.setSelectedProviderId(providerId)
-                                libraryStore.setHasSeenProviderPicker(true)
-                                libraryState = libraryStore.read()
-                                navigationStack = listOf(Screen.Root(RootTab.Home))
-                                selectedDetail = null
-                                readerData = null
-                            },
-                            onOpenProviderSite = { url ->
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                }.onFailure {
-                                    Log.e("KomaStream", "Could not open provider site $url", it)
-                                    showError(it.message ?: strings.openProviderSite)
-                                }
-                            },
-                        )
-                        is Screen.Root -> when (current.tab) {
-                            RootTab.Home -> HomeScreen(homeFeed, strings, ::openDetail, ::openReader)
-                            RootTab.Library -> LibraryScreen(
-                                libraryState = libraryState,
-                                strings = strings,
-                                onOpenManga = ::openDetail,
-                                onOpenChapter = ::openReader,
-                                onRemoveFromContinueReading = { saved ->
-                                    libraryStore.removeReading(saved.providerId, saved.detailPath)
-                                    libraryState = libraryStore.read()
-                                    scope.launch {
-                                        showTransientSnackbar(strings.removedFromContinueReading)
-                                    }
-                                },
-                                onRemoveFromFavorites = { saved ->
-                                    libraryStore.removeFavorite(saved.providerId, saved.detailPath)
-                                    libraryState = libraryStore.read()
-                                    scope.launch {
-                                        showTransientSnackbar(strings.removedFromFavorites)
-                                    }
-                                },
-                            )
-                            RootTab.Catalog -> CatalogScreen(
-                                strings,
-                                catalogQuery,
-                                catalogFilterOptions.categories,
-                                catalogFilterOptions.sortOptions,
-                                catalogFilterOptions.statusOptions,
-                                selectedCategoryIds,
-                                selectedSortOptionId,
-                                selectedStatusOptionId,
-                                onlyFavoritesFilter,
-                                catalogResults,
-                                catalogHasMore,
-                                catalogLoadingMore,
-                                { catalogQuery = it },
-                                { categoryId ->
-                                    selectedCategoryIds = selectedCategoryIds.toMutableSet().apply {
-                                        if (contains(categoryId)) remove(categoryId) else add(categoryId)
-                                    }
-                                },
-                                { selectedSortOptionId = it },
-                                { selectedStatusOptionId = it },
-                                { onlyFavoritesFilter = it },
-                                {
-                                    selectedCategoryIds = emptySet()
-                                    selectedSortOptionId = catalogFilterOptions.sortOptions.firstOrNull()?.id ?: "2"
-                                    selectedStatusOptionId = catalogFilterOptions.statusOptions.firstOrNull()?.id ?: "0"
-                                    onlyFavoritesFilter = false
-                                    catalogQuery = ""
-                                    searchCatalog()
-                                },
-                                ::searchCatalog,
-                                { searchCatalog(loadMore = true) },
-                                ::openDetail,
-                            )
+                        is Screen.Detail -> {
+                            readerUiState.selectedDetail?.let { detail ->
+                                DetailScreen(
+                                    strings = strings,
+                                    detail = detail,
+                                    isFavorite = libraryStore.isFavorite(detail.providerId, detail.detailPath),
+                                    autoJumpToUnread = libraryState.autoJumpToUnread,
+                                    readChapters = libraryState.readChapters,
+                                    lastOpenedChapterPath = libraryStore.read().reading.find { it.providerId == detail.providerId && it.detailPath == detail.detailPath }?.lastChapterPath ?: "",
+                                    downloadedChapters = libraryUiState.downloadedChapterPaths,
+                                    downloadProgress = libraryController.downloadProgress,
+                                    isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
+                                    onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
+                                    onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path) },
+                                    onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.chapters, read) },
+                                    onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.chapters, value, read) },
+                                    onToggleChapterDownload = { path, isDownloaded ->
+                                        if (isDownloaded) viewModel.removeDownloadedChapter(detail.providerId, path)
+                                        else viewModel.downloadChapter(detail.providerId, path)
+                                    },
+                                    onReadChapter = { path -> viewModel.openReader(detail.providerId, path) }
+                                )
+                            } ?: LoadingPlaceholder()
                         }
-
-                        is Screen.Detail -> selectedDetail?.let { detail ->
-                            DetailScreen(
-                                strings = strings,
-                                detail = detail,
-                                libraryStore = libraryStore,
-                                isFavorite = libraryState.favorites.any {
-                                    it.providerId == detail.providerId && it.detailPath == detail.detailPath
-                                },
-                                autoJumpToUnread = libraryState.autoJumpToUnread,
-                                readChapters = libraryState.readChapters,
-                                lastOpenedChapterPath = libraryState.reading
-                                    .firstOrNull { item ->
-                                        item.providerId == detail.providerId && item.detailPath == detail.detailPath
-                                    }
-                                    ?.lastChapterPath
-                                    .orEmpty(),
-                                downloadedChapters = downloadedChapterPaths,
-                                downloadProgress = downloadProgress,
-                                onToggleFavorite = {
-                                    val currentReading = libraryState.reading.firstOrNull { item ->
-                                        item.providerId == detail.providerId && item.detailPath == detail.detailPath
-                                    }
-                                    libraryStore.toggleFavorite(
-                                        SavedManga(
-                                            providerId = detail.providerId,
-                                            title = detail.title,
-                                            detailPath = detail.detailPath,
-                                            coverUrl = detail.coverUrl,
-                                            lastChapterTitle = currentReading?.lastChapterTitle.orEmpty(),
-                                            lastChapterPath = currentReading?.lastChapterPath.orEmpty(),
-                                        )
-                                    )
-                                    libraryState = libraryStore.read()
-                                    scope.launch {
-                                        showTransientSnackbar(strings.favoritesUpdated)
-                                    }
-                                },
-                                onToggleChapterRead = { chapterPath ->
-                                    libraryStore.toggleChapterRead(detail.providerId, chapterPath)
-                                    libraryState = libraryStore.read()
-                                    scope.launch {
-                                        showTransientSnackbar(strings.updatedReadStatus)
-                                    }
-                                },
-                                onSetAllChaptersRead = { read ->
-                                    val paths = detail.chapters.map { buildChapterPath(detail.detailPath, it) }
-                                    libraryStore.setChaptersRead(detail.providerId, paths, read)
-                                    libraryState = libraryStore.read()
-                                    scope.launch {
-                                        showTransientSnackbar(
-                                            if (read) strings.allChaptersRead else strings.allChaptersUnread
-                                        )
-                                    }
-                                },
-                                onSetUntilChapterRead = { chapterNumber, read ->
-                                    val paths = detail.chapters
-                                        .filter { chapterValue(it) <= chapterNumber }
-                                        .map { buildChapterPath(detail.detailPath, it) }
-                                    libraryStore.setChaptersRead(detail.providerId, paths, read)
-                                    libraryState = libraryStore.read()
-                                    scope.launch {
-                                        showTransientSnackbar(strings.markedUntilChapter(chapterNumber, read))
-                                    }
-                                },
-                                onToggleChapterDownload = { chapterPath, isDownloaded ->
-                                    if (isDownloaded) removeDownloadedChapter(detail.providerId, chapterPath) else downloadChapter(detail.providerId, chapterPath)
-                                },
-                                onReadChapter = { chapterPath -> openReader(detail.providerId, chapterPath) },
-                            )
+                        is Screen.Reader -> {
+                            readerUiState.readerData?.let { data ->
+                                ReaderScreen(
+                                    strings = strings,
+                                    reader = data,
+                                    offlineStore = offlineStore,
+                                    initialPageIndex = readerUiState.initialPageIndex,
+                                    isDownloaded = libraryUiState.downloadedChapterPaths.contains(data.chapterPath),
+                                    downloadPercent = libraryController.downloadProgress[data.chapterPath],
+                                    onPagePositionChanged = { index -> viewModel.updatePageProgress(data.providerId, data.chapterPath, index) },
+                                    onToggleDownload = {
+                                        if (libraryUiState.downloadedChapterPaths.contains(data.chapterPath)) viewModel.removeDownloadedChapter(data.providerId, data.chapterPath)
+                                        else viewModel.downloadChapter(data.providerId, data.chapterPath)
+                                    },
+                                    onOpenChapter = { currentPath, targetPath, markCurrentRead ->
+                                        viewModel.openAdjacentChapter(data.providerId, currentPath, targetPath, markCurrentRead)
+                                    },
+                                    onOpenManga = { path -> viewModel.openDetail(data.providerId, path) }
+                                )
+                            } ?: LoadingPlaceholder()
                         }
-
-                        is Screen.Reader -> readerData?.let {
-                            val chapterKey = qualifyProviderValue(it.providerId, it.chapterPath)
-                            ReaderScreen(
-                                strings = strings,
-                                reader = it,
-                                offlineStore = offlineStore,
-                                initialPageIndex = readerInitialPageIndex,
-                                isDownloaded = downloadedChapterPaths.contains(chapterKey),
-                                downloadPercent = downloadProgress[chapterKey],
-                                onPagePositionChanged = { pageIndex ->
-                                    libraryStore.saveChapterProgress(it.providerId, it.chapterPath, pageIndex)
-                                },
-                                onToggleDownload = {
-                                    if (downloadedChapterPaths.contains(chapterKey)) {
-                                        removeDownloadedChapter(it.providerId, it.chapterPath)
-                                    } else {
-                                        downloadChapter(it.providerId, it.chapterPath)
-                                    }
-                                },
-                                onOpenChapter = { chapterPath -> openReader(it.providerId, chapterPath, replace = true) },
-                                onOpenManga = { detailPath -> openDetail(it.providerId, detailPath) },
-                            )
-                        }
-                        Screen.Settings -> SettingsScreen(
+                        is Screen.Settings -> SettingsScreen(
                             strings = strings,
                             appLanguage = libraryState.appLanguage,
                             useDarkTheme = libraryState.useDarkTheme,
                             autoJumpToUnread = libraryState.autoJumpToUnread,
                             versionName = BuildConfig.VERSION_NAME,
-                            updateState = updateState,
-                            onLanguageChange = { language ->
-                                libraryStore.setAppLanguage(language)
-                                val languageTag = if (language == AppLanguage.ES) "es" else "en"
-                                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
-                                libraryState = libraryStore.read()
-                            },
-                            onThemeChange = { enabled ->
-                                libraryStore.setDarkTheme(enabled)
-                                libraryState = libraryStore.read()
-                            },
-                            onAutoJumpToUnreadChange = { enabled ->
-                                libraryStore.setAutoJumpToUnread(enabled)
-                                libraryState = libraryStore.read()
-                            },
-                            onExportBackup = {
-                                exportBackupLauncher.launch(defaultBackupFileName())
-                            },
-                            onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
-                            onCheckForUpdates = { checkForUpdates(notifyIfCurrent = true, openDialogOnUpdate = true) },
+                            updateState = updateController.updateState,
+                            onLanguageChange = { viewModel.changeLanguage(it) },
+                            onThemeChange = { viewModel.changeTheme(it) },
+                            onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
+                            onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
+                            onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
+                            onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
                             onDownloadUpdate = {
-                                currentReleaseForUi()?.let(::downloadUpdate)
+                                if (updateController.updateState is AppUpdateUiState.Available) {
+                                    viewModel.downloadUpdate((updateController.updateState as AppUpdateUiState.Available).release)
+                                }
                             },
                             onInstallUpdate = {
-                                val downloaded = updateState as? AppUpdateUiState.Downloaded
-                                if (downloaded != null) {
-                                    installDownloadedUpdate(downloaded.file)
+                                if (updateController.updateState is AppUpdateUiState.Downloaded) {
+                                    viewModel.installDownloadedUpdate((updateController.updateState as AppUpdateUiState.Downloaded).file)
                                 }
                             },
                             onOpenReleasePage = {
-                                currentReleaseForUi()?.let(updater::openReleasePage)
-                            },
-                        )
-                    }
-
-                    if (loading) {
-                        Box(
-                            modifier = Modifier.fillMaxSize().background(Color(0x66000000)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(color = Color.White)
-                        }
-                    }
-
-                    if (isUpdateDialogVisible) {
-                        UpdateAvailableDialog(
-                            strings = strings,
-                            updateState = updateState,
-                            onDismiss = { isUpdateDialogVisible = false },
-                            onDownloadUpdate = { currentReleaseForUi()?.let(::downloadUpdate) },
-                            onInstallUpdate = {
-                                val downloaded = updateState as? AppUpdateUiState.Downloaded
-                                if (downloaded != null) {
-                                    installDownloadedUpdate(downloaded.file)
+                                val release: GitHubRelease? = when (val state = updateController.updateState) {
+                                    is AppUpdateUiState.Available -> state.release
+                                    is AppUpdateUiState.Downloading -> state.release
+                                    is AppUpdateUiState.Downloaded -> state.release
+                                    else -> null
                                 }
-                            },
-                            onOpenReleasePage = { currentReleaseForUi()?.let(updater::openReleasePage) },
+                                release?.let {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it.htmlUrl))
+                                    context.startActivity(intent)
+                                }
+                            }
                         )
+                        is Screen.ProviderPicker -> ProviderPickerScreen(
+                            strings = strings,
+                            selectedProviderId = libraryState.selectedProviderId,
+                            providersByLanguage = providerRegistry.groupedByLanguage(),
+                            onSelectProvider = { viewModel.selectProvider(it) },
+                            onOpenProviderSite = { url ->
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }
+                        )
+                    }
+
+                    if (viewModel.loading) {
+                        LoadingPlaceholder()
                     }
                 }
             }
         }
     }
-}
 
-@Composable
-private fun UpdateAvailableDialog(
-    strings: AppStrings,
-    updateState: AppUpdateUiState,
-    onDismiss: () -> Unit,
-    onDownloadUpdate: () -> Unit,
-    onInstallUpdate: () -> Unit,
-    onOpenReleasePage: () -> Unit,
-) {
-    val release = when (updateState) {
-        is AppUpdateUiState.Available -> updateState.release
-        is AppUpdateUiState.Downloading -> updateState.release
-        is AppUpdateUiState.Downloaded -> updateState.release
-        else -> null
-    } ?: return
+    if (updateController.isDialogVisible) {
+        UpdateAvailableDialog(
+            strings = strings,
+            updateState = updateController.updateState,
+            onDismiss = { updateController.isDialogVisible = false },
+            onDownloadUpdate = { /* handled via settings or notification usually */ },
+            onInstallUpdate = { /* handled via settings or notification usually */ },
+            onOpenReleasePage = { /* handled via settings or notification usually */ }
+        )
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true),
-        title = { Text(strings.updateDialogTitle) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = strings.updateDialogMessage(release.versionLabel),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                when (updateState) {
-                    is AppUpdateUiState.Downloading -> {
-                        Text(
-                            text = "${updateState.progressPercent}% ${strings.downloading.lowercase()}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        LinearProgressIndicator(
-                            progress = { updateState.progressPercent / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    is AppUpdateUiState.Downloaded -> {
-                        Text(
-                            text = strings.updateDownloadStarted,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    else -> Unit
-                }
-                if (release.body.isNotBlank()) {
-                    Text(
-                        text = strings.releaseNotes,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = release.body,
-                        maxLines = 10,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            when (updateState) {
-                is AppUpdateUiState.Available -> Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
-                is AppUpdateUiState.Downloaded -> Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
-                is AppUpdateUiState.Downloading -> Button(onClick = {}, enabled = false) { Text(strings.downloading) }
-                else -> Unit
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
-                Button(onClick = onDismiss) { Text(strings.dismiss) }
-            }
-        },
+    BackupOperationDialog(
+        strings = strings,
+        state = backupOperationState,
+        onConfirm = { viewModel.dismissBackupOperationDialog() },
     )
-}
 
-@Composable
-private fun HomeScreen(
-    feed: HomeFeed?,
-    strings: AppStrings,
-    onOpenManga: (String, String) -> Unit,
-    onOpenChapter: (String, String) -> Unit,
-) {
-    if (feed == null) {
-        LoadingPlaceholder()
-        return
-    }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        item { SectionTitle(strings.latestUpdates) }
-        items(feed.latestUpdates) { ChapterRow(it, strings, onOpenChapter) }
-        item { SectionTitle(strings.popularChapters) }
-        items(feed.popularChapters) { ChapterRow(it, strings, onOpenChapter) }
-        item { SectionTitle(strings.popularMangas) }
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(feed.popularMangas) { MangaCoverCard(it) { onOpenManga(it.providerId, it.detailPath) } }
-            }
+    BackHandler {
+        if (!viewModel.goBack()) {
+            (context as? Activity)?.finish()
         }
     }
 }
 
-@Composable
-private fun LibraryScreen(
-    libraryState: LibraryState,
-    strings: AppStrings,
-    onOpenManga: (String, String) -> Unit,
-    onOpenChapter: (String, String) -> Unit,
-    onRemoveFromContinueReading: (SavedManga) -> Unit,
-    onRemoveFromFavorites: (SavedManga) -> Unit,
-) {
-    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.ContinueReading) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            SectionTitle(strings.library)
-        }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LibraryTab.entries.forEach { tab ->
-                    val selected = selectedTab == tab
-                    AssistChip(
-                        onClick = { selectedTab = tab },
-                        label = { Text(if (tab == LibraryTab.ContinueReading) strings.continueReading else strings.favorites) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    )
-                }
-            }
-        }
-        when (selectedTab) {
-            LibraryTab.Favorites -> {
-                item {
-                    Text(
-                        strings.favoritesCount(libraryState.favorites.size),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                if (libraryState.favorites.isEmpty()) {
-                    item { EmptyCard(strings.addMangaHint) }
-                } else {
-                    items(libraryState.favorites) { saved ->
-                        FavoriteMangaCard(
-                            manga = saved,
-                            strings = strings,
-                            onOpen = { onOpenManga(saved.providerId, saved.detailPath) },
-                            onRemove = { onRemoveFromFavorites(saved) },
-                        )
-                    }
-                }
-            }
-            LibraryTab.ContinueReading -> {
-                item {
-                    Text(
-                        strings.activeSeriesCount(libraryState.reading.size),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                if (libraryState.reading.isEmpty()) {
-                    item { EmptyCard(strings.readingHint) }
-                } else {
-                    items(libraryState.reading) { saved ->
-                        ContinueReadingCard(
-                            manga = saved,
-                            strings = strings,
-                            onOpen = { onOpenManga(saved.providerId, saved.detailPath) },
-                            onResume = { if (saved.lastChapterPath.isNotBlank()) onOpenChapter(saved.providerId, saved.lastChapterPath) },
-                            onRemove = { onRemoveFromContinueReading(saved) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CatalogScreen(
-    strings: AppStrings,
-    query: String,
-    categories: List<CategoryOption>,
-    sortOptions: List<FilterOption>,
-    statusOptions: List<FilterOption>,
-    selectedCategoryIds: Set<String>,
-    selectedSortOptionId: String,
-    selectedStatusOptionId: String,
-    onlyFavorites: Boolean,
-    results: List<MangaSummary>,
-    hasMoreResults: Boolean,
-    isLoadingMore: Boolean,
-    onQueryChange: (String) -> Unit,
-    onToggleCategory: (String) -> Unit,
-    onSelectSort: (String) -> Unit,
-    onSelectStatus: (String) -> Unit,
-    onToggleOnlyFavorites: (Boolean) -> Unit,
-    onClearFilters: () -> Unit,
-    onSearch: () -> Unit,
-    onLoadMore: () -> Unit,
-    onOpen: (String, String) -> Unit,
-) {
-    var catalogMode by rememberSaveable { mutableStateOf(CatalogMode.Basic) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                TabRow(selectedTabIndex = catalogMode.ordinal) {
-                    Tab(
-                        selected = catalogMode == CatalogMode.Basic,
-                        onClick = { catalogMode = CatalogMode.Basic },
-                        text = { Text(strings.search) },
-                    )
-                    Tab(
-                        selected = catalogMode == CatalogMode.Advanced,
-                        onClick = { catalogMode = CatalogMode.Advanced },
-                        text = { Text(strings.additionalFilters) },
-                    )
-                }
-                when (catalogMode) {
-                    CatalogMode.Basic -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = onQueryChange,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(strings.searchAvailableMangas) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = onSearch) { Text(strings.search) }
-                                Button(onClick = onClearFilters) { Text(strings.clearFilters) }
-                            }
-                        }
-                    }
-
-                    CatalogMode.Advanced -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            if (categories.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(strings.categories, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        categories.forEach { category ->
-                                            val selected = selectedCategoryIds.contains(category.id)
-                                            AssistChip(
-                                                onClick = { onToggleCategory(category.id) },
-                                                label = { Text(category.name) },
-                                                colors = AssistChipDefaults.assistChipColors(
-                                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            if (sortOptions.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(strings.sortBy, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        sortOptions.forEach { option ->
-                                            val selected = option.id == selectedSortOptionId
-                                            AssistChip(
-                                                onClick = { onSelectSort(option.id) },
-                                                label = { Text(option.name) },
-                                                colors = AssistChipDefaults.assistChipColors(
-                                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(strings.additionalFilters, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                if (statusOptions.isNotEmpty()) {
-                                    Text(strings.state, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        statusOptions.forEach { option ->
-                                            val selected = option.id == selectedStatusOptionId
-                                            AssistChip(
-                                                onClick = { onSelectStatus(option.id) },
-                                                label = { Text(option.name) },
-                                                colors = AssistChipDefaults.assistChipColors(
-                                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                                AssistChip(
-                                    onClick = { onToggleOnlyFavorites(onlyFavorites.not()) },
-                                    label = { Text(strings.onlyFavorites) },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = if (onlyFavorites) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        labelColor = if (onlyFavorites) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = onSearch) { Text(strings.search) }
-                                    Button(onClick = onClearFilters) { Text(strings.clearFilters) }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (query.isBlank() && results.isEmpty()) {
-            item {
-                EmptyCard(strings.searchEmptyCatalog)
-            }
-        }
-        items(results) { manga ->
-            ElevatedCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(cardBorder(), RoundedCornerShape(24.dp))
-                    .clickable { onOpen(manga.providerId, manga.detailPath) },
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Row(modifier = Modifier.padding(14.dp)) {
-                    AsyncImage(
-                        model = manga.coverUrl,
-                        contentDescription = manga.title,
-                        modifier = Modifier.size(width = 92.dp, height = 128.dp).clip(RoundedCornerShape(18.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(manga.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        MetadataLine(strings.status, manga.status)
-                        MetadataLine(strings.periodicity, manga.periodicity)
-                        MetadataLine(strings.latest, formatDateEu(manga.latestPublication))
-                        MetadataLine(strings.chapters, manga.chaptersCount)
-                    }
-                }
-            }
-        }
-        if (results.isNotEmpty() && hasMoreResults) {
-            item {
-                Button(
-                    onClick = onLoadMore,
-                    enabled = !isLoadingMore,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (isLoadingMore) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
-                        Text(strings.loadMore)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailScreen(
-    strings: AppStrings,
-    detail: MangaDetail,
-    libraryStore: LibraryStore,
-    isFavorite: Boolean,
-    autoJumpToUnread: Boolean,
-    readChapters: Set<String>,
-    lastOpenedChapterPath: String,
-    downloadedChapters: Set<String>,
-    downloadProgress: Map<String, Int>,
-    onToggleFavorite: () -> Unit,
-    onToggleChapterRead: (String) -> Unit,
-    onSetAllChaptersRead: (Boolean) -> Unit,
-    onSetUntilChapterRead: (Double, Boolean) -> Unit,
-    onToggleChapterDownload: (String, Boolean) -> Unit,
-    onReadChapter: (String) -> Unit,
-) {
-    var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
-    var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
-    var hasAutoPositionedChapterList by rememberSaveable(detail.providerId, detail.detailPath, chapterQuery) { mutableStateOf(false) }
-    var suppressAutoPositioning by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
-    val initialIsFavorite = rememberSaveable(detail.providerId, detail.detailPath) { isFavorite }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    val filteredChapters = remember(detail.chapters, chapterQuery) {
-        val normalizedQuery = chapterQuery.trim().replace(",", ".")
-        if (normalizedQuery.isBlank()) {
-            detail.chapters
-        } else {
-            detail.chapters.filter { chapter ->
-                chapter.chapterLabel.contains(chapterQuery.trim(), ignoreCase = true) ||
-                    chapter.chapterNumberUrl.contains(chapterQuery.trim(), ignoreCase = true)
-            }
-        }
-    }
-    val targetUnreadChapterPath = remember(
-        detail.providerId,
-        detail.detailPath,
-        detail.chapters,
-        readChapters,
-        lastOpenedChapterPath,
-        initialIsFavorite,
-        autoJumpToUnread,
-    ) {
-        resolveTargetUnreadChapterPath(
-            detailPath = detail.detailPath,
-            chapters = detail.chapters,
-            readChapters = readChapters,
-            lastOpenedChapterPath = lastOpenedChapterPath,
-            isFavorite = initialIsFavorite,
-            autoJumpToUnread = autoJumpToUnread,
-        )
-    }
-    val targetUnreadIndex = remember(filteredChapters, targetUnreadChapterPath, detail.detailPath) {
-        targetUnreadChapterPath?.let { path ->
-            filteredChapters
-                .indexOfFirst { chapter -> buildChapterPath(detail.detailPath, chapter) == path }
-                .takeIf { it >= 0 }
-        }
-    }
-
-    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex) {
-        if (chapterQuery.isNotBlank()) return@LaunchedEffect
-        if (suppressAutoPositioning) return@LaunchedEffect
-        if (hasAutoPositionedChapterList) return@LaunchedEffect
-        val targetIndex = targetUnreadIndex ?: return@LaunchedEffect
-        val chapterStartIndex = 2
-        listState.scrollToItem((targetIndex + chapterStartIndex).coerceAtLeast(0))
-        hasAutoPositionedChapterList = true
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-        ) {
-            item {
-                Box {
-                    AsyncImage(
-                        model = detail.bannerUrl.ifBlank { detail.coverUrl },
-                        contentDescription = detail.title,
-                        modifier = Modifier.fillMaxWidth().height(240.dp),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B1220))))
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp).align(Alignment.BottomStart),
-                        verticalAlignment = Alignment.Bottom,
-                    ) {
-                        AsyncImage(
-                            model = detail.coverUrl,
-                            contentDescription = detail.title,
-                            modifier = Modifier.size(width = 102.dp, height = 146.dp).clip(RoundedCornerShape(20.dp)),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                detail.title,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "${detail.status} | ${detail.periodicity}",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(
-                            onClick = onToggleFavorite,
-                            modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)),
-                        ) {
-                            Icon(
-                                if (isFavorite) Icons.Default.Favorite else Icons.Default.BookmarkBorder,
-                                contentDescription = "Favorite",
-                                tint = if (isFavorite) Color(0xFFE85A5A) else MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            }
-            item {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TagChip(
-                            label = strings.publishedDate(formatDateEu(detail.publicationDate)),
-                            containerColor = Color(0xFF274777),
-                            labelColor = Color(0xFFE7F0FF),
-                        )
-                    Text(detail.description.ifBlank { strings.noDescription })
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        detail.status.takeIf { it.isNotBlank() }?.let {
-                            TagChip(
-                                label = it,
-                                containerColor = statusTagColor(it),
-                                labelColor = Color.White,
-                            )
-                        }
-                        detail.periodicity.takeIf { it.isNotBlank() }?.let {
-                            TagChip(
-                                label = it,
-                                containerColor = periodicityTagColor(it),
-                                labelColor = Color.White,
-                            )
-                        }
-                    }
-                    HorizontalDivider()
-                    Text(strings.chapters, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = chapterQuery,
-                        onValueChange = { chapterQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(strings.searchChapter) },
-                        placeholder = { Text(strings.searchChapterPlaceholder) },
-                        singleLine = true,
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AssistChip(
-                            onClick = { onSetAllChaptersRead(true) },
-                            label = { Text(strings.markAllRead) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color(0xFF1E6B47),
-                                labelColor = Color.White,
-                            ),
-                        )
-                        AssistChip(
-                            onClick = { onSetAllChaptersRead(false) },
-                            label = { Text(strings.markAllUnread) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color(0xFF7A3045),
-                                labelColor = Color.White,
-                            ),
-                        )
-                    }
-                    OutlinedTextField(
-                        value = bulkChapterInput,
-                        onValueChange = { bulkChapterInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(strings.untilChapter) },
-                        placeholder = { Text(strings.untilChapterPlaceholder) },
-                        singleLine = true,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                parseChapterInput(bulkChapterInput)?.let { onSetUntilChapterRead(it, true) }
-                            }
-                        ) {
-                            Icon(Icons.Default.DoneAll, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.readToX)
-                        }
-                        Button(
-                            onClick = {
-                                parseChapterInput(bulkChapterInput)?.let { onSetUntilChapterRead(it, false) }
-                            }
-                        ) {
-                            Text(strings.unreadToX)
-                        }
-                    }
-                    Text(
-                        if (chapterQuery.isBlank()) {
-                            strings.chaptersCount(detail.chapters.size)
-                        } else {
-                            strings.resultsCount(filteredChapters.size)
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-            if (filteredChapters.isEmpty()) {
-                item {
-                    EmptyCard(strings.noChaptersFound(chapterQuery))
-                }
-            }
-            items(filteredChapters) { chapter ->
-                val chapterPath = buildChapterPath(detail.detailPath, chapter)
-                val chapterKey = qualifyProviderValue(detail.providerId, chapterPath)
-                val pageCount = chapter.pagesCount.takeIf { it > 0 } ?: libraryStore.getChapterPageCount(detail.providerId, chapterPath)
-                val isRead = readChapters.contains(chapterPath)
-                val isDownloaded = downloadedChapters.contains(chapterKey)
-                val downloadPercent = downloadProgress[chapterKey]
-                ElevatedCard(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .fillMaxWidth()
-                        .border(cardBorder(), RoundedCornerShape(22.dp))
-                        .clickable { onReadChapter(chapterPath) },
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = if (isRead) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-                    ),
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (isRead) Icons.Default.Bookmark else Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = if (isRead) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                strings.chapterTitle(chapter.chapterLabel),
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isRead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                            )
-                            if (pageCount > 0) {
-                                Text(strings.pagesCount(pageCount), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(formatDateEu(chapter.registrationDate), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (isDownloaded) {
-                                Text(
-                                    strings.offlineAvailable,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                            AssistChip(
-                                onClick = { onToggleChapterRead(chapterPath) },
-                                label = { Text(if (isRead) strings.read else strings.unread) },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = if (isRead) Color(0xFF1E6B47) else Color(0xFF5B6678),
-                                    labelColor = Color.White,
-                                ),
-                            )
-                            AssistChip(
-                                onClick = { if (downloadPercent == null) onToggleChapterDownload(chapterPath, isDownloaded) },
-                                label = {
-                                    Text(
-                                        if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
-                                        else if (isDownloaded) strings.removeDownload
-                                        else strings.download
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        when {
-                                            downloadPercent != null -> Icons.Default.Download
-                                            isDownloaded -> Icons.Default.Delete
-                                            else -> Icons.Default.Download
-                                        },
-                                        contentDescription = null,
-                                    )
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = when {
-                                        downloadPercent != null -> Color(0xFF6A5A17)
-                                        isDownloaded -> Color(0xFF7A3045)
-                                        else -> Color(0xFF2E5B9A)
-                                    },
-                                    labelColor = Color.White,
-                                    leadingIconContentColor = Color.White,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.End,
-        ) {
-            SmallFloatingActionButton(
-                onClick = {
-                    suppressAutoPositioning = true
-                    scope.launch { listState.scrollToItem(0) }
-                },
-            ) {
-                Icon(Icons.Default.KeyboardArrowUp, contentDescription = strings.scrollToTop)
-            }
-            SmallFloatingActionButton(
-                onClick = {
-                    suppressAutoPositioning = true
-                    scope.launch {
-                        val lastIndex = listState.layoutInfo.totalItemsCount.dec().coerceAtLeast(0)
-                        listState.scrollToItem(lastIndex)
-                    }
-                },
-            ) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = strings.scrollToBottom)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsScreen(
-    strings: AppStrings,
-    appLanguage: AppLanguage,
-    useDarkTheme: Boolean,
-    autoJumpToUnread: Boolean,
-    versionName: String,
-    updateState: AppUpdateUiState,
-    onLanguageChange: (AppLanguage) -> Unit,
-    onThemeChange: (Boolean) -> Unit,
-    onAutoJumpToUnreadChange: (Boolean) -> Unit,
-    onExportBackup: () -> Unit,
-    onImportBackup: () -> Unit,
-    onCheckForUpdates: () -> Unit,
-    onDownloadUpdate: () -> Unit,
-    onInstallUpdate: () -> Unit,
-    onOpenReleasePage: () -> Unit,
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.updates, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(strings.currentVersionLabel(versionName), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    when (val state = updateState) {
-                        AppUpdateUiState.Disabled -> {
-                            Text(strings.updaterNotConfigured, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
-                        }
-                        AppUpdateUiState.Idle -> {
-                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
-                        }
-                        AppUpdateUiState.Checking -> {
-                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
-                            CircularProgressIndicator()
-                        }
-                        is AppUpdateUiState.UpToDate -> {
-                            Text(strings.noUpdateAvailable, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
-                        }
-                        is AppUpdateUiState.Error -> {
-                            Text(state.message, color = MaterialTheme.colorScheme.error)
-                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
-                        }
-                        is AppUpdateUiState.Available -> {
-                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
-                            Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
-                            Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
-                            if (state.release.body.isNotBlank()) {
-                                Text(strings.releaseNotes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text(state.release.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        is AppUpdateUiState.Downloading -> {
-                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
-                            Text("${state.progressPercent}% ${strings.downloading.lowercase()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            CircularProgressIndicator(progress = { state.progressPercent / 100f })
-                        }
-                        is AppUpdateUiState.Downloaded -> {
-                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
-                            Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
-                            Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.languageLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { onLanguageChange(AppLanguage.EN) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (appLanguage == AppLanguage.EN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (appLanguage == AppLanguage.EN) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) { Text(strings.english) }
-                        Button(
-                            onClick = { onLanguageChange(AppLanguage.ES) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (appLanguage == AppLanguage.ES) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (appLanguage == AppLanguage.ES) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) { Text(strings.spanish) }
-                    }
-                }
-            }
-        }
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.theme, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { onThemeChange(false) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (!useDarkTheme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (!useDarkTheme) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) {
-                            Icon(Icons.Default.LightMode, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.light)
-                        }
-                        Button(
-                            onClick = { onThemeChange(true) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (useDarkTheme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (useDarkTheme) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) {
-                            Icon(Icons.Default.DarkMode, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.dark)
-                        }
-                    }
-                    Text(if (useDarkTheme) strings.darkThemeActive else strings.lightThemeActive, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.autoJumpToUnreadLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { onAutoJumpToUnreadChange(true) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (autoJumpToUnread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (autoJumpToUnread) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) { Text(strings.on) }
-                        Button(
-                            onClick = { onAutoJumpToUnreadChange(false) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (!autoJumpToUnread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (!autoJumpToUnread) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            ),
-                        ) { Text(strings.off) }
-                    }
-                    Text(
-                        if (autoJumpToUnread) strings.autoJumpToUnreadEnabled else strings.autoJumpToUnreadDisabled,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.backup, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(strings.backupDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onExportBackup) { Text(strings.exportBackup) }
-                        Button(onClick = onImportBackup) { Text(strings.importBackup) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProviderPickerScreen(
-    strings: AppStrings,
-    selectedProviderId: String,
-    providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
-    onSelectProvider: (String) -> Unit,
-    onOpenProviderSite: (String) -> Unit,
-) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                        MaterialTheme.colorScheme.background,
-                    )
-                )
-            ),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        item {
-            ElevatedCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(cardBorder(), RoundedCornerShape(28.dp)),
-                shape = RoundedCornerShape(28.dp),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(strings.chooseProvider, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text(strings.chooseProviderDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        AppLanguage.values().forEach { language ->
-            val providers = providersByLanguage[language].orEmpty()
-            if (providers.isEmpty()) return@forEach
-            item {
-                Text(
-                    text = if (language == AppLanguage.EN) strings.english else strings.spanish,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            items(providers) { provider ->
-                ElevatedCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width = 1.dp,
-                            color = if (selectedProviderId == provider.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(26.dp),
-                        )
-                        .clickable { onSelectProvider(provider.id) },
-                    shape = RoundedCornerShape(26.dp),
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = if (selectedProviderId == provider.id) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        }
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        AsyncImage(
-                            model = provider.logoUrl,
-                            contentDescription = provider.displayName,
-                            modifier = Modifier.size(44.dp),
-                            contentScale = ContentScale.Fit,
-                        )
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(provider.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(provider.websiteUrl, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AssistChip(
-                                onClick = { onOpenProviderSite(provider.websiteUrl) },
-                                label = { Text(strings.openProviderSite) },
-                            )
-                            if (selectedProviderId == provider.id) {
-                                Icon(
-                                    imageVector = Icons.Default.Bookmark,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderScreen(
-    strings: AppStrings,
-    reader: ReaderData,
-    offlineStore: OfflineChapterStore,
-    initialPageIndex: Int,
-    isDownloaded: Boolean,
-    downloadPercent: Int?,
-    onPagePositionChanged: (Int) -> Unit,
-    onToggleDownload: () -> Unit,
-    onOpenChapter: (String) -> Unit,
-    onOpenManga: (String) -> Unit,
-) {
-    val listState = rememberLazyListState()
-    val restoredPageIndex = remember(reader.chapterPath, initialPageIndex, reader.pages.size) {
-        if (reader.pages.isEmpty()) {
-            0
-        } else if (initialPageIndex in reader.pages.indices) {
-            initialPageIndex
-        } else {
-            0
-        }
-    }
-
-    LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
-        listState.scrollToItem((restoredPageIndex + 1).coerceAtMost(reader.pages.size))
-    }
-
-    LaunchedEffect(reader.chapterPath, listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }
-            .map { index -> (index - 1).coerceAtLeast(0) }
-            .filter { pageIndex -> pageIndex in reader.pages.indices }
-            .distinctUntilChanged()
-            .collect { pageIndex -> onPagePositionChanged(pageIndex) }
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        state = listState,
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(reader.chapterTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (downloadPercent != null) {
-                    Text("${strings.downloading} ${downloadPercent}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                } else if (isDownloaded) {
-                    Text(strings.offlineAvailable, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                }
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(onClick = { onOpenManga(reader.mangaDetailPath) }) { Text(strings.manga) }
-                    Button(onClick = onToggleDownload, enabled = downloadPercent == null) {
-                        Icon(
-                            if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
-                            contentDescription = null
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
-                            else if (isDownloaded) strings.removeDownload
-                            else strings.download
-                        )
-                    }
-                }
-                ReaderChapterNavigationButtons(
-                    currentChapterPath = reader.chapterPath,
-                    previousChapterPath = reader.previousChapterPath,
-                    nextChapterPath = reader.nextChapterPath,
-                    strings = strings,
-                    onOpenChapter = onOpenChapter,
-                )
-            }
-        }
-        itemsIndexed(
-            items = reader.pages,
-            key = { index, page -> "${reader.chapterPath}:${page.id}:$index" }
-        ) { _, page ->
-            ZoomableReaderPage(
-                providerId = reader.providerId,
-                chapterPath = reader.chapterPath,
-                page = page,
-                offlineStore = offlineStore,
-            )
-        }
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                HorizontalDivider()
-                Text(
-                    text = reader.chapterTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                ReaderChapterNavigationButtons(
-                    currentChapterPath = reader.chapterPath,
-                    previousChapterPath = reader.previousChapterPath,
-                    nextChapterPath = reader.nextChapterPath,
-                    strings = strings,
-                    onOpenChapter = onOpenChapter,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderChapterNavigationButtons(
-    currentChapterPath: String,
-    previousChapterPath: String?,
-    nextChapterPath: String?,
-    strings: AppStrings,
-    onOpenChapter: (String) -> Unit,
-) {
-    val currentChapterValue = parseChapterInput(currentChapterPath.substringBeforeLast("/").substringAfterLast("/"))
-    val validPreviousChapterPath = previousChapterPath?.takeIf { previousPath ->
-        val previousChapterValue = parseChapterInput(previousPath.substringBeforeLast("/").substringAfterLast("/"))
-        currentChapterValue == null || (previousChapterValue != null && previousChapterValue < currentChapterValue)
-    }
-    val validNextChapterPath = nextChapterPath?.takeIf { nextPath ->
-        val nextChapterValue = parseChapterInput(nextPath.substringBeforeLast("/").substringAfterLast("/"))
-        currentChapterValue == null || (nextChapterValue != null && nextChapterValue > currentChapterValue)
-    }
-
-    if (validPreviousChapterPath != null && validNextChapterPath != null) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = { onOpenChapter(validPreviousChapterPath) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            ) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null)
-                Text(strings.previous)
-            }
-            Button(
-                onClick = { onOpenChapter(validNextChapterPath) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            ) {
-                Text(strings.next)
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-            }
-        }
-        return
-    }
-
-    validPreviousChapterPath?.let {
-        Button(
-            onClick = { onOpenChapter(it) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-        ) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null)
-            Text(strings.previous)
-        }
-    }
-    validNextChapterPath?.let {
-        Button(
-            onClick = { onOpenChapter(it) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-        ) {
-            Text(strings.next)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-        }
-    }
-}
-
-@Composable
-private fun ZoomableReaderPage(
-    providerId: String,
-    chapterPath: String,
-    page: ReaderPage,
-    offlineStore: OfflineChapterStore,
-) {
-    var scale by remember(page.id) { mutableStateOf(1f) }
-    var offset by remember(page.id) { mutableStateOf(Offset.Zero) }
-    val offlineBytes by produceState<ByteArray?>(initialValue = null, chapterPath, page.id, page.offlineFileName) {
-        value = if (page.offlineFileName.isNotBlank()) {
-            withContext(Dispatchers.IO) { offlineStore.loadPageBytes(providerId, chapterPath, page) }
-        } else {
-            null
-        }
-    }
-    val offlineBitmap = remember(offlineBytes) {
-        offlineBytes?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-    }
-    val imageModifier = Modifier
-        .fillMaxWidth()
-        .graphicsLayer(
-            scaleX = scale,
-            scaleY = scale,
-            translationX = offset.x,
-            translationY = offset.y,
-        )
-        .pointerInput(page.id) {
-            awaitEachGesture {
-                var event = awaitPointerEvent()
-                while (event.changes.none { pointer -> pointer.pressed }) {
-                    event = awaitPointerEvent()
-                }
-                do {
-                    val pointerCount = event.changes.count { pointer -> pointer.pressed }
-                    val shouldHandleGesture = pointerCount > 1 || scale > 1f
-                    if (shouldHandleGesture) {
-                        val nextScale = (scale * event.calculateZoom()).coerceIn(1f, 4f)
-                        scale = nextScale
-                        offset = if (nextScale == 1f) {
-                            Offset.Zero
-                        } else {
-                            offset + event.calculatePan()
-                        }
-                        event.changes.forEach { change ->
-                            if (change.positionChanged()) {
-                                change.consume()
-                            }
-                        }
-                    }
-                    event = awaitPointerEvent()
-                } while (event.changes.any { pointer -> pointer.pressed })
-            }
-        }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .zIndex(if (scale > 1f) 1f else 0f)
-            .background(if (scale > 1f) Color.Black else Color.Transparent)
-    ) {
-        if (offlineBitmap != null) {
-            Image(
-                bitmap = offlineBitmap.asImageBitmap(),
-                contentDescription = "Page ${page.numberLabel}",
-                modifier = imageModifier,
-                contentScale = ContentScale.FillWidth,
-            )
-        } else {
-            AsyncImage(
-                model = page.imageUrl,
-                contentDescription = "Page ${page.numberLabel}",
-                modifier = imageModifier,
-                contentScale = ContentScale.FillWidth,
-            )
-        }
-    }
-}
-
-@Composable
-private fun MangaCoverCard(manga: MangaSummary, onClick: () -> Unit) {
-    ElevatedCard(
-        modifier = Modifier
-            .width(160.dp)
-            .border(cardBorder(), RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Column {
-            AsyncImage(
-                model = manga.coverUrl,
-                contentDescription = manga.title,
-                modifier = Modifier.fillMaxWidth().height(210.dp),
-                contentScale = ContentScale.Crop,
-            )
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(manga.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                if (manga.views.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(manga.views, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ContinueReadingCard(
-    manga: SavedManga,
-    strings: AppStrings,
-    onOpen: () -> Unit,
-    onResume: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
-
-    Box {
-        ElevatedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(cardBorder(), RoundedCornerShape(22.dp))
-                .combinedClickable(
-                    onClick = onOpen,
-                    onLongClick = { menuExpanded = true },
-                ),
-            shape = RoundedCornerShape(22.dp),
-        ) {
-            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = manga.coverUrl,
-                    contentDescription = manga.title,
-                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Crop,
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(manga.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        manga.lastChapterTitle.ifBlank { strings.noChapterSavedYet },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                IconButton(onClick = onRemove) {
-                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
-                }
-                Button(onClick = onResume, enabled = manga.lastChapterPath.isNotBlank()) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(strings.resume)
-                }
-            }
-        }
-
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(strings.manga) },
-                onClick = {
-                    menuExpanded = false
-                    onOpen()
-                },
-            )
-            if (manga.lastChapterPath.isNotBlank()) {
-                DropdownMenuItem(
-                    text = { Text(strings.resume) },
-                    onClick = {
-                        menuExpanded = false
-                        onResume()
-                    },
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(strings.removeFromContinueReading) },
-                onClick = {
-                    menuExpanded = false
-                    onRemove()
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun FavoriteMangaCard(
-    manga: SavedManga,
-    strings: AppStrings,
-    onOpen: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
-
-    Box {
-        ElevatedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(cardBorder(), RoundedCornerShape(24.dp))
-                .combinedClickable(
-                    onClick = onOpen,
-                    onLongClick = { menuExpanded = true },
-                ),
-            shape = RoundedCornerShape(24.dp),
-        ) {
-            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = manga.coverUrl,
-                    contentDescription = manga.title,
-                    modifier = Modifier.size(width = 86.dp, height = 120.dp).clip(RoundedCornerShape(18.dp)),
-                    contentScale = ContentScale.Crop,
-                )
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        manga.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (manga.lastChapterTitle.isNotBlank()) {
-                        Text(
-                            strings.latestProgress,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            manga.lastChapterTitle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    } else {
-                        Text(
-                            strings.noChapterOpenedYet,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                IconButton(onClick = onRemove) {
-                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromFavorites)
-                }
-            }
-        }
-
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(strings.manga) },
-                onClick = {
-                    menuExpanded = false
-                    onOpen()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(strings.removeFromFavorites) },
-                onClick = {
-                    menuExpanded = false
-                    onRemove()
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ChapterRow(item: ChapterSummary, strings: AppStrings, onOpenChapter: (String, String) -> Unit) {
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(cardBorder(), RoundedCornerShape(22.dp))
-            .clickable { onOpenChapter(item.providerId, item.chapterPath) },
-        shape = RoundedCornerShape(22.dp),
-    ) {
-        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = item.coverUrl,
-                contentDescription = item.mangaTitle,
-                modifier = Modifier.size(70.dp).clip(RoundedCornerShape(18.dp)),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.mangaTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.chapterLabel, color = MaterialTheme.colorScheme.primary)
-                if (item.registrationLabel.isNotBlank()) {
-                    Text(
-                        item.registrationLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-        }
-    }
-}
-
-@Composable
-private fun MetadataLine(label: String, value: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("$label:", fontWeight = FontWeight.SemiBold)
-        Text(value.ifBlank { "-" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun TagChip(
-    label: String,
-    containerColor: Color,
-    labelColor: Color,
-) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = containerColor,
-    ) {
-        Text(
-            text = label,
-            color = labelColor,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-@Composable
-private fun cardBorder() = androidx.compose.foundation.BorderStroke(
-    width = 1.dp,
-    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-)
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-}
-
-@Composable
-private fun EmptyCard(message: String) {
-    Card(shape = RoundedCornerShape(20.dp), border = cardBorder()) {
-        Text(message, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun LoadingPlaceholder() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
-    }
-}
-
-private fun buildChapterPath(detailPath: String, chapter: MangaChapter): String {
-    if (chapter.path.isNotBlank()) {
-        return if (chapter.path.startsWith("/")) chapter.path else "/${chapter.path}"
-    }
-    val prefix = detailPath.substringBeforeLast("/")
-    val path = "$prefix/${chapter.chapterNumberUrl}/${chapter.id}".replace("//", "/")
-    return if (path.startsWith("/")) path else "/$path"
-}
-
-private fun parseChapterInput(value: String): Double? {
-    val normalized = value
+private fun buildReaderTopBarTitle(
+    mangaTitle: String,
+    chapterTitle: String,
+    currentPageIndex: Int,
+    totalPages: Int,
+): String {
+    val chapterLabel = chapterTitle
+        .removePrefix(mangaTitle)
         .trim()
-        .replace(",", ".")
-        .replace(Regex("(?<=\\d)-(?=\\d)"), ".")
-    return Regex("\\d+(?:\\.\\d+)?")
-        .find(normalized)
-        ?.value
-        ?.toDoubleOrNull()
-}
-
-private fun resolveTargetUnreadChapterPath(
-    detailPath: String,
-    chapters: List<MangaChapter>,
-    readChapters: Set<String>,
-    lastOpenedChapterPath: String,
-    isFavorite: Boolean,
-    autoJumpToUnread: Boolean,
-): String? {
-    if (!autoJumpToUnread) return null
-
-    val chapterEntries = chapters.map { chapter ->
-        val path = buildChapterPath(detailPath, chapter)
-        Triple(path, chapter, chapterValue(chapter))
-    }
-    val hasReadProgress = lastOpenedChapterPath.isNotBlank() || chapterEntries.any { (path, _, _) -> path in readChapters }
-    if (!isFavorite && !hasReadProgress) return null
-
-    val unreadEntries = chapterEntries.filter { (path, _, _) -> path !in readChapters }
-    if (unreadEntries.isEmpty()) return null
-
-    if (lastOpenedChapterPath.isNotBlank()) {
-        val lastReadValue = chapterEntries.firstOrNull { (path, _, _) -> path == lastOpenedChapterPath }?.third
-        if (lastReadValue != null) {
-            unreadEntries
-                .filter { (_, _, value) -> value > lastReadValue }
-                .minByOrNull { (_, _, value) -> value }
-                ?.let { return it.first }
-
-            unreadEntries
-                .filter { (_, _, value) -> value < lastReadValue }
-                .maxByOrNull { (_, _, value) -> value }
-                ?.let { return it.first }
-        }
-    }
-
-    return unreadEntries.minByOrNull { (_, _, value) -> value }?.first
-}
-
-private fun chapterValue(chapter: MangaChapter): Double {
-    return parseChapterInput(chapter.chapterNumberUrl)
-        ?: parseChapterInput(chapter.chapterLabel)
-        ?: Double.MAX_VALUE
-}
-
-private fun defaultBackupFileName(): String {
-    val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-    return "KomaStream-$timestamp.json"
-}
-
-private fun statusTagColor(status: String): Color {
-    val normalized = status.lowercase()
-    return when {
-        "emisi" in normalized || "ongoing" in normalized -> Color(0xFF1F8A5B)
-        "final" in normalized || "complet" in normalized -> Color(0xFF3166C7)
-        "paus" in normalized || "hiatus" in normalized -> Color(0xFFB7791F)
-        "cancel" in normalized -> Color(0xFFB23A48)
-        else -> Color(0xFF51617B)
-    }
-}
-
-private fun periodicityTagColor(periodicity: String): Color {
-    val normalized = periodicity.lowercase()
-    return when {
-        "seman" in normalized || "week" in normalized -> Color(0xFF7A3FC7)
-        "mens" in normalized || "month" in normalized -> Color(0xFF1F7A8C)
-        "diar" in normalized || "day" in normalized -> Color(0xFFB85C38)
-        "irreg" in normalized -> Color(0xFF8A6B2F)
-        else -> Color(0xFF5D6B82)
-    }
-}
-
-private fun formatDateEu(input: String): String {
-    val raw = input.take(10)
-    return if (Regex("""\d{4}-\d{2}-\d{2}""").matches(raw)) {
-        val (year, month, day) = raw.split("-")
-        "$day/$month/$year"
-    } else {
-        input
-    }
+        .trimStart('-', ':', '|')
+        .trim()
+        .ifBlank { chapterTitle }
+    val safeTotalPages = totalPages.coerceAtLeast(0)
+    val currentPage = if (safeTotalPages == 0) 0 else currentPageIndex.coerceIn(0, safeTotalPages - 1) + 1
+    return listOf(
+        mangaTitle.trim(),
+        chapterLabel.trim(),
+        "$currentPage/$safeTotalPages",
+    ).filter { it.isNotBlank() }.joinToString(" ")
 }

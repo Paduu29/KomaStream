@@ -3,8 +3,8 @@ package com.paudinc.komastream.utils
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import com.paudinc.komastream.models.ReaderData
-import com.paudinc.komastream.models.ReaderPage
+import com.paudinc.komastream.data.model.ReaderData
+import com.paudinc.komastream.data.model.ReaderPage
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -16,7 +16,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class OfflineChapterStore(private val context: Context) {
+class OfflineChapterStore(val context: Context) {
     private val rootDir = File(context.filesDir, "offline_chapters").apply { mkdirs() }
     private val cryptoLock = Any()
 
