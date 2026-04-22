@@ -9,6 +9,10 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -16,18 +20,22 @@ import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.utils.AppStrings
+import com.paudinc.komastream.provider.providers.MangaBallProvider
 
 @Composable
 fun SettingsScreen(
     strings: AppStrings,
+    selectedProviderId: String,
     appLanguage: AppLanguage,
     useDarkTheme: Boolean,
     autoJumpToUnread: Boolean,
+    mangaBallAdultContentEnabled: Boolean,
     versionName: String,
     updateState: AppUpdateUiState,
     onLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onAutoJumpToUnreadChange: (Boolean) -> Unit,
+    onMangaBallAdultContentChange: (Boolean) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -35,6 +43,8 @@ fun SettingsScreen(
     onInstallUpdate: () -> Unit,
     onOpenReleasePage: () -> Unit,
 ) {
+    var showAdultContentDialog by rememberSaveable { mutableStateOf(false) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -86,6 +96,33 @@ fun SettingsScreen(
                             Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
                             Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
                             Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                        }
+                    }
+                }
+            }
+        }
+        if (selectedProviderId == MangaBallProvider.PROVIDER_ID) {
+            item {
+                ElevatedCard(
+                    modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                    shape = RoundedCornerShape(24.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(strings.mangaBallAdultContentLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(strings.mangaBallAdultContentDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Switch(
+                                checked = mangaBallAdultContentEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (enabled) {
+                                        showAdultContentDialog = true
+                                    } else {
+                                        onMangaBallAdultContentChange(false)
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(if (mangaBallAdultContentEnabled) strings.on else strings.off)
                         }
                     }
                 }
@@ -180,5 +217,28 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showAdultContentDialog) {
+        AlertDialog(
+            onDismissRequest = { showAdultContentDialog = false },
+            title = { Text(strings.mangaBallAdultContentWarningTitle) },
+            text = { Text(strings.mangaBallAdultContentWarningMessage) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAdultContentDialog = false
+                        onMangaBallAdultContentChange(true)
+                    }
+                ) {
+                    Text(strings.enableAdultContent)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdultContentDialog = false }) {
+                    Text(strings.cancel)
+                }
+            }
+        )
     }
 }

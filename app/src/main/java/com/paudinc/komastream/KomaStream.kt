@@ -41,8 +41,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun KomaStream() {
     val context = LocalContext.current
-    val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
     val libraryStore = remember { LibraryStore(context) }
+    val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
     val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
@@ -96,6 +96,11 @@ fun KomaStream() {
     }
     val activity = context as? Activity
     val currentProvider = viewModel.currentProvider
+
+    LaunchedEffect(libraryState.selectedProviderId) {
+        viewModel.refreshCatalogFilterOptions()
+        viewModel.refreshHome()
+    }
 
     LaunchedEffect(viewModel.navigationController.navigationStack) {
         savedNavigationStack = viewModel.navigationController.navigationStack
@@ -289,14 +294,17 @@ fun KomaStream() {
                             }
                             is Screen.Settings -> SettingsScreen(
                                 strings = strings,
+                                selectedProviderId = libraryState.selectedProviderId,
                                 appLanguage = libraryState.appLanguage,
                                 useDarkTheme = libraryState.useDarkTheme,
                                 autoJumpToUnread = libraryState.autoJumpToUnread,
+                                mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
                                 versionName = BuildConfig.VERSION_NAME,
                                 updateState = updateController.updateState,
                                 onLanguageChange = { viewModel.changeLanguage(it) },
                                 onThemeChange = { viewModel.changeTheme(it) },
                                 onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
+                                onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
                                 onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
                                 onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
                                 onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },

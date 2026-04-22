@@ -34,6 +34,7 @@ class LibraryStore(context: Context) {
             ),
             useDarkTheme = prefs.getBoolean("useDarkTheme", false),
             autoJumpToUnread = prefs.getBoolean("autoJumpToUnread", true),
+            mangaBallAdultContentEnabled = prefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
             selectedProviderId = selectedProviderId,
             appLanguage = AppLanguage.valueOf(
                 prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name
@@ -170,6 +171,13 @@ class LibraryStore(context: Context) {
     fun setAutoJumpToUnread(enabled: Boolean) {
         prefs.edit().putBoolean("autoJumpToUnread", enabled).apply()
     }
+
+    fun setMangaBallAdultContentEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MANGABALL_ADULT_CONTENT, enabled).apply()
+    }
+
+    fun isMangaBallAdultContentEnabled(): Boolean =
+        prefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false)
 
     fun setAppLanguage(language: AppLanguage) {
         prefs.edit().putString("appLanguage", language.name).apply()
@@ -322,5 +330,9 @@ class LibraryStore(context: Context) {
 
     private fun isUuid(value: String): Boolean {
         return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
+    }
+
+    private companion object {
+        private const val KEY_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
     }
 }

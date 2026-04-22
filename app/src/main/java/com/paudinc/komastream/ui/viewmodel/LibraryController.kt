@@ -202,6 +202,11 @@ class LibraryController(
         refreshState()
     }
 
+    fun changeMangaBallAdultContent(enabled: Boolean) {
+        libraryStore.setMangaBallAdultContentEnabled(enabled)
+        refreshState()
+    }
+
     fun selectProvider(providerId: String) {
         libraryStore.setSelectedProviderId(providerId)
         libraryStore.setHasSeenProviderPicker(true)

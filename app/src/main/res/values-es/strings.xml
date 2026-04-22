@@ -97,6 +97,12 @@
     <string name="auto_jump_to_unread">Saltar automaticamente al capítulo no leído</string>
     <string name="auto_jump_to_unread_enabled">Abre el manga en el siguiente capítulo no leído cuando corresponda.</string>
     <string name="auto_jump_to_unread_disabled">Abre siempre el manga al inicio de la pantalla de detalle.</string>
+    <string name="mangaball_adult_content">Contenido 18+ de MangaBall</string>
+    <string name="mangaball_adult_content_description">Activa o desactiva el contenido para adultos de MangaBall en esta app. Permanece desactivado por defecto.</string>
+    <string name="mangaball_adult_content_warning_title">¿Activar contenido 18+ de MangaBall?</string>
+    <string name="mangaball_adult_content_warning_message">Esto puede mostrar material para adultos o explícito de MangaBall. Actívalo solo si legalmente puedes ver este contenido y quieres que aparezca dentro de la app.</string>
+    <string name="enable_adult_content">Activar</string>
+    <string name="cancel">Cancelar</string>
     <string name="on">Activado</string>
     <string name="off">Desactivado</string>
     <string name="english">Inglés</string>

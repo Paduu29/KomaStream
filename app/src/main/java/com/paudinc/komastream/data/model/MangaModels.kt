@@ -80,6 +80,9 @@ data class MangaChapter(
     val path: String = "",
     val pagesCount: Int,
     val registrationDate: String,
+    val languageCode: String = "",
+    val languageLabel: String = "",
+    val uploaderLabel: String = "",
 )
 
 data class ReaderPage(
@@ -179,6 +182,7 @@ data class LibraryState(
     val readChapters: Set<String>,
     val useDarkTheme: Boolean,
     val autoJumpToUnread: Boolean,
+    val mangaBallAdultContentEnabled: Boolean,
     val selectedProviderId: String,
     val appLanguage: AppLanguage,
 )

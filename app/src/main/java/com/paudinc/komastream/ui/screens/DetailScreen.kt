@@ -448,6 +448,44 @@ fun DetailScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (chapter.languageCode.isNotBlank() || chapter.uploaderLabel.isNotBlank()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                chapter.languageCode
+                                    .takeIf { it.isNotBlank() }
+                                    ?.let { code ->
+                                        AssistChip(
+                                            onClick = {},
+                                            enabled = false,
+                                            label = {
+                                                Text(
+                                                    "${chapterLanguageFlag(code)} ${chapter.languageLabel.ifBlank { code.uppercase() }}".trim(),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        )
+                                    }
+                                chapter.uploaderLabel
+                                    .takeIf { it.isNotBlank() }
+                                    ?.let { uploader ->
+                                        AssistChip(
+                                            onClick = {},
+                                            enabled = false,
+                                            label = {
+                                                Text(
+                                                    uploader,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        )
+                                    }
+                            }
+                        }
                         Text(
                             formatDateEu(chapter.registrationDate),
                             style = MaterialTheme.typography.bodySmall,
@@ -538,6 +576,28 @@ fun DetailScreen(
             }
         }
     }
+}
+
+private fun chapterLanguageFlag(code: String): String = when (code.lowercase()) {
+    "en" -> "🇬🇧"
+    "es" -> "🇪🇸"
+    "pt-br" -> "🇧🇷"
+    "pt-pt", "pt" -> "🇵🇹"
+    "id" -> "🇮🇩"
+    "fr" -> "🇫🇷"
+    "de" -> "🇩🇪"
+    "it" -> "🇮🇹"
+    "vi" -> "🇻🇳"
+    "th" -> "🇹🇭"
+    "ru" -> "🇷🇺"
+    "uk" -> "🇺🇦"
+    "ar" -> "🇦🇪"
+    "zh", "zh-cn", "zh-sg" -> "🇨🇳"
+    "zh-hk" -> "🇭🇰"
+    "zh-tw" -> "🇹🇼"
+    "jp" -> "🇯🇵"
+    "kr" -> "🇰🇷"
+    else -> ""
 }
 
 private fun statusTagColor(status: String): Color {
