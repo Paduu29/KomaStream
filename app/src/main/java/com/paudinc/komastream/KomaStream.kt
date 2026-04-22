@@ -13,6 +13,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -28,10 +30,12 @@ import com.paudinc.komastream.ui.components.LoadingPlaceholder
 import com.paudinc.komastream.ui.components.UpdateAvailableDialog
 import com.paudinc.komastream.ui.navigation.RootTab
 import com.paudinc.komastream.ui.navigation.Screen
+import com.paudinc.komastream.ui.navigation.ScreenStackSaver
 import com.paudinc.komastream.ui.screens.*
 import com.paudinc.komastream.ui.viewmodel.KomaViewModel
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.utils.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +47,13 @@ fun KomaStream() {
     val workManager = remember { WorkManager.getInstance(context) }
     val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
     val strings = appStrings()
+    var savedNavigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
+        mutableStateOf(
+            listOf(
+                if (libraryStore.hasSeenProviderPicker()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
+            )
+        )
+    }
 
     val viewModel = remember {
         KomaViewModel(
@@ -52,11 +63,15 @@ fun KomaStream() {
             offlineStore = offlineStore,
             workManager = workManager,
             updater = updater,
-            strings = strings
+            strings = strings,
+            initialNavigationStack = savedNavigationStack,
         )
     }
+    val saveableStateHolder = rememberSaveableStateHolder()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    var lastRootBackPressAt by rememberSaveable { mutableLongStateOf(0L) }
 
     val screen = viewModel.screen
     val libraryController = viewModel.libraryController
@@ -81,6 +96,10 @@ fun KomaStream() {
     }
     val activity = context as? Activity
     val currentProvider = viewModel.currentProvider
+
+    LaunchedEffect(viewModel.navigationController.navigationStack) {
+        savedNavigationStack = viewModel.navigationController.navigationStack
+    }
 
     MaterialTheme(
         colorScheme = if (libraryState.useDarkTheme) darkColorScheme() else lightColorScheme()
@@ -166,142 +185,153 @@ fun KomaStream() {
                 }
             ) { padding ->
                 Box(modifier = Modifier.padding(padding)) {
-                    when (screen) {
-                        is Screen.Root -> {
-                            when (screen.tab) {
+                    saveableStateHolder.SaveableStateProvider(screen.saveableKey()) {
+                        when (screen) {
+                            is Screen.Root -> {
+                                when (screen.tab) {
                                 RootTab.Home -> HomeScreen(
                                     feed = homeUiState.feed,
                                     strings = strings,
                                     onOpenManga = { id, path -> viewModel.openDetail(id, path) },
-                                    onOpenChapter = { id, path -> viewModel.openReader(id, path) }
-                                )
-                                RootTab.Library -> LibraryScreen(
-                                    libraryState = libraryState,
-                                    strings = strings,
-                                    selectedTab = libraryUiState.selectedTab,
-                                    onSelectTab = { viewModel.selectLibraryTab(it) },
-                                    onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                     onOpenChapter = { id, path -> viewModel.openReader(id, path) },
-                                    onRemoveFromContinueReading = { viewModel.removeReading(it) },
-                                    onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
+                                    onAddToReading = { viewModel.addToReading(it) },
+                                    onToggleFavorite = { viewModel.toggleFavorite(it) },
+                                    isFavorite = { providerId, detailPath ->
+                                        libraryStore.isFavorite(providerId, detailPath)
+                                    },
                                 )
-                                RootTab.Catalog -> CatalogScreen(
-                                    strings = strings,
-                                    query = catalogUiState.query,
-                                    categories = catalogUiState.filterOptions.categories,
-                                    sortOptions = catalogUiState.filterOptions.sortOptions,
-                                    statusOptions = catalogUiState.filterOptions.statusOptions,
-                                    selectedCategoryIds = catalogUiState.selectedCategoryIds,
-                                    selectedSortOptionId = catalogUiState.selectedSortOptionId,
-                                    selectedStatusOptionId = catalogUiState.selectedStatusOptionId,
-                                    onlyFavorites = catalogUiState.onlyFavorites,
-                                    results = catalogUiState.results,
-                                    hasMoreResults = catalogUiState.hasMoreResults,
-                                    isLoadingMore = catalogUiState.isLoadingMore,
-                                    onQueryChange = { viewModel.updateCatalogQuery(it) },
-                                    onToggleCategory = { id -> viewModel.toggleCatalogCategory(id) },
-                                    onSelectSort = { viewModel.selectCatalogSort(it) },
-                                    onSelectStatus = { viewModel.selectCatalogStatus(it) },
-                                    onToggleOnlyFavorites = { viewModel.setCatalogOnlyFavorites(it) },
+                                    RootTab.Library -> LibraryScreen(
+                                        libraryState = libraryState,
+                                        strings = strings,
+                                        selectedTab = libraryUiState.selectedTab,
+                                        onSelectTab = { viewModel.selectLibraryTab(it) },
+                                        onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                        onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                        onRemoveFromContinueReading = { viewModel.removeReading(it) },
+                                        onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
+                                    )
+                                    RootTab.Catalog -> CatalogScreen(
+                                        strings = strings,
+                                        query = catalogUiState.query,
+                                        categories = catalogUiState.filterOptions.categories,
+                                        sortOptions = catalogUiState.filterOptions.sortOptions,
+                                        statusOptions = catalogUiState.filterOptions.statusOptions,
+                                        selectedCategoryIds = catalogUiState.selectedCategoryIds,
+                                        selectedSortOptionId = catalogUiState.selectedSortOptionId,
+                                        selectedStatusOptionId = catalogUiState.selectedStatusOptionId,
+                                        onlyFavorites = catalogUiState.onlyFavorites,
+                                        results = catalogUiState.results,
+                                        hasMoreResults = catalogUiState.hasMoreResults,
+                                        isLoadingMore = catalogUiState.isLoadingMore,
+                                        onQueryChange = { viewModel.updateCatalogQuery(it) },
+                                        onToggleCategory = { id -> viewModel.toggleCatalogCategory(id) },
+                                        onSelectSort = { viewModel.selectCatalogSort(it) },
+                                        onSelectStatus = { viewModel.selectCatalogStatus(it) },
+                                        onToggleOnlyFavorites = { viewModel.setCatalogOnlyFavorites(it) },
                                     onClearFilters = { viewModel.clearCatalogFilters() },
                                     onSearch = { viewModel.searchCatalog() },
                                     onLoadMore = { viewModel.searchCatalog(loadMore = true) },
-                                    onOpen = { id, path -> viewModel.openDetail(id, path) }
-                                )
-                            }
-                        }
-                        is Screen.Detail -> {
-                            readerUiState.selectedDetail?.let { detail ->
-                                DetailScreen(
-                                    strings = strings,
-                                    detail = detail,
-                                    isFavorite = libraryStore.isFavorite(detail.providerId, detail.detailPath),
-                                    autoJumpToUnread = libraryState.autoJumpToUnread,
-                                    readChapters = libraryState.readChapters,
-                                    lastOpenedChapterPath = libraryStore.read().reading.find { it.providerId == detail.providerId && it.detailPath == detail.detailPath }?.lastChapterPath ?: "",
-                                    downloadedChapters = libraryUiState.downloadedChapterPaths,
-                                    downloadProgress = libraryController.downloadProgress,
-                                    isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
-                                    onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
-                                    onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path) },
-                                    onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.chapters, read) },
-                                    onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.chapters, value, read) },
-                                    onToggleChapterDownload = { path, isDownloaded ->
-                                        if (isDownloaded) viewModel.removeDownloadedChapter(detail.providerId, path)
-                                        else viewModel.downloadChapter(detail.providerId, path)
+                                    onOpen = { id, path -> viewModel.openDetail(id, path) },
+                                    onToggleFavorite = { viewModel.toggleFavorite(it) },
+                                    isFavorite = { providerId, detailPath ->
+                                        libraryStore.isFavorite(providerId, detailPath)
                                     },
-                                    onReadChapter = { path -> viewModel.openReader(detail.providerId, path) },
-                                    onSelectChapterSource = { path -> viewModel.openDetail(detail.providerId, path) },
-                                    onSolveCloudflare = null,
                                 )
-                            } ?: LoadingPlaceholder()
-                        }
-                        is Screen.Reader -> {
-                            readerUiState.readerData?.let { data ->
-                                ReaderScreen(
-                                    strings = strings,
-                                    reader = data,
-                                    offlineStore = offlineStore,
-                                    initialPageIndex = readerUiState.initialPageIndex,
-                                    isDownloaded = libraryUiState.downloadedChapterPaths.contains(data.chapterPath),
-                                    downloadPercent = libraryController.downloadProgress[data.chapterPath],
-                                    onPagePositionChanged = { index -> viewModel.updatePageProgress(data.providerId, data.chapterPath, index) },
-                                    onToggleDownload = {
-                                        if (libraryUiState.downloadedChapterPaths.contains(data.chapterPath)) viewModel.removeDownloadedChapter(data.providerId, data.chapterPath)
-                                        else viewModel.downloadChapter(data.providerId, data.chapterPath)
-                                    },
-                                    onOpenChapter = { currentPath, targetPath, markCurrentRead ->
-                                        viewModel.openAdjacentChapter(data.providerId, currentPath, targetPath, markCurrentRead)
-                                    },
-                                    onOpenManga = { path -> viewModel.openDetail(data.providerId, path) }
-                                )
-                            } ?: LoadingPlaceholder()
-                        }
-                        is Screen.Settings -> SettingsScreen(
-                            strings = strings,
-                            appLanguage = libraryState.appLanguage,
-                            useDarkTheme = libraryState.useDarkTheme,
-                            autoJumpToUnread = libraryState.autoJumpToUnread,
-                            versionName = BuildConfig.VERSION_NAME,
-                            updateState = updateController.updateState,
-                            onLanguageChange = { viewModel.changeLanguage(it) },
-                            onThemeChange = { viewModel.changeTheme(it) },
-                            onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
-                            onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
-                            onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
-                            onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
-                            onDownloadUpdate = {
-                                if (updateController.updateState is AppUpdateUiState.Available) {
-                                    viewModel.downloadUpdate((updateController.updateState as AppUpdateUiState.Available).release)
-                                }
-                            },
-                            onInstallUpdate = {
-                                if (updateController.updateState is AppUpdateUiState.Downloaded) {
-                                    viewModel.installDownloadedUpdate((updateController.updateState as AppUpdateUiState.Downloaded).file)
-                                }
-                            },
-                            onOpenReleasePage = {
-                                val release: GitHubRelease? = when (val state = updateController.updateState) {
-                                    is AppUpdateUiState.Available -> state.release
-                                    is AppUpdateUiState.Downloading -> state.release
-                                    is AppUpdateUiState.Downloaded -> state.release
-                                    else -> null
-                                }
-                                release?.let {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it.htmlUrl))
-                                    context.startActivity(intent)
                                 }
                             }
-                        )
-                        is Screen.ProviderPicker -> ProviderPickerScreen(
-                            strings = strings,
-                            selectedProviderId = libraryState.selectedProviderId,
-                            providersByLanguage = providerRegistry.groupedByLanguage(),
-                            onSelectProvider = { providerId -> viewModel.selectProvider(providerId) },
-                            onOpenProviderSite = { url ->
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            is Screen.Detail -> {
+                                readerUiState.selectedDetail?.let { detail ->
+                                    DetailScreen(
+                                        strings = strings,
+                                        detail = detail,
+                                        isFavorite = libraryStore.isFavorite(detail.providerId, detail.detailPath),
+                                        autoJumpToUnread = libraryState.autoJumpToUnread,
+                                        readChapters = libraryState.readChapters,
+                                        lastOpenedChapterPath = libraryStore.read().reading.find { it.providerId == detail.providerId && it.detailPath == detail.detailPath }?.lastChapterPath ?: "",
+                                        downloadedChapters = libraryUiState.downloadedChapterPaths,
+                                        downloadProgress = libraryController.downloadProgress,
+                                        isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
+                                        onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
+                                        onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path) },
+                                        onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.chapters, read) },
+                                        onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.chapters, value, read) },
+                                        onToggleChapterDownload = { path, isDownloaded ->
+                                            if (isDownloaded) viewModel.removeDownloadedChapter(detail.providerId, path)
+                                            else viewModel.downloadChapter(detail.providerId, path)
+                                        },
+                                        onReadChapter = { path -> viewModel.openReader(detail.providerId, path) },
+                                        onSelectChapterSource = { path -> viewModel.openDetail(detail.providerId, path) },
+                                        onSolveCloudflare = null,
+                                    )
+                                } ?: LoadingPlaceholder()
                             }
-                        )
+                            is Screen.Reader -> {
+                                readerUiState.readerData?.let { data ->
+                                    ReaderScreen(
+                                        strings = strings,
+                                        reader = data,
+                                        offlineStore = offlineStore,
+                                        initialPageIndex = readerUiState.initialPageIndex,
+                                        isDownloaded = libraryUiState.downloadedChapterPaths.contains(data.chapterPath),
+                                        downloadPercent = libraryController.downloadProgress[data.chapterPath],
+                                        onPagePositionChanged = { index -> viewModel.updatePageProgress(data.providerId, data.chapterPath, index) },
+                                        onToggleDownload = {
+                                            if (libraryUiState.downloadedChapterPaths.contains(data.chapterPath)) viewModel.removeDownloadedChapter(data.providerId, data.chapterPath)
+                                            else viewModel.downloadChapter(data.providerId, data.chapterPath)
+                                        },
+                                        onOpenChapter = { currentPath, targetPath, markCurrentRead ->
+                                            viewModel.openAdjacentChapter(data.providerId, currentPath, targetPath, markCurrentRead)
+                                        },
+                                        onOpenManga = { path -> viewModel.openDetail(data.providerId, path) }
+                                    )
+                                } ?: LoadingPlaceholder()
+                            }
+                            is Screen.Settings -> SettingsScreen(
+                                strings = strings,
+                                appLanguage = libraryState.appLanguage,
+                                useDarkTheme = libraryState.useDarkTheme,
+                                autoJumpToUnread = libraryState.autoJumpToUnread,
+                                versionName = BuildConfig.VERSION_NAME,
+                                updateState = updateController.updateState,
+                                onLanguageChange = { viewModel.changeLanguage(it) },
+                                onThemeChange = { viewModel.changeTheme(it) },
+                                onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
+                                onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
+                                onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
+                                onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
+                                onDownloadUpdate = {
+                                    if (updateController.updateState is AppUpdateUiState.Available) {
+                                        viewModel.downloadUpdate((updateController.updateState as AppUpdateUiState.Available).release)
+                                    }
+                                },
+                                onInstallUpdate = {
+                                    if (updateController.updateState is AppUpdateUiState.Downloaded) {
+                                        viewModel.installDownloadedUpdate((updateController.updateState as AppUpdateUiState.Downloaded).file)
+                                    }
+                                },
+                                onOpenReleasePage = {
+                                    val release: GitHubRelease? = when (val state = updateController.updateState) {
+                                        is AppUpdateUiState.Available -> state.release
+                                        is AppUpdateUiState.Downloading -> state.release
+                                        is AppUpdateUiState.Downloaded -> state.release
+                                        else -> null
+                                    }
+                                    release?.let {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it.htmlUrl))
+                                        context.startActivity(intent)
+                                    }
+                                }
+                            )
+                            is Screen.ProviderPicker -> ProviderPickerScreen(
+                                strings = strings,
+                                selectedProviderId = libraryState.selectedProviderId,
+                                providersByLanguage = providerRegistry.groupedByLanguage(),
+                                onSelectProvider = { providerId -> viewModel.selectProvider(providerId) },
+                                onOpenProviderSite = { url ->
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                }
+                            )
+                        }
                     }
 
                     if (viewModel.loading) {
@@ -330,10 +360,36 @@ fun KomaStream() {
     )
 
     BackHandler {
-        if (!viewModel.goBack()) {
-            (context as? Activity)?.finish()
+        if (screen is Screen.Root) {
+            if (screen.tab != RootTab.Home) {
+                lastRootBackPressAt = 0L
+                snackbarHostState.currentSnackbarData?.dismiss()
+                viewModel.replaceRoot(RootTab.Home)
+            } else {
+                val now = System.currentTimeMillis()
+                if (now - lastRootBackPressAt < 2_000L) {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    activity?.finish()
+                } else {
+                    lastRootBackPressAt = now
+                    coroutineScope.launch {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(strings.pressBackAgainToExit)
+                    }
+                }
+            }
+        } else if (!viewModel.goBack()) {
+            activity?.finish()
         }
     }
+}
+
+private fun Screen.saveableKey(): String = when (this) {
+    is Screen.Root -> "root:${tab.name}"
+    is Screen.Detail -> "detail:$providerId:$detailPath"
+    is Screen.Reader -> "reader:$providerId:$chapterPath"
+    Screen.ProviderPicker -> "provider-picker"
+    Screen.Settings -> "settings"
 }
 
 private fun buildReaderTopBarTitle(

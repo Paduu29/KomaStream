@@ -103,9 +103,14 @@
     <string name="no_chapter_saved_yet">No chapter saved yet</string>
     <string name="no_chapter_opened_yet">No chapter opened yet</string>
     <string name="latest_progress">Latest progress</string>
+    <string name="open_manga">Open manga</string>
+    <string name="add_to_continue_reading">Add to continue reading</string>
+    <string name="add_to_favorites">Add to favorites</string>
     <string name="remove_from_continue_reading">Remove from continue reading</string>
     <string name="remove_from_favorites">Remove from favorites</string>
+    <string name="added_to_continue_reading">Added to continue reading</string>
     <string name="could_not_load_home">Could not load home</string>
+    <string name="press_back_again_to_exit">Press back again to exit</string>
     <string name="could_not_search_catalog">Could not search catalog</string>
     <string name="could_not_open_manga">Could not open manga</string>
     <string name="could_not_open_chapter">Could not open chapter</string>

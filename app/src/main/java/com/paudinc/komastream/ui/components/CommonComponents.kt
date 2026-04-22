@@ -31,73 +31,114 @@ import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.utils.AppStrings
 
 @Composable
-fun MangaCoverCard(manga: MangaSummary, strings: AppStrings, constrained: Boolean = false, onClick: () -> Unit) {
-    ElevatedCard(
-        modifier = (if (constrained) Modifier.width(160.dp) else Modifier.fillMaxWidth())
-            .border(cardBorder(), RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        if (constrained) {
-            Column {
-                AsyncImage(
-                    model = manga.coverUrl,
-                    contentDescription = manga.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(210.dp),
-                    contentScale = ContentScale.Crop,
-                    placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                    error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
-                )
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(manga.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (manga.status.isNotBlank()) {
-                        Text(manga.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+fun MangaCoverCard(
+    manga: MangaSummary,
+    strings: AppStrings,
+    constrained: Boolean = false,
+    favoriteActionLabel: String = strings.addToFavorites,
+    onClick: () -> Unit,
+    onFavoriteAction: (() -> Unit)? = null,
+    onOpenMangaAction: (() -> Unit)? = null,
+) {
+    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
+
+    Box {
+        ElevatedCard(
+            modifier = (if (constrained) Modifier.width(160.dp) else Modifier.fillMaxWidth())
+                .border(cardBorder(), RoundedCornerShape(24.dp))
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        if (onFavoriteAction != null || onOpenMangaAction != null) menuExpanded = true
+                    },
+                ),
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            if (constrained) {
+                Column {
+                    AsyncImage(
+                        model = manga.coverUrl,
+                        contentDescription = manga.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(210.dp),
+                        contentScale = ContentScale.Crop,
+                        placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                        error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
+                    )
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(manga.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (manga.status.isNotBlank()) {
+                            Text(manga.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                        if (manga.periodicity.isNotBlank()) {
+                            Text(manga.periodicity, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (manga.latestPublication.isNotBlank()) {
+                            Text(manga.latestPublication, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        }
+                        if (manga.views.isNotBlank()) {
+                            Text(manga.views, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        }
                     }
-                    if (manga.periodicity.isNotBlank()) {
-                        Text(manga.periodicity, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (manga.latestPublication.isNotBlank()) {
-                        Text(manga.latestPublication, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                    if (manga.views.isNotBlank()) {
-                        Text(manga.views, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+            } else {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = manga.coverUrl,
+                        contentDescription = manga.title,
+                        modifier = Modifier
+                            .size(width = 100.dp, height = 140.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop,
+                        placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                        error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(manga.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+                        if (manga.status.isNotBlank()) {
+                            InfoRow(strings.status, manga.status)
+                        }
+                        if (manga.periodicity.isNotBlank()) {
+                            InfoRow(strings.periodicity, manga.periodicity)
+                        }
+                        if (manga.latestPublication.isNotBlank()) {
+                            InfoRow(strings.latest, manga.latestPublication)
+                        }
+                        if (manga.chaptersCount.isNotBlank()) {
+                            InfoRow(strings.chapters, manga.chaptersCount)
+                        }
+                        if (manga.views.isNotBlank()) {
+                            Text(manga.views, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
-        } else {
-            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = manga.coverUrl,
-                    contentDescription = manga.title,
-                    modifier = Modifier
-                        .size(width = 100.dp, height = 140.dp)
-                        .clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Crop,
-                    placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                    error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
-                )
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(manga.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
 
-                    if (manga.status.isNotBlank()) {
-                        InfoRow(strings.status, manga.status)
-                    }
-                    if (manga.periodicity.isNotBlank()) {
-                        InfoRow(strings.periodicity, manga.periodicity)
-                    }
-                    if (manga.latestPublication.isNotBlank()) {
-                        InfoRow(strings.latest, manga.latestPublication)
-                    }
-                    if (manga.chaptersCount.isNotBlank()) {
-                        InfoRow(strings.chapters, manga.chaptersCount)
-                    }
-                    if (manga.views.isNotBlank()) {
-                        Text(manga.views, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            onFavoriteAction?.let {
+                DropdownMenuItem(
+                    text = { Text(favoriteActionLabel) },
+                    onClick = {
+                        menuExpanded = false
+                        it()
+                    },
+                )
+            }
+            onOpenMangaAction?.let {
+                DropdownMenuItem(
+                    text = { Text(strings.openManga) },
+                    onClick = {
+                        menuExpanded = false
+                        it()
+                    },
+                )
             }
         }
     }
@@ -132,7 +173,12 @@ fun ContinueReadingCard(
                 ),
             shape = RoundedCornerShape(22.dp),
         ) {
-            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AsyncImage(
                     model = manga.coverUrl,
                     contentDescription = manga.title,
@@ -142,22 +188,40 @@ fun ContinueReadingCard(
                     error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                 )
                 Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(manga.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
-                        manga.lastChapterTitle.ifBlank { strings.noChapterSavedYet },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        manga.title,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                }
-                IconButton(onClick = onRemove) {
-                    Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
-                }
-                Button(onClick = onResume, enabled = manga.lastChapterPath.isNotBlank()) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(strings.resume)
+                    Text(
+                        "${strings.latestProgress}: ${manga.lastChapterTitle.ifBlank { strings.noChapterSavedYet }}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FilledTonalButton(
+                            onClick = onResume,
+                            enabled = manga.lastChapterPath.isNotBlank(),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text(strings.resume, maxLines = 1)
+                        }
+                        IconButton(onClick = onRemove) {
+                            Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
+                        }
+                    }
                 }
             }
         }
@@ -167,7 +231,7 @@ fun ContinueReadingCard(
             onDismissRequest = { menuExpanded = false },
         ) {
             DropdownMenuItem(
-                text = { Text(strings.manga) },
+                text = { Text(strings.openManga) },
                 onClick = {
                     menuExpanded = false
                     onOpen()
@@ -256,51 +320,90 @@ fun FavoriteMangaCard(
 }
 
 @Composable
-fun ChapterRow(item: ChapterSummary, strings: AppStrings, onOpenChapter: (String, String) -> Unit) {
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(cardBorder(), RoundedCornerShape(22.dp))
-            .clickable { onOpenChapter(item.providerId, item.chapterPath) },
-        shape = RoundedCornerShape(22.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = item.coverUrl,
-                contentDescription = item.mangaTitle,
-                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.Crop,
-                placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.mangaTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    item.chapterLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+fun ChapterRow(
+    item: ChapterSummary,
+    strings: AppStrings,
+    onOpenChapter: (String, String) -> Unit,
+    onAddToReading: (() -> Unit)? = null,
+    onOpenManga: (() -> Unit)? = null,
+) {
+    var menuExpanded by rememberSaveable(item.providerId, item.chapterPath) { mutableStateOf(false) }
+
+    Box {
+        ElevatedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(cardBorder(), RoundedCornerShape(22.dp))
+                .combinedClickable(
+                    onClick = { onOpenChapter(item.providerId, item.chapterPath) },
+                    onLongClick = {
+                        if (onAddToReading != null || onOpenManga != null) menuExpanded = true
+                    },
+                ),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(
+                    model = item.coverUrl,
+                    contentDescription = item.mangaTitle,
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Crop,
+                    placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                    error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                 )
-                if (item.registrationLabel.isNotBlank()) {
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(item.mangaTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        item.registrationLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        style = MaterialTheme.typography.bodySmall,
+                        item.chapterLabel,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (item.registrationLabel.isNotBlank()) {
+                        Text(
+                            item.registrationLabel,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { onOpenChapter(item.providerId, item.chapterPath) },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(strings.read)
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { onOpenChapter(item.providerId, item.chapterPath) },
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(strings.read)
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            onAddToReading?.let {
+                DropdownMenuItem(
+                    text = { Text(strings.addToContinueReading) },
+                    onClick = {
+                        menuExpanded = false
+                        it()
+                    },
+                )
+            }
+            onOpenManga?.let {
+                DropdownMenuItem(
+                    text = { Text(strings.openManga) },
+                    onClick = {
+                        menuExpanded = false
+                        it()
+                    },
+                )
             }
         }
     }

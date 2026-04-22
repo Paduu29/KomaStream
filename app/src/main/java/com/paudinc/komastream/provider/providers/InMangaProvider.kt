@@ -133,10 +133,17 @@ class InMangaProvider : MangaProvider {
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
         android.util.Log.d("InMangaProvider", "fetchMangaDetail: path=$detailPath")
         ensureSession()
-        val document = getDocument(detailPath, referer = "/")
+        val normalizedInputPath = detailPath.normalizePath()
+        val resolvedDetailPath = if (looksLikeChapterPath(normalizedInputPath)) {
+            resolveMangaDetailPathFromChapterPath(normalizedInputPath)
+        } else {
+            normalizedInputPath
+        }
+        android.util.Log.d("InMangaProvider", "fetchMangaDetail: resolvedDetailPath=$resolvedDetailPath")
+        val document = getDocument(resolvedDetailPath, referer = "/")
         android.util.Log.d("InMangaProvider", "fetchMangaDetail: doc title=${document.selectFirst("h1")?.text()}, hasIdentification=${document.selectFirst("#Identification") != null}")
         val identification = document.selectFirst("#Identification")?.`val`().orEmpty()
-        val currentPath = detailPath.normalizePath()
+        val currentPath = resolvedDetailPath
         val mangaDetailPathBase = currentPath.substringBeforeLast("/")
         val fullPath = when {
             identification.isNotBlank() && !currentPath.contains(identification, ignoreCase = true) -> {
@@ -172,7 +179,10 @@ class InMangaProvider : MangaProvider {
         val chapterTitle = chapterDocument.selectFirst(".ChapterDescriptionContainer h1")?.text().orEmpty()
         val mangaTitle = chapterTitle.substringBefore("Capítulo").trim()
         val controls = getDocument("/chapter/chapterIndexControls?identification=$chapterId", referer = normalizedChapterPath)
-        var mangaDetailPath = controls.select(".chapterControlsContainer a.blue").attr("href").normalizePath()
+        var mangaDetailPath = extractMangaDetailPathFromChapterMetadata(chapterDocument, normalizedChapterPath)
+            .ifBlank { extractMangaDetailPathFromChapterScript(chapterDocument) }
+            .ifBlank { extractMangaDetailPathFromChapterPage(chapterDocument) }
+            .ifBlank { extractMangaDetailPathFromChapterControls(controls) }
         android.util.Log.d("InMangaProvider", "mangaDetailPath from controls: $mangaDetailPath")
         if (!mangaDetailPath.contains(mangaUuidRegex)) {
             val mangaUuid = controls.html().let { html -> mangaUuidRegex.find(html)?.value }
@@ -248,6 +258,99 @@ class InMangaProvider : MangaProvider {
             nextChapterPath = nextChapterPath,
             pages = pages,
         )
+    }
+
+    private fun resolveMangaDetailPathFromChapterPath(chapterPath: String): String {
+        val normalizedChapterPath = chapterPath.normalizePath()
+        val chapterDocument = getDocument(normalizedChapterPath, referer = "/")
+        var mangaDetailPath = extractMangaDetailPathFromChapterMetadata(chapterDocument, normalizedChapterPath)
+            .ifBlank { extractMangaDetailPathFromChapterScript(chapterDocument) }
+            .ifBlank { extractMangaDetailPathFromChapterPage(chapterDocument) }
+            .ifBlank { extractCanonicalMangaPathFromLinks(chapterDocument, normalizedChapterPath) }
+        return mangaDetailPath.ifBlank { chapterPath }
+    }
+
+    private fun extractMangaDetailPathFromChapterControls(document: Document): String {
+        val directMatch = document.selectFirst(
+            ".chapterControlsContainer label.blue.ellipsed-text.mb0 strong a.blue[href]"
+        )?.attr("href").orEmpty().normalizePath()
+        if (directMatch.isNotBlank()) return directMatch
+
+        val fallback = document.selectFirst(
+            ".chapterControlsContainer a.blue[href*=\"/ver/manga/\"]"
+        )?.attr("href").orEmpty().normalizePath()
+        return fallback
+    }
+
+    private fun extractMangaDetailPathFromChapterPage(document: Document): String {
+        val directMatch = document.selectFirst(
+            ".chapterIndexContainer .chapterControlsContainer label.blue.ellipsed-text.mb0 strong a.blue[href]"
+        )?.attr("href").orEmpty().normalizePath()
+        if (directMatch.isNotBlank()) return directMatch
+
+        val fallback = document.selectFirst(
+            ".chapterIndexContainer .chapterControlsContainer a.blue[href*=\"/ver/manga/\"]"
+        )?.attr("href").orEmpty().normalizePath()
+        return fallback
+    }
+
+    private fun extractMangaDetailPathFromChapterScript(document: Document): String {
+        val scriptText = document.select("script").joinToString("\n") { it.html() }
+        val chapterUrlTemplate = Regex("""var\s+cu\s*=\s*&#39;([^&#]+)&#39;|var\s+cu\s*=\s*'([^']+)'|var\s+cu\s*=\s*"([^"]+)"""")
+            .find(scriptText)
+            ?.groupValues
+            ?.drop(1)
+            ?.firstOrNull { it.isNotBlank() }
+            .orEmpty()
+        val mangaId = Regex("""var\s+mid\s*=\s*&#39;([^&#]+)&#39;|var\s+mid\s*=\s*'([^']+)'|var\s+mid\s*=\s*"([^"]+)"""")
+            .find(scriptText)
+            ?.groupValues
+            ?.drop(1)
+            ?.firstOrNull { it.isNotBlank() }
+            .orEmpty()
+
+        if (chapterUrlTemplate.isBlank() || mangaId.isBlank()) return ""
+        val slug = chapterUrlTemplate
+            .substringAfter("/ver/manga/", missingDelimiterValue = "")
+            .substringBefore("/chapterNumber", missingDelimiterValue = "")
+            .trim('/')
+        if (slug.isBlank() || !mangaId.matches(mangaUuidRegex)) return ""
+        return "/ver/manga/$slug/$mangaId"
+    }
+
+    private fun extractMangaDetailPathFromChapterMetadata(document: Document, chapterPath: String): String {
+        val chapterParts = chapterPath.normalizePath().trim('/').split("/").filter { it.isNotBlank() }
+        if (chapterParts.size < 5) return ""
+        val slug = chapterParts[2]
+
+        val ogImage = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
+        val mangaId = ogImage
+            .substringAfterLast('/')
+            .takeIf { it.matches(mangaUuidRegex) }
+            .orEmpty()
+        if (mangaId.isBlank()) return ""
+        return "/ver/manga/$slug/$mangaId"
+    }
+
+    private fun extractCanonicalMangaPathFromLinks(document: Document, chapterPath: String): String {
+        val chapterParts = chapterPath.normalizePath().trim('/').split("/").filter { it.isNotBlank() }
+        if (chapterParts.size < 5) return ""
+        val slug = chapterParts[2]
+        val chapterUuid = chapterParts.last()
+
+        return document.select("a[href]")
+            .asSequence()
+            .map { it.attr("href").orEmpty().normalizePath() }
+            .firstOrNull { candidate ->
+                val candidateParts = candidate.trim('/').split("/").filter { it.isNotBlank() }
+                candidateParts.size == 4 &&
+                    candidateParts[0] == "ver" &&
+                    candidateParts[1] == "manga" &&
+                    candidateParts[2] == slug &&
+                    candidateParts[3].matches(mangaUuidRegex) &&
+                    candidateParts[3] != chapterUuid
+            }
+            .orEmpty()
     }
 
     private fun buildPageUrl(scriptText: String, pageId: String, pageNumber: String): String? {
@@ -416,6 +519,15 @@ class InMangaProvider : MangaProvider {
                 ?: parseChapterNumber(it.chapterLabel)
                 ?: Double.NEGATIVE_INFINITY
         }
+    }
+
+    private fun looksLikeChapterPath(path: String): Boolean {
+        val parts = path.trim('/').split("/").filter { it.isNotBlank() }
+        return parts.size >= 5 &&
+            parts[0] == "ver" &&
+            parts[1] == "manga" &&
+            parseChapterNumber(parts[3]) != null &&
+            parts[4].matches(mangaUuidRegex)
     }
 
     private fun extractMangaDescription(document: Document): String {

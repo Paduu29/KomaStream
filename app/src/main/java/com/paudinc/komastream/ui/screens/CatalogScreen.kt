@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.data.model.CategoryOption
 import com.paudinc.komastream.data.model.FilterOption
 import com.paudinc.komastream.data.model.MangaSummary
+import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.ui.navigation.CatalogMode
 import com.paudinc.komastream.utils.AppStrings
@@ -43,6 +44,8 @@ fun CatalogScreen(
     onSearch: () -> Unit,
     onLoadMore: () -> Unit,
     onOpen: (String, String) -> Unit,
+    onToggleFavorite: (SavedManga) -> Unit,
+    isFavorite: (String, String) -> Boolean,
 ) {
     var catalogMode by rememberSaveable { mutableStateOf(CatalogMode.Basic) }
 
@@ -156,7 +159,24 @@ fun CatalogScreen(
             item { EmptyCard(strings.searchEmptyCatalog) }
         } else {
             items(results) { manga ->
-                MangaCoverCard(manga, strings, constrained = false) { onOpen(manga.providerId, manga.detailPath) }
+                MangaCoverCard(
+                    manga = manga,
+                    strings = strings,
+                    constrained = false,
+                    favoriteActionLabel = if (isFavorite(manga.providerId, manga.detailPath)) strings.removeFromFavorites else strings.addToFavorites,
+                    onClick = { onOpen(manga.providerId, manga.detailPath) },
+                    onFavoriteAction = {
+                        onToggleFavorite(
+                            SavedManga(
+                                providerId = manga.providerId,
+                                title = manga.title,
+                                detailPath = manga.detailPath,
+                                coverUrl = manga.coverUrl,
+                            )
+                        )
+                    },
+                    onOpenMangaAction = { onOpen(manga.providerId, manga.detailPath) },
+                )
             }
             if (hasMoreResults) {
                 item {

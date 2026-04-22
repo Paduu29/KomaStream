@@ -53,7 +53,7 @@ class LibraryController(
 
     private var downloadTrackingStarted = false
 
-    fun refreshState(filterBySelectedProvider: Boolean = false) {
+    fun refreshState(filterBySelectedProvider: Boolean = true) {
         uiState = uiState.copy(
             state = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider)
         )
@@ -174,6 +174,12 @@ class LibraryController(
         libraryStore.removeReading(manga.providerId, manga.detailPath)
         refreshState()
         Toast.makeText(context, strings.removedFromContinueReading, Toast.LENGTH_SHORT).show()
+    }
+
+    fun addToReading(manga: SavedManga) {
+        libraryStore.upsertReading(manga)
+        refreshState()
+        Toast.makeText(context, strings.addedToContinueReading, Toast.LENGTH_SHORT).show()
     }
 
     fun changeLanguage(language: AppLanguage) {

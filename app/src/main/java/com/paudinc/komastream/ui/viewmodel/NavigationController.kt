@@ -7,9 +7,9 @@ import com.paudinc.komastream.ui.navigation.RootTab
 import com.paudinc.komastream.ui.navigation.Screen
 
 class NavigationController(
-    initialScreen: Screen,
+    initialStack: List<Screen>,
 ) {
-    var navigationStack by mutableStateOf(listOf(initialScreen))
+    var navigationStack by mutableStateOf(initialStack.ifEmpty { listOf(Screen.ProviderPicker) })
         private set
 
     val screen: Screen
