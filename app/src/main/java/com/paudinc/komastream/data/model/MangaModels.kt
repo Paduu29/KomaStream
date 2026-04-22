@@ -3,6 +3,7 @@ package com.paudinc.komastream.data.model
 enum class AppLanguage {
     EN,
     ES,
+    MULTI,
 }
 
 data class MangaSummary(

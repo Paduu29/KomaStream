@@ -96,6 +96,32 @@ fun KomaStream() {
     }
     val activity = context as? Activity
     val currentProvider = viewModel.currentProvider
+    val currentRelease: GitHubRelease? = when (val state = updateController.updateState) {
+        is AppUpdateUiState.Available -> state.release
+        is AppUpdateUiState.Downloading -> state.release
+        is AppUpdateUiState.Downloaded -> state.release
+        else -> null
+    }
+    val openReleasePage: () -> Unit = {
+        val release = currentRelease
+        if (release != null) {
+            updater.openReleasePage(release)
+        } else {
+            updater.openReleasePage(BuildConfig.VERSION_NAME)
+        }
+    }
+    val downloadUpdate: () -> Unit = {
+        val availableState = updateController.updateState as? AppUpdateUiState.Available
+        if (availableState != null) {
+            viewModel.downloadUpdate(availableState.release)
+        }
+    }
+    val installUpdate: () -> Unit = {
+        val downloadedState = updateController.updateState as? AppUpdateUiState.Downloaded
+        if (downloadedState != null) {
+            viewModel.installDownloadedUpdate(downloadedState.file)
+        }
+    }
 
     LaunchedEffect(libraryState.selectedProviderId) {
         viewModel.refreshCatalogFilterOptions()
@@ -308,28 +334,9 @@ fun KomaStream() {
                                 onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
                                 onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
                                 onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
-                                onDownloadUpdate = {
-                                    if (updateController.updateState is AppUpdateUiState.Available) {
-                                        viewModel.downloadUpdate((updateController.updateState as AppUpdateUiState.Available).release)
-                                    }
-                                },
-                                onInstallUpdate = {
-                                    if (updateController.updateState is AppUpdateUiState.Downloaded) {
-                                        viewModel.installDownloadedUpdate((updateController.updateState as AppUpdateUiState.Downloaded).file)
-                                    }
-                                },
-                                onOpenReleasePage = {
-                                    val release: GitHubRelease? = when (val state = updateController.updateState) {
-                                        is AppUpdateUiState.Available -> state.release
-                                        is AppUpdateUiState.Downloading -> state.release
-                                        is AppUpdateUiState.Downloaded -> state.release
-                                        else -> null
-                                    }
-                                    release?.let {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(it.htmlUrl))
-                                        context.startActivity(intent)
-                                    }
-                                }
+                                onDownloadUpdate = downloadUpdate,
+                                onInstallUpdate = installUpdate,
+                                onOpenReleasePage = openReleasePage,
                             )
                             is Screen.ProviderPicker -> ProviderPickerScreen(
                                 strings = strings,
@@ -356,9 +363,9 @@ fun KomaStream() {
             strings = strings,
             updateState = updateController.updateState,
             onDismiss = { updateController.isDialogVisible = false },
-            onDownloadUpdate = { /* handled via settings or notification usually */ },
-            onInstallUpdate = { /* handled via settings or notification usually */ },
-            onOpenReleasePage = { /* handled via settings or notification usually */ }
+            onDownloadUpdate = downloadUpdate,
+            onInstallUpdate = installUpdate,
+            onOpenReleasePage = openReleasePage,
         )
     }
 

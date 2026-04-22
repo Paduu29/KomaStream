@@ -66,7 +66,11 @@ fun ProviderPickerScreen(
             if (providers.isEmpty()) return@forEach
             item {
                 Text(
-                    text = if (language == AppLanguage.EN) strings.english else strings.spanish,
+                    text = when (language) {
+                        AppLanguage.EN -> strings.english
+                        AppLanguage.ES -> strings.spanish
+                        AppLanguage.MULTI -> strings.multilingual
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )

@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.MangaDetail
+import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.*
 import kotlinx.coroutines.launch
@@ -317,7 +318,15 @@ fun DetailScreen(
                                             .fillMaxWidth()
                                             .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                                         readOnly = true,
-                                        label = { Text("Chapter Source") },
+                                        label = {
+                                            Text(
+                                                if (detail.providerId == MangaBallProvider.PROVIDER_ID) {
+                                                    strings.languageLabel
+                                                } else {
+                                                    "Chapter Source"
+                                                }
+                                            )
+                                        },
                                         trailingIcon = {
                                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceMenuExpanded)
                                         },

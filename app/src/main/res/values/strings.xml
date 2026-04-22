@@ -107,6 +107,7 @@
     <string name="off">Off</string>
     <string name="english">English</string>
     <string name="spanish">Spanish</string>
+    <string name="multilingual">Multilingual</string>
     <string name="no_description">No description available.</string>
     <string name="add_manga_hint">Add mangas from the catalog or detail screen.</string>
     <string name="reading_hint">Open a chapter once and it will appear here.</string>

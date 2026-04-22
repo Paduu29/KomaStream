@@ -226,6 +226,25 @@ class GitHubReleaseUpdater(
         }
     }
 
+    fun openReleasePage(versionName: String): Boolean {
+        val releaseUrl = releasePageUrl(versionName) ?: return false
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(releaseUrl))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        }
+    }
+
+    private fun releasePageUrl(versionName: String): String? {
+        if (!isEnabled()) return null
+        val normalizedVersion = versionName.trim().removePrefix("v")
+        if (normalizedVersion.isBlank()) return "https://github.com/$releaseRepo/releases"
+        return "https://github.com/$releaseRepo/releases/tag/v$normalizedVersion"
+    }
+
     private fun parseRelease(json: JSONObject): GitHubRelease? {
         if (json.optBoolean("draft")) return null
 
