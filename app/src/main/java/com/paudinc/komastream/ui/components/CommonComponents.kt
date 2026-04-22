@@ -1,6 +1,7 @@
 package com.paudinc.komastream.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,34 +60,72 @@ fun MangaCoverCard(
         ) {
             if (constrained) {
                 Column {
-                    AsyncImage(
-                        model = manga.coverUrl,
-                        contentDescription = manga.title,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(210.dp),
-                        contentScale = ContentScale.Crop,
-                        placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                        error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
-                    )
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(manga.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (manga.status.isNotBlank()) {
-                            Text(manga.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Box {
+                        AsyncImage(
+                            model = manga.coverUrl,
+                            contentDescription = manga.title,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            contentScale = ContentScale.Crop,
+                            placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                            error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
+                        )
+                        manga.status.takeIf { it.isNotBlank() }?.let { status ->
+                            TagChip(
+                                label = strings.localizedStatus(status),
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                labelColor = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(10.dp),
+                            )
                         }
-                        if (manga.periodicity.isNotBlank()) {
-                            Text(manga.periodicity, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            manga.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        manga.periodicity.takeIf { it.isNotBlank() }?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
-                        if (manga.latestPublication.isNotBlank()) {
-                            Text(manga.latestPublication, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        manga.latestPublication.takeIf { it.isNotBlank() }?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
-                        if (manga.views.isNotBlank()) {
-                            Text(manga.views, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        manga.views.takeIf { it.isNotBlank() }?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
             } else {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     AsyncImage(
                         model = manga.coverUrl,
                         contentDescription = manga.title,
@@ -97,23 +137,48 @@ fun MangaCoverCard(
                         error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                     )
                     Spacer(Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(manga.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-
-                        if (manga.status.isNotBlank()) {
-                            InfoRow(strings.status, manga.status)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            manga.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            manga.status.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = strings.localizedStatus(it),
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                            manga.chaptersCount.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = "${strings.chapters} $it",
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
                         }
-                        if (manga.periodicity.isNotBlank()) {
-                            InfoRow(strings.periodicity, manga.periodicity)
+                        manga.periodicity.takeIf { it.isNotBlank() }?.let {
+                            InfoRow(strings.periodicity, it)
                         }
-                        if (manga.latestPublication.isNotBlank()) {
-                            InfoRow(strings.latest, manga.latestPublication)
+                        manga.latestPublication.takeIf { it.isNotBlank() }?.let {
+                            InfoRow(strings.latest, it)
                         }
-                        if (manga.chaptersCount.isNotBlank()) {
-                            InfoRow(strings.chapters, manga.chaptersCount)
-                        }
-                        if (manga.views.isNotBlank()) {
-                            Text(manga.views, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                        manga.views.takeIf { it.isNotBlank() }?.let {
+                            Text(
+                                it,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                 }
@@ -148,9 +213,18 @@ fun MangaCoverCard(
 
 @Composable
 private fun InfoRow(label: String, value: String) {
-    Row {
-        Text("$label: ", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-        Text(value, style = MaterialTheme.typography.bodySmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -325,6 +399,7 @@ fun FavoriteMangaCard(
 fun ChapterRow(
     item: ChapterSummary,
     strings: AppStrings,
+    actionLabel: String = strings.read,
     onOpenChapter: (String, String) -> Unit,
     onAddToReading: (() -> Unit)? = null,
     onOpenManga: (() -> Unit)? = null,
@@ -344,43 +419,61 @@ fun ChapterRow(
                 ),
             shape = RoundedCornerShape(22.dp),
         ) {
-            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AsyncImage(
                     model = item.coverUrl,
                     contentDescription = item.mangaTitle,
-                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier
+                        .size(width = 62.dp, height = 84.dp)
+                        .clip(RoundedCornerShape(14.dp)),
                     contentScale = ContentScale.Crop,
                     placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
                     error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(item.mangaTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.width(14.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
-                        item.chapterLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        item.mangaTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    TagChip(
+                        label = item.chapterLabel,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     if (item.registrationLabel.isNotBlank()) {
                         Text(
                             item.registrationLabel,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                            style = MaterialTheme.typography.labelMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                Button(
+                FilledTonalButton(
                     onClick = { onOpenChapter(item.providerId, item.chapterPath) },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(strings.read)
+                    Text(
+                        actionLabel,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
         }
@@ -419,6 +512,29 @@ fun LoadingPlaceholder() {
 }
 
 @Composable
+fun LoadingPlaceholder(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            CircularProgressIndicator()
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
 fun EmptyCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -431,10 +547,16 @@ fun EmptyCard(message: String) {
 }
 
 @Composable
-fun TagChip(label: String, containerColor: Color, labelColor: Color) {
+fun TagChip(
+    label: String,
+    containerColor: Color,
+    labelColor: Color,
+    modifier: Modifier = Modifier,
+) {
     Surface(
+        modifier = modifier,
         color = containerColor,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
     ) {
         Text(
             text = label,

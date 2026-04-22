@@ -83,7 +83,6 @@ class ReaderController(
                         initialPageIndex = initialPageIndex,
                         currentPageIndex = initialPageIndex,
                     )
-                    libraryStore.markChapterRead(providerId, path)
                     libraryStore.upsertReading(
                         readerActionInteractor.buildReadingEntry(
                             providerId = providerId,
@@ -111,8 +110,22 @@ class ReaderController(
         libraryStore.setChaptersRead(providerId, listOf(chapterPath), read)
     }
 
-    fun updatePageProgress(providerId: String, path: String, index: Int) {
+    fun updatePageProgress(
+        providerId: String,
+        path: String,
+        index: Int,
+        onChapterMarkedRead: () -> Unit,
+    ) {
         uiState = uiState.copy(currentPageIndex = index.coerceAtLeast(0))
         libraryStore.saveChapterProgress(providerId, path, index)
+        val totalPages = uiState.readerData
+            ?.takeIf { it.providerId == providerId && it.chapterPath == path }
+            ?.pages
+            ?.size
+            ?: 0
+        if (totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
+            libraryStore.markChapterRead(providerId, path)
+            onChapterMarkedRead()
+        }
     }
 }

@@ -22,6 +22,7 @@ import com.paudinc.komastream.ui.navigation.RootTab
 import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
+import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
@@ -232,9 +233,13 @@ class KomaViewModel(
 
     fun changeMangaBallAdultContent(enabled: Boolean) {
         libraryController.changeMangaBallAdultContent(enabled)
-        homeController.refreshHome(currentProvider, ::showError)
+        providerRegistry.get(MangaBallProvider.PROVIDER_ID).invalidateCaches()
+        homeController.clearFeed()
         catalogController.resetForProviderChange()
-        catalogController.refreshFilterOptions(currentProvider)
+        if (currentProvider.id == MangaBallProvider.PROVIDER_ID) {
+            homeController.refreshHome(currentProvider, ::showError)
+            catalogController.refreshFilterOptions(currentProvider)
+        }
     }
 
     fun exportBackup(uri: Uri) {
@@ -262,8 +267,22 @@ class KomaViewModel(
         navigationController.replaceRoot(RootTab.Home)
     }
 
+    fun refreshCurrentProviderContent(clearVisibleData: Boolean = false) {
+        if (clearVisibleData) {
+            homeController.clearFeed()
+            catalogController.clearResults()
+        }
+        refreshCatalogFilterOptions()
+        refreshHome()
+    }
+
     fun updatePageProgress(providerId: String, path: String, index: Int) {
-        readerController.updatePageProgress(providerId, path, index)
+        readerController.updatePageProgress(
+            providerId = providerId,
+            path = path,
+            index = index,
+            onChapterMarkedRead = { libraryController.refreshState() },
+        )
     }
 
     fun openAdjacentChapter(providerId: String, currentPath: String, targetPath: String, markCurrentRead: Boolean) {

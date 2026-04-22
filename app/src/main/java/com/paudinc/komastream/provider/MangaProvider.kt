@@ -24,4 +24,5 @@ interface MangaProvider {
     fun fetchMangaDetail(detailPath: String): MangaDetail
     fun fetchReaderData(chapterPath: String): ReaderData
     fun downloadBytes(url: String, referer: String?): ByteArray
+    fun invalidateCaches() {}
 }

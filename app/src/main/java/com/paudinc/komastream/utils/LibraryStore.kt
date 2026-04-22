@@ -15,6 +15,7 @@ class LibraryStore(context: Context) {
     private val backupPayloadCodec = LibraryBackupPayloadCodec()
 
     fun read(filterBySelectedProvider: Boolean = true): LibraryState {
+        migrateLegacyAutoReadEntriesIfNeeded()
         val selectedProviderId = selectedProviderId()
         val parsedFavorites = jsonCodec.parseSavedMangaList(
             value = prefs.getString("favorites", "[]").orEmpty(),
@@ -332,7 +333,40 @@ class LibraryStore(context: Context) {
         return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
     }
 
+    private fun migrateLegacyAutoReadEntriesIfNeeded() {
+        if (prefs.getBoolean(KEY_LEGACY_AUTO_READ_MIGRATION_DONE, false)) return
+
+        val reading = jsonCodec.parseSavedMangaList(
+            prefs.getString("reading", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        )
+        val readChapters = jsonCodec.parseRawReadChapters(
+            prefs.getString("readChapters", "[]").orEmpty()
+        ).toMutableList()
+        val readProgress = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
+
+        var changed = false
+        reading.forEach { saved ->
+            val chapterPath = saved.lastChapterPath.takeIf { it.isNotBlank() } ?: return@forEach
+            val progress = readProgress.optInt(jsonCodec.qualify(saved.providerId, chapterPath), 0)
+            if (progress > 0) return@forEach
+
+            val removed = readChapters.removeAll { storedQualifiedPath ->
+                sameStoredChapter(saved.providerId, storedQualifiedPath, chapterPath)
+            }
+            if (removed) changed = true
+        }
+
+        prefs.edit().apply {
+            if (changed) {
+                putString("readChapters", jsonCodec.serializeReadChapters(readChapters))
+            }
+            putBoolean(KEY_LEGACY_AUTO_READ_MIGRATION_DONE, true)
+        }.apply()
+    }
+
     private companion object {
         private const val KEY_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
+        private const val KEY_LEGACY_AUTO_READ_MIGRATION_DONE = "legacyAutoReadMigrationDone"
     }
 }

@@ -12,6 +12,11 @@
     <string name="latest_updates">Latest Updates</string>
     <string name="popular_chapters">Popular Chapters</string>
     <string name="popular_mangas">Popular Mangas</string>
+    <string name="recommended">Recommended</string>
+    <string name="top_viewed">Top Viewed</string>
+    <string name="by_origin">By Origin</string>
+    <string name="recent_reads">Recent Reads</string>
+    <string name="season_picks">Season Picks</string>
     <string name="favorites">Favorites</string>
     <string name="continue_reading">Continue Reading</string>
     <string name="search_available_mangas">Search available mangas</string>
@@ -25,6 +30,10 @@
     <string name="only_favorites">Only favorites</string>
     <string name="search_empty_catalog">Search for a manga to browse the catalog.</string>
     <string name="status">Status</string>
+    <string name="status_ongoing">Ongoing</string>
+    <string name="status_completed">Completed</string>
+    <string name="status_hiatus">Hiatus</string>
+    <string name="status_cancelled">Cancelled</string>
     <string name="periodicity">Periodicity</string>
     <string name="latest">Latest</string>
     <string name="chapters">Chapters</string>
@@ -94,6 +103,9 @@
     <string name="choose_provider">Choose provider</string>
     <string name="choose_provider_description">Pick the manga source you want to browse. You can change it later from the logo in the top bar.</string>
     <string name="open_provider_site">Open provider site</string>
+    <string name="chapter_source">Chapter source</string>
+    <string name="blocked_by_cloudflare">Blocked by Cloudflare</string>
+    <string name="solve_cloudflare">Solve Cloudflare</string>
     <string name="auto_jump_to_unread">Auto-jump to unread chapter</string>
     <string name="auto_jump_to_unread_enabled">Open manga at the next unread chapter when applicable.</string>
     <string name="auto_jump_to_unread_disabled">Always open manga at the top of the detail page.</string>
@@ -115,6 +127,7 @@
     <string name="no_chapter_opened_yet">No chapter opened yet</string>
     <string name="latest_progress">Latest progress</string>
     <string name="open_manga">Open manga</string>
+    <string name="continue_reading_action">Continue reading</string>
     <string name="add_to_continue_reading">Add to continue reading</string>
     <string name="add_to_favorites">Add to favorites</string>
     <string name="remove_from_continue_reading">Remove from continue reading</string>
@@ -127,6 +140,7 @@
     <string name="could_not_open_chapter">Could not open chapter</string>
     <string name="added_to_favorites">Added to favorites</string>
     <string name="removed_from_favorites">Removed from favorites</string>
+    <string name="chapter_read_action">Read</string>
     <string name="removed_from_continue_reading">Removed from continue reading</string>
     <string name="marked_as_read">Marked as read</string>
     <string name="marked_as_unread">Marked as unread</string>
@@ -137,6 +151,8 @@
     <string name="invalid_backup">Invalid backup</string>
     <string name="export_backup_error">Could not export backup</string>
     <string name="result_count">%1$d results</string>
+    <string name="item_count_singular">%1$d item</string>
+    <string name="item_count_plural">%1$d items</string>
     <string name="active_series_count">%1$d active series</string>
     <string name="favorites_count">%1$d favorites</string>
     <string name="pages_count">%1$d pages</string>
@@ -145,4 +161,16 @@
     <string name="no_chapters_found">No chapters found for "%1$s".</string>
     <string name="marked_until_read">Marked until chapter %1$s as read</string>
     <string name="marked_until_unread">Marked until chapter %1$s as unread</string>
+    <string name="home_latest_subtitle">Newest chapter releases from this provider</string>
+    <string name="home_popular_chapters_subtitle">Most active chapter updates right now</string>
+    <string name="home_popular_mangas_subtitle">Titles readers are opening the most</string>
+    <string name="home_recommended_subtitle">Editorial and algorithmic picks from the source</string>
+    <string name="home_top_viewed_subtitle">Series with the strongest reader traffic</string>
+    <string name="home_by_origin_subtitle">Browse titles grouped by publishing origin</string>
+    <string name="home_recent_reads_subtitle">Recently read chapters gaining attention</string>
+    <string name="home_season_picks_subtitle">High-performing series for the current period</string>
+    <string name="home_chapters_fallback_subtitle">Fresh chapter activity from this provider</string>
+    <string name="home_mangas_fallback_subtitle">Featured series selected from this provider</string>
+    <string name="loading_provider_home">Loading %1$s home...</string>
+    <string name="empty_provider_home">No home sections are available for %1$s right now.</string>
 </resources>
