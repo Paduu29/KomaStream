@@ -90,8 +90,6 @@ class KomaViewModel(
         get() = providerRegistry.get(libraryController.uiState.state.selectedProviderId)
 
     init {
-        catalogController.refreshFilterOptions(currentProvider)
-        homeController.refreshHome(currentProvider, ::showError)
         libraryController.refreshOfflineDownloads()
         libraryController.startDownloadProgressTracking()
         updateController.checkForUpdates(openDialogOnUpdate = true)
@@ -232,6 +230,13 @@ class KomaViewModel(
         libraryController.changeAutoJumpToUnread(enabled)
     }
 
+    fun changeMangaBallAdultContent(enabled: Boolean) {
+        libraryController.changeMangaBallAdultContent(enabled)
+        homeController.refreshHome(currentProvider, ::showError)
+        catalogController.resetForProviderChange()
+        catalogController.refreshFilterOptions(currentProvider)
+    }
+
     fun exportBackup(uri: Uri) {
         backupController.exportBackup(uri)
     }
@@ -255,8 +260,6 @@ class KomaViewModel(
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         navigationController.replaceRoot(RootTab.Home)
-        catalogController.refreshFilterOptions(currentProvider)
-        homeController.refreshHome(currentProvider, ::showError)
     }
 
     fun updatePageProgress(providerId: String, path: String, index: Int) {

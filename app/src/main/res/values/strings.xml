@@ -97,6 +97,12 @@
     <string name="auto_jump_to_unread">Auto-jump to unread chapter</string>
     <string name="auto_jump_to_unread_enabled">Open manga at the next unread chapter when applicable.</string>
     <string name="auto_jump_to_unread_disabled">Always open manga at the top of the detail page.</string>
+    <string name="mangaball_adult_content">MangaBall 18+ content</string>
+    <string name="mangaball_adult_content_description">Turn MangaBall adult content on or off for this app. It stays disabled by default.</string>
+    <string name="mangaball_adult_content_warning_title">Enable MangaBall 18+ content?</string>
+    <string name="mangaball_adult_content_warning_message">This may expose adult or explicit material from MangaBall. Only enable it if you are legally allowed to view this content and want it shown inside the app.</string>
+    <string name="enable_adult_content">Enable</string>
+    <string name="cancel">Cancel</string>
     <string name="on">On</string>
     <string name="off">Off</string>
     <string name="english">English</string>

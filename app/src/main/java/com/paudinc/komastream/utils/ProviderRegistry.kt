@@ -5,6 +5,7 @@ import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.provider.providers.InMangaProvider
 import com.paudinc.komastream.provider.providers.LeerMangaEspProvider
+import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.provider.providers.MangaFireProvider
 
 class ProviderRegistry(
@@ -29,9 +30,10 @@ fun createDefaultProviderRegistry(): ProviderRegistry =
 
 fun createDefaultProviderRegistry(context: Context?): ProviderRegistry =
     ProviderRegistry(
-        listOf(
-            InMangaProvider(),
-            LeerMangaEspProvider(),
-            MangaFireProvider(context),
-        )
+        buildList {
+            add(InMangaProvider())
+            add(LeerMangaEspProvider())
+            add(MangaFireProvider(context))
+            context?.let { add(MangaBallProvider(it)) }
+        }
     )
