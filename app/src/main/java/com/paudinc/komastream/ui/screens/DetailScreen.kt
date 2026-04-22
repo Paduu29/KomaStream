@@ -41,7 +41,7 @@ fun DetailScreen(
     autoJumpToUnread: Boolean,
     readChapters: Set<String>,
     lastOpenedChapterPath: String,
-    downloadedChapters: Set<String>,
+    isChapterDownloaded: (String) -> Boolean,
     downloadProgress: Map<String, Int>,
     isBulkUpdatingChapters: Boolean,
     onToggleFavorite: () -> Unit,
@@ -443,7 +443,7 @@ fun DetailScreen(
             items(filteredChapters) { chapter ->
                 val path = buildChapterPath(detail.detailPath, chapter)
                 val isRead = chapterPathsByLabel[path] in canonicalReadChapterKeys
-                val isDownloaded = path in downloadedChapters
+                val isDownloaded = isChapterDownloaded(path)
                 val progress = downloadProgress[path]
 
                 Row(
@@ -505,21 +505,26 @@ fun DetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
+                Box(contentAlignment = Alignment.Center) {
                     if (progress != null) {
                         CircularProgressIndicator(
                             progress = { progress / 100f },
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 3.dp,
                         )
-                    } else {
-                        IconButton(onClick = { onToggleChapterDownload(path, isDownloaded) }) {
-                            Icon(
-                                if (isDownloaded) Icons.Default.Delete else Icons.Default.Download,
-                                contentDescription = if (isDownloaded) strings.removeDownload else strings.download,
-                                tint = if (isDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
+                    IconButton(onClick = { onToggleChapterDownload(path, isDownloaded || progress != null) }) {
+                        Icon(
+                            if (isDownloaded || progress != null) Icons.Default.Delete else Icons.Default.Download,
+                            contentDescription = when {
+                                progress != null -> strings.cancel
+                                isDownloaded -> strings.removeDownload
+                                else -> strings.download
+                            },
+                            tint = if (isDownloaded || progress != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                     IconButton(onClick = { onToggleChapterRead(path) }) {
                         Icon(
                             if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,

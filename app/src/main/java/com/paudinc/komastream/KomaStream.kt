@@ -286,7 +286,7 @@ fun KomaStream() {
                                         autoJumpToUnread = libraryState.autoJumpToUnread,
                                         readChapters = libraryState.readChapters,
                                         lastOpenedChapterPath = libraryStore.read().reading.find { it.providerId == detail.providerId && it.detailPath == detail.detailPath }?.lastChapterPath ?: "",
-                                        downloadedChapters = libraryUiState.downloadedChapterPaths,
+                                        isChapterDownloaded = { path -> offlineStore.isChapterDownloaded(detail.providerId, path) },
                                         downloadProgress = libraryController.downloadProgress,
                                         isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
                                         onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
@@ -310,11 +310,13 @@ fun KomaStream() {
                                         reader = data,
                                         offlineStore = offlineStore,
                                         initialPageIndex = readerUiState.initialPageIndex,
-                                        isDownloaded = libraryUiState.downloadedChapterPaths.contains(data.chapterPath),
+                                        isDownloaded = offlineStore.isChapterDownloaded(data.providerId, data.chapterPath),
                                         downloadPercent = libraryController.downloadProgress[data.chapterPath],
                                         onPagePositionChanged = { index -> viewModel.updatePageProgress(data.providerId, data.chapterPath, index) },
                                         onToggleDownload = {
-                                            if (libraryUiState.downloadedChapterPaths.contains(data.chapterPath)) viewModel.removeDownloadedChapter(data.providerId, data.chapterPath)
+                                            if (offlineStore.isChapterDownloaded(data.providerId, data.chapterPath)) {
+                                                viewModel.removeDownloadedChapter(data.providerId, data.chapterPath)
+                                            }
                                             else viewModel.downloadChapter(data.providerId, data.chapterPath)
                                         },
                                         onOpenChapter = { currentPath, targetPath, markCurrentRead ->

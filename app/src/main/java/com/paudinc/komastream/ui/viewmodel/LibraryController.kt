@@ -52,6 +52,7 @@ class LibraryController(
     val downloadProgress = mutableStateMapOf<String, Int>()
 
     private var downloadTrackingStarted = false
+    private var lastTrackedWorkSignature: String = ""
 
     fun refreshState(filterBySelectedProvider: Boolean = true) {
         uiState = uiState.copy(
@@ -71,20 +72,34 @@ class LibraryController(
         scope.launch {
             workManager.getWorkInfosByTagFlow(DownloadChapterWorker.TAG)
                 .collect { infos ->
+                    val signature = infos.joinToString("|") { info ->
+                        val path = info.progress.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
+                            ?: info.outputData.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
+                            ?: ""
+                        "${info.id}:${info.state}:${path}:${info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, -1)}"
+                    }
+                    if (signature != lastTrackedWorkSignature) {
+                        lastTrackedWorkSignature = signature
+                        refreshOfflineDownloads()
+                    }
+                    val seenPaths = mutableSetOf<String>()
                     infos.forEach { info ->
                         val path = info.progress.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
+                            ?: info.outputData.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
                         val progress = info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, -1)
-                        if (path != null && progress >= 0) {
+                        if (path != null) {
+                            seenPaths += path
                             if (info.state == WorkInfo.State.SUCCEEDED || info.state == WorkInfo.State.FAILED || info.state == WorkInfo.State.CANCELLED) {
                                 downloadProgress.remove(path)
-                                if (info.state == WorkInfo.State.SUCCEEDED) {
-                                    refreshOfflineDownloads()
-                                }
-                            } else {
+                            } else if (progress >= 0) {
                                 downloadProgress[path] = progress
                             }
                         }
                     }
+                    downloadProgress.keys
+                        .filterNot { it in seenPaths }
+                        .toList()
+                        .forEach(downloadProgress::remove)
                 }
         }
     }
@@ -104,10 +119,12 @@ class LibraryController(
     fun removeDownloadedChapter(providerId: String, path: String, onError: (String) -> Unit) {
         scope.launch {
             runCatching {
+                workManager.cancelUniqueWork(downloadWorkName(providerId, path))
                 withContext(Dispatchers.IO) {
                     offlineStore.removeChapter(providerId, path)
                 }
             }.onSuccess {
+                downloadProgress.remove(path)
                 refreshOfflineDownloads()
                 Toast.makeText(context, strings.chapterRemoved, Toast.LENGTH_SHORT).show()
             }.onFailure {
@@ -214,4 +231,7 @@ class LibraryController(
     }
 
     fun currentState(): LibraryState = uiState.state
+
+    private fun downloadWorkName(providerId: String, path: String): String =
+        "download:$providerId:$path"
 }

@@ -42,8 +42,15 @@ class DownloadChapterWorker(
 
             ensureStopped()
             offlineStore.saveChapter(reader, pageBytes)
+            Result.success(
+                Data.Builder()
+                    .putString(KEY_PROVIDER_ID, providerId)
+                    .putString(KEY_CHAPTER_PATH, chapterPath)
+                    .putInt(KEY_PROGRESS, 100)
+                    .build()
+            )
         }.fold(
-            onSuccess = { Result.success() },
+            onSuccess = { it },
             onFailure = { if (isStopped) Result.failure() else Result.retry() }
         )
     }

@@ -97,14 +97,14 @@ fun ReaderScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(onClick = { onOpenManga(reader.mangaDetailPath) }) { Text(strings.manga) }
-                    Button(onClick = onToggleDownload, enabled = downloadPercent == null) {
+                    Button(onClick = onToggleDownload) {
                         Icon(
                             if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
                             contentDescription = null
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            if (downloadPercent != null) "${strings.downloading} ${downloadPercent}%"
+                            if (downloadPercent != null) strings.cancel
                             else if (isDownloaded) strings.removeDownload
                             else strings.download
                         )
@@ -244,7 +244,6 @@ fun ZoomableReaderPage(
             .crossfade(false)
             .build()
     }
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -264,22 +263,34 @@ fun ZoomableReaderPage(
                     contentScale = ContentScale.FillWidth,
                 )
             } else {
-                AsyncImage(
-                    model = imageRequest,
-                    contentDescription = "Page ${page.numberLabel}",
-                    modifier = imageModifier,
-                    contentScale = ContentScale.FillWidth,
+                ReaderNetworkImage(
+                    pageNumberLabel = page.numberLabel,
+                    imageModifier = imageModifier,
+                    imageRequest = imageRequest,
                 )
             }
         } else {
-            AsyncImage(
-                model = imageRequest,
-                contentDescription = "Page ${page.numberLabel}",
-                modifier = imageModifier,
-                contentScale = ContentScale.FillWidth,
+            ReaderNetworkImage(
+                pageNumberLabel = page.numberLabel,
+                imageModifier = imageModifier,
+                imageRequest = imageRequest,
             )
         }
     }
+}
+
+@Composable
+private fun ReaderNetworkImage(
+    pageNumberLabel: String,
+    imageModifier: Modifier,
+    imageRequest: ImageRequest,
+) {
+    AsyncImage(
+        model = imageRequest,
+        contentDescription = "Page $pageNumberLabel",
+        modifier = imageModifier,
+        contentScale = ContentScale.FillWidth,
+    )
 }
 
 private fun readerRequestHeaders(providerId: String, chapterPath: String): Headers? {
