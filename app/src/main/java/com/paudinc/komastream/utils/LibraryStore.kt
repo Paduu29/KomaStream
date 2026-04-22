@@ -46,18 +46,19 @@ class LibraryStore(context: Context) {
             prefs.getString("favorites", "[]").orEmpty(),
             fallbackProviderId = defaultProviderId,
         ).toMutableList()
-        val existing = current.any { it.providerId == manga.providerId && it.detailPath == manga.detailPath }
-        current.removeAll { it.providerId == manga.providerId && it.detailPath == manga.detailPath }
+        val existing = current.any { sameStoredManga(it, manga) }
+        current.removeAll { sameStoredManga(it, manga) }
         if (!existing) current.add(0, manga)
         prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
     fun removeFavorite(providerId: String, detailPath: String) {
+        val target = SavedManga(providerId, "", detailPath, "")
         val current = jsonCodec.parseSavedMangaList(
             prefs.getString("favorites", "[]").orEmpty(),
             fallbackProviderId = defaultProviderId,
         )
-            .filterNot { it.providerId == providerId && it.detailPath == detailPath }
+            .filterNot { sameStoredManga(it, target) }
         prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
@@ -101,20 +102,22 @@ class LibraryStore(context: Context) {
     }
 
     fun removeReading(providerId: String, detailPath: String) {
+        val target = SavedManga(providerId, "", detailPath, "")
         val current = jsonCodec.parseSavedMangaList(
             prefs.getString("reading", "[]").orEmpty(),
             fallbackProviderId = defaultProviderId,
         )
-            .filterNot { it.providerId == providerId && it.detailPath == detailPath }
+            .filterNot { sameStoredManga(it, target) }
         prefs.edit().putString("reading", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
     fun isFavorite(providerId: String, detailPath: String): Boolean {
+        val target = SavedManga(providerId, "", detailPath, "")
         return jsonCodec.parseSavedMangaList(
             prefs.getString("favorites", "[]").orEmpty(),
             fallbackProviderId = defaultProviderId,
         )
-            .any { it.providerId == providerId && it.detailPath == detailPath }
+            .any { sameStoredManga(it, target) }
     }
 
     fun markChapterRead(providerId: String, chapterPath: String) {

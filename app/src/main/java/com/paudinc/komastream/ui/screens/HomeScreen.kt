@@ -1,14 +1,23 @@
 package com.paudinc.komastream.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.paudinc.komastream.data.model.HomeFeedSection
+import com.paudinc.komastream.data.model.HomeSectionType
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.AppStrings
@@ -24,27 +33,57 @@ fun HomeScreen(
         LoadingPlaceholder()
         return
     }
+    val sections = remember(feed) { feed.sections.filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() } }
+    if (sections.isEmpty()) {
+        LoadingPlaceholder()
+        return
+    }
+    var selectedSectionId by rememberSaveable(feed.sections.map { it.id }.joinToString("|")) {
+        mutableStateOf(sections.first().id)
+    }
+    val selectedSection = sections.firstOrNull { it.id == selectedSectionId } ?: sections.first()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item { SectionTitle(strings.latestUpdates) }
-        items(feed.latestUpdates) { ChapterRow(it, strings, onOpenChapter) }
-        if (feed.popularChapters.isNotEmpty()) {
-            item { SectionTitle(strings.popularChapters) }
-            items(feed.popularChapters) { ChapterRow(it, strings, onOpenChapter) }
+        item {
+            SectionTitle(selectedSectionTitle(selectedSection, strings))
         }
-        if (feed.popularMangas.isNotEmpty()) {
-            item { SectionTitle(strings.popularMangas) }
+        if (sections.size > 1) {
             item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(feed.popularMangas) { MangaCoverCard(it, strings, constrained = true) { onOpenManga(it.providerId, it.detailPath) } }
+                    sections.forEach { section ->
+                        FilterChip(
+                            selected = selectedSection.id == section.id,
+                            onClick = { selectedSectionId = section.id },
+                            label = { Text(selectedSectionTitle(section, strings)) },
+                        )
+                    }
                 }
             }
         }
+        when (selectedSection.type) {
+            HomeSectionType.CHAPTERS -> items(selectedSection.chapters) {
+                ChapterRow(it, strings, onOpenChapter)
+            }
+            HomeSectionType.MANGAS -> items(selectedSection.mangas) {
+                MangaCoverCard(it, strings) { onOpenManga(it.providerId, it.detailPath) }
+            }
+        }
     }
+}
+
+private fun selectedSectionTitle(
+    section: HomeFeedSection,
+    strings: AppStrings,
+): String = when (section.id) {
+    "latest-updates" -> strings.latestUpdates
+    "popular-chapters" -> strings.popularChapters
+    "popular-mangas" -> strings.popularMangas
+    else -> section.title
 }

@@ -25,6 +25,11 @@ class ReaderActionInteractor {
             ?: homeFeed?.popularChapters?.find { it.providerId == providerId && sameMangaPath(providerId, it.mangaPath, readerData.mangaDetailPath) }?.let {
                 SavedManga(it.providerId, it.mangaTitle, it.mangaPath, it.coverUrl)
             }
+            ?: homeFeed?.chapterSections
+                ?.asSequence()
+                ?.flatMap { it.chapters.asSequence() }
+                ?.firstOrNull { it.providerId == providerId && sameMangaPath(providerId, it.mangaPath, readerData.mangaDetailPath) }
+                ?.let { SavedManga(it.providerId, it.mangaTitle, it.mangaPath, it.coverUrl) }
     }
 
     fun buildReadingEntry(

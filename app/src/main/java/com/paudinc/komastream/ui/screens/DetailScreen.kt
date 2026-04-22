@@ -31,7 +31,7 @@ import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.*
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     strings: AppStrings,
@@ -49,6 +49,8 @@ fun DetailScreen(
     onSetUntilChapterRead: (Double, Boolean) -> Unit,
     onToggleChapterDownload: (String, Boolean) -> Unit,
     onReadChapter: (String) -> Unit,
+    onSelectChapterSource: (String) -> Unit,
+    onSolveCloudflare: (() -> Unit)? = null,
 ) {
     var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
@@ -120,6 +122,7 @@ fun DetailScreen(
             chapterPathsByLabel[path] !in canonicalReadChapterKeys
         }
     }
+    var sourceMenuExpanded by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
 
     LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex) {
         if (chapterQuery.isNotBlank()) return@LaunchedEffect
@@ -235,6 +238,13 @@ fun DetailScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    if (detail.needsCloudflareClearance && onSolveCloudflare != null) {
+                                        Text(
+                                            "Blocked by Cloudflare",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     IconButton(onClick = {
@@ -250,6 +260,11 @@ fun DetailScreen(
                                         onSetAllChaptersRead(false)
                                     }) {
                                         Icon(Icons.Default.RemoveDone, contentDescription = strings.markAllUnread)
+                                    }
+                                    if (detail.needsCloudflareClearance && onSolveCloudflare != null) {
+                                        IconButton(onClick = onSolveCloudflare) {
+                                            Icon(Icons.Default.LockOpen, contentDescription = "Solve Cloudflare", tint = MaterialTheme.colorScheme.error)
+                                        }
                                     }
                                 }
                             }
@@ -285,6 +300,45 @@ fun DetailScreen(
                                             leadingIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                         ),
                                     )
+                                }
+                            }
+                            if (detail.chapterSources.isNotEmpty()) {
+                                ExposedDropdownMenuBox(
+                                    expanded = sourceMenuExpanded,
+                                    onExpandedChange = { sourceMenuExpanded = it },
+                                ) {
+                                    OutlinedTextField(
+                                        value = detail.chapterSources
+                                            .firstOrNull { it.id == detail.selectedChapterSourceId }
+                                            ?.name
+                                            .orEmpty(),
+                                        onValueChange = {},
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                                        readOnly = true,
+                                        label = { Text("Chapter Source") },
+                                        trailingIcon = {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceMenuExpanded)
+                                        },
+                                        shape = RoundedCornerShape(16.dp),
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = sourceMenuExpanded,
+                                        onDismissRequest = { sourceMenuExpanded = false },
+                                    ) {
+                                        detail.chapterSources.forEach { source ->
+                                            DropdownMenuItem(
+                                                text = { Text(source.name) },
+                                                onClick = {
+                                                    sourceMenuExpanded = false
+                                                    if (source.detailPath != detail.detailPath) {
+                                                        onSelectChapterSource(source.detailPath)
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             OutlinedTextField(
