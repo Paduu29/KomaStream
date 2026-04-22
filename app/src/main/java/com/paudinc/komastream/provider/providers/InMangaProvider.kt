@@ -196,7 +196,7 @@ class InMangaProvider : MangaProvider {
             }
         }
         android.util.Log.d("InMangaProvider", "mangaDetailPath final: $mangaDetailPath")
-        val chapterOptions = controls.select("#ChapList option")
+        val chapterOptions = extractSelectOptions(controls, "ChapList")
         val currentChapterId = normalizedChapterPath.substringAfterLast('/')
         val chapterNumberFromPath = normalizedChapterPath.substringBeforeLast('/').substringAfterLast('/')
         android.util.Log.d("InMangaProvider", "normalizedChapterPath: $normalizedChapterPath")
@@ -236,7 +236,7 @@ class InMangaProvider : MangaProvider {
                 ?.let { (_, option, _) -> buildChapterPath(mangaDetailPath, option.text(), option.attr("value")) }
         }
         android.util.Log.d("InMangaProvider", "nextChapterPath: $nextChapterPath")
-        val pages = controls.select("#PageList option").map { option ->
+        val pages = extractSelectOptions(controls, "PageList").map { option ->
             val pageId = option.attr("value")
             val pageNumber = option.text()
             val imageUrl = buildPageUrl(scriptText, pageId, pageNumber)
@@ -258,6 +258,14 @@ class InMangaProvider : MangaProvider {
             nextChapterPath = nextChapterPath,
             pages = pages,
         )
+    }
+
+    private fun extractSelectOptions(document: Document, selectId: String): List<Element> {
+        return document.select("select#$selectId")
+            .firstOrNull()
+            ?.select("option")
+            ?.distinctBy { it.attr("value").lowercase() }
+            .orEmpty()
     }
 
     private fun resolveMangaDetailPathFromChapterPath(chapterPath: String): String {
