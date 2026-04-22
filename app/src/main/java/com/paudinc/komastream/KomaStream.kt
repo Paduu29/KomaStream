@@ -79,6 +79,8 @@ fun KomaStream() {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.importBackup(it) }
     }
+    val activity = context as? Activity
+    val currentProvider = viewModel.currentProvider
 
     MaterialTheme(
         colorScheme = if (libraryState.useDarkTheme) darkColorScheme() else lightColorScheme()
@@ -228,7 +230,9 @@ fun KomaStream() {
                                         if (isDownloaded) viewModel.removeDownloadedChapter(detail.providerId, path)
                                         else viewModel.downloadChapter(detail.providerId, path)
                                     },
-                                    onReadChapter = { path -> viewModel.openReader(detail.providerId, path) }
+                                    onReadChapter = { path -> viewModel.openReader(detail.providerId, path) },
+                                    onSelectChapterSource = { path -> viewModel.openDetail(detail.providerId, path) },
+                                    onSolveCloudflare = null,
                                 )
                             } ?: LoadingPlaceholder()
                         }
@@ -293,7 +297,7 @@ fun KomaStream() {
                             strings = strings,
                             selectedProviderId = libraryState.selectedProviderId,
                             providersByLanguage = providerRegistry.groupedByLanguage(),
-                            onSelectProvider = { viewModel.selectProvider(it) },
+                            onSelectProvider = { providerId -> viewModel.selectProvider(providerId) },
                             onOpenProviderSite = { url ->
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                             }

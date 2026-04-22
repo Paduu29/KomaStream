@@ -62,6 +62,15 @@ data class MangaDetail(
     val publicationDate: String,
     val periodicity: String,
     val chapters: List<MangaChapter>,
+    val chapterSources: List<ChapterSourceOption> = emptyList(),
+    val selectedChapterSourceId: String = "",
+    val needsCloudflareClearance: Boolean = false,
+)
+
+data class ChapterSourceOption(
+    val id: String,
+    val name: String,
+    val detailPath: String,
 )
 
 data class MangaChapter(
@@ -91,11 +100,69 @@ data class ReaderData(
     val pages: List<ReaderPage>,
 )
 
+enum class HomeSectionType {
+    CHAPTERS,
+    MANGAS,
+}
+
+data class HomeFeedSection(
+    val id: String,
+    val title: String,
+    val type: HomeSectionType,
+    val chapters: List<ChapterSummary> = emptyList(),
+    val mangas: List<MangaSummary> = emptyList(),
+)
+
 data class HomeFeed(
     val latestUpdates: List<ChapterSummary>,
     val popularChapters: List<ChapterSummary>,
     val popularMangas: List<MangaSummary>,
-)
+    val sections: List<HomeFeedSection> = defaultHomeSections(
+        latestUpdates = latestUpdates,
+        popularChapters = popularChapters,
+        popularMangas = popularMangas,
+    ),
+) {
+    val chapterSections: List<HomeFeedSection>
+        get() = sections.filter { it.type == HomeSectionType.CHAPTERS && it.chapters.isNotEmpty() }
+}
+
+private fun defaultHomeSections(
+    latestUpdates: List<ChapterSummary>,
+    popularChapters: List<ChapterSummary>,
+    popularMangas: List<MangaSummary>,
+): List<HomeFeedSection> = buildList {
+    if (latestUpdates.isNotEmpty()) {
+        add(
+            HomeFeedSection(
+                id = "latest-updates",
+                title = "Latest Updates",
+                type = HomeSectionType.CHAPTERS,
+                chapters = latestUpdates,
+            )
+        )
+    }
+    if (popularChapters.isNotEmpty()) {
+        add(
+            HomeFeedSection(
+                id = "popular-chapters",
+                title = "Popular Chapters",
+                type = HomeSectionType.CHAPTERS,
+                chapters = popularChapters,
+            )
+        )
+    }
+    if (popularMangas.isNotEmpty()) {
+        add(
+            HomeFeedSection(
+                id = "popular-mangas",
+                title = "Popular Mangas",
+                type = HomeSectionType.MANGAS,
+                mangas = popularMangas,
+            )
+        )
+    }
+}
 
 data class SavedManga(
     val providerId: String,
