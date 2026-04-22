@@ -25,12 +25,12 @@ class CatalogStateInteractor {
             selectedSortOptionId = if (options.sortOptions.any { it.id == selectedSortOptionId }) {
                 selectedSortOptionId
             } else {
-                options.sortOptions.firstOrNull()?.id ?: "2"
+                ""
             },
             selectedStatusOptionId = if (options.statusOptions.any { it.id == selectedStatusOptionId }) {
                 selectedStatusOptionId
             } else {
-                options.statusOptions.firstOrNull()?.id ?: "0"
+                ""
             },
         )
     }

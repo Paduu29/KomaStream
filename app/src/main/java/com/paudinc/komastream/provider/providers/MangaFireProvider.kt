@@ -1,5 +1,6 @@
 package com.paudinc.komastream.provider.providers
 
+import android.util.Log
 import android.content.Context
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
@@ -11,7 +12,6 @@ import okhttp3.Request
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import java.net.URLEncoder
 
 class MangaFireProvider(
     context: Context? = null,
@@ -70,24 +70,63 @@ class MangaFireProvider(
     ): CatalogSearchResult {
         val page = (skip / BROWSE_PAGE_SIZE) + 1
         val localSkip = skip % BROWSE_PAGE_SIZE
-        return if (query.isNotBlank()) {
-            val items = searchByQuery(query).drop(skip).take(take)
-            CatalogSearchResult(
+        if (query.isNotBlank()) {
+            val items = readerResolver?.searchCatalog(providerId = id, query = query, skip = skip, take = take)
+                ?: searchByQuery(query).drop(skip).take(take)
+            return CatalogSearchResult(
                 items = items,
                 hasMore = false,
             )
-        } else {
-            val document = getDocument(buildFilterPath(categoryIds, sortBy, broadcastStatus, page))
-            val pageItems = parseCatalogCards(document)
-                .map { it.toMangaSummary(id) }
-            val items = pageItems
-                .drop(localSkip)
-                .take(take)
-            CatalogSearchResult(
-                items = items,
-                hasMore = document.selectFirst(".pagination .page-item a[rel='next']") != null || localSkip + take < pageItems.size,
-            )
         }
+        val document = getDocument(
+            buildFilterPath(
+                categoryIds = categoryIds,
+                sortBy = sortBy,
+                status = broadcastStatus,
+                page = page,
+                keyword = "",
+            )
+        )
+        val pageItems = parseCatalogCards(document)
+            .map { it.toMangaSummary(id) }
+        val items = pageItems
+            .drop(localSkip)
+            .take(take)
+        return CatalogSearchResult(
+            items = items,
+            hasMore = document.selectFirst(".pagination .page-item a[rel='next']") != null || localSkip + take < pageItems.size,
+        )
+    }
+
+    private fun searchByQuery(query: String): List<MangaSummary> {
+        val response = getJson("/ajax/manga/search?query=${query.urlEncode()}")
+        val result = response.optJSONObject("result")
+        val count = result?.optInt("count", -1) ?: -1
+        val linkMore = result?.optString("linkMore").orEmpty()
+        val html = result?.optString("html").orEmpty()
+        if (html.isBlank()) {
+            Log.w("MangaFireProvider", "searchByQuery: empty html for query='$query' count=$count linkMore='$linkMore'")
+            return emptyList()
+        }
+        val document = Jsoup.parseBodyFragment(html, baseUrl)
+        val items = document.select(".unit[href], a.unit[href]").mapNotNull { item ->
+            val link = item.attr("href").trim()
+            val title = item.selectFirst("h6")?.text()?.trim().orEmpty()
+            val coverUrl = item.selectFirst("img")?.absUrl("src").orEmpty()
+            if (link.isBlank() || title.isBlank()) null else {
+                MangaSummary(
+                    providerId = id,
+                    title = title,
+                    detailPath = normalizePath(link),
+                    coverUrl = coverUrl,
+                )
+            }
+        }
+        Log.d(
+            "MangaFireProvider",
+            "searchByQuery: query='$query' count=$count parsed=${items.size} linkMore='$linkMore' titles=${items.take(5).joinToString { it.title }}"
+        )
+        return items
     }
 
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
@@ -150,26 +189,6 @@ class MangaFireProvider(
             .build()
         client.newCall(request).execute().use { response ->
             return response.body?.bytes() ?: ByteArray(0)
-        }
-    }
-
-    private fun searchByQuery(query: String): List<MangaSummary> {
-        val response = getJson("/ajax/manga/search?query=${query.urlEncode()}")
-        val html = response.optJSONObject("result")?.optString("html").orEmpty()
-        if (html.isBlank()) return emptyList()
-        val document = Jsoup.parse(html, baseUrl)
-        return document.select(".unit[href], a.unit[href]").mapNotNull { item ->
-            val link = item.attr("href").trim()
-            val title = item.selectFirst("h6")?.text()?.trim().orEmpty()
-            val coverUrl = item.selectFirst("img")?.absUrl("src").orEmpty()
-            if (link.isBlank() || title.isBlank()) null else {
-                MangaSummary(
-                    providerId = id,
-                    title = title,
-                    detailPath = normalizePath(link),
-                    coverUrl = coverUrl,
-                )
-            }
         }
     }
 
@@ -241,10 +260,14 @@ class MangaFireProvider(
         sortBy: String,
         status: String,
         page: Int,
+        keyword: String,
     ): String {
         val url = "$baseUrl/filter".toHttpUrl().newBuilder()
             .addQueryParameter("language", languageCode)
             .addQueryParameter("page", page.toString())
+        if (keyword.isNotBlank()) {
+            url.addQueryParameter("keyword", keyword)
+        }
         if (sortBy.isNotBlank()) {
             url.addQueryParameter("sort", sortBy)
         }
@@ -267,7 +290,14 @@ class MangaFireProvider(
             .header("User-Agent", USER_AGENT)
             .build()
         client.newCall(request).execute().use { response ->
-            return Jsoup.parse(response.body?.string().orEmpty(), baseUrl)
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                Log.w(
+                    "MangaFireProvider",
+                    "getDocument: path='$path' code=${response.code} body='${body.take(LOG_BODY_PREVIEW_LENGTH)}'"
+                )
+            }
+            return Jsoup.parse(body, baseUrl)
         }
     }
 
@@ -278,10 +308,16 @@ class MangaFireProvider(
             .header("X-Requested-With", "XMLHttpRequest")
             .build()
         client.newCall(request).execute().use { response ->
-            return JSONObject(response.body?.string().orEmpty())
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                Log.w(
+                    "MangaFireProvider",
+                    "getJson: path='$path' code=${response.code} body='${body.take(LOG_BODY_PREVIEW_LENGTH)}'"
+                )
+            }
+            return JSONObject(body)
         }
     }
-
     private fun toAbsoluteUrl(path: String): String =
         if (path.startsWith("http://") || path.startsWith("https://")) path else "$baseUrl${normalizePath(path)}"
 
@@ -296,7 +332,7 @@ class MangaFireProvider(
     }
 
     private fun String.urlEncode(): String =
-        URLEncoder.encode(this, Charsets.UTF_8.name())
+        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
 
     private data class MangaFireCard(
         val title: String,
@@ -341,6 +377,7 @@ class MangaFireProvider(
 
     private companion object {
         private const val BROWSE_PAGE_SIZE = 30
+        private const val LOG_BODY_PREVIEW_LENGTH = 300
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         private const val languageCode = "en"

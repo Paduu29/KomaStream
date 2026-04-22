@@ -24,6 +24,7 @@ import com.paudinc.komastream.utils.AppStrings
 @Composable
 fun CatalogScreen(
     strings: AppStrings,
+    providerId: String,
     query: String,
     categories: List<CategoryOption>,
     sortOptions: List<FilterOption>,
@@ -47,7 +48,7 @@ fun CatalogScreen(
     onToggleFavorite: (SavedManga) -> Unit,
     isFavorite: (String, String) -> Boolean,
 ) {
-    var catalogMode by rememberSaveable { mutableStateOf(CatalogMode.Basic) }
+    var catalogMode by rememberSaveable(providerId) { mutableStateOf(CatalogMode.Basic) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),

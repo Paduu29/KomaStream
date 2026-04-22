@@ -116,22 +116,13 @@ class CatalogController(
         uiState = uiState.copy(
             query = "",
             selectedCategoryIds = emptySet(),
-            selectedSortOptionId = "2",
-            selectedStatusOptionId = "0",
+            selectedSortOptionId = "",
+            selectedStatusOptionId = "",
             onlyFavorites = false,
         )
     }
 
     fun resetForProviderChange() {
-        uiState = uiState.copy(
-            filterOptions = uiState.filterOptions.copy(
-                categories = emptyList(),
-                sortOptions = emptyList(),
-                statusOptions = emptyList(),
-            ),
-            results = emptyList(),
-            hasMoreResults = false,
-            isLoadingMore = false,
-        )
+        uiState = CatalogUiState()
     }
 }

@@ -94,7 +94,7 @@ class KomaViewModel(
         homeController.refreshHome(currentProvider, ::showError)
         libraryController.refreshOfflineDownloads()
         libraryController.startDownloadProgressTracking()
-        updateController.checkForUpdates()
+        updateController.checkForUpdates(openDialogOnUpdate = true)
     }
 
     fun pushScreen(next: Screen) {
