@@ -78,7 +78,7 @@ class ReaderActionInteractor {
         if (left.isBlank() || right.isBlank()) return false
         return when (providerId) {
             "inmanga-es" -> inmangaKey(left) == inmangaKey(right)
-            else -> false
+            else -> left.substringBefore("?").trim('/') == right.substringBefore("?").trim('/')
         }
     }
 

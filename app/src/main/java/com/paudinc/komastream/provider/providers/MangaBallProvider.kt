@@ -5,9 +5,12 @@ import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CatalogSearchResult
 import com.paudinc.komastream.data.model.CategoryOption
+import com.paudinc.komastream.data.model.ChapterSourceOption
 import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.FilterOption
 import com.paudinc.komastream.data.model.HomeFeed
+import com.paudinc.komastream.data.model.HomeFeedSection
+import com.paudinc.komastream.data.model.HomeSectionType
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.MangaSummary
@@ -35,7 +38,7 @@ class MangaBallProvider(
 
     override val id: String = PROVIDER_ID
     override val displayName: String = "MangaBall"
-    override val language: AppLanguage = AppLanguage.EN
+    override val language: AppLanguage = AppLanguage.MULTI
     override val websiteUrl: String = "https://mangaball.net"
     override val logoUrl: String = "https://mangaball.net/public/frontend/images/favicon.png"
 
@@ -53,36 +56,77 @@ class MangaBallProvider(
 
     override fun fetchHomeFeed(): HomeFeed {
         ensureSession()
-        val latestItems = postJson(
-            path = "/api/v1/title/search/",
-            referer = "/",
+        val latestUpdates = fetchHomeSection(
+            id = "latest-updates",
+            title = "Latest Updates",
+            type = HomeSectionType.CHAPTERS,
             formValues = listOf(
                 "search_type" to "getLatestTable",
                 "search_limit" to "24",
             ),
-        ).optJSONArray("data") ?: JSONArray()
-        val popularChapterItems = postJson(
-            path = "/api/v1/title/search/",
-            referer = "/",
+        )
+        val recommendedTitles = fetchHomeSection(
+            id = "recommended-titles",
+            title = "Titles Recommended",
+            type = HomeSectionType.MANGAS,
             formValues = listOf(
-                "search_type" to "getRecentChapterRead",
-                "search_limit" to "12",
+                "search_type" to "getRecommend",
+                "search_limit" to "24",
+            ),
+        )
+        val topViewedTitles = fetchHomeSection(
+            id = "top-viewed-titles",
+            title = "Top Viewed Titles",
+            type = HomeSectionType.MANGAS,
+            formValues = listOf(
+                "search_type" to "getRecentRead",
+                "search_limit" to "24",
                 "search_time" to "week",
             ),
-        ).optJSONArray("data") ?: JSONArray()
-        val popularMangaItems = postJson(
-            path = "/api/v1/title/search/",
-            referer = "/",
+        )
+        val byOrigin = fetchHomeSection(
+            id = "by-origin",
+            title = "By Origin",
+            type = HomeSectionType.MANGAS,
+            formValues = listOf(
+                "search_type" to "getByOrigin",
+                "search_limit" to "24",
+                "search_origin" to "all",
+            ),
+        )
+        val recentChapterRead = fetchHomeSection(
+            id = "recent-chapter-read",
+            title = "Recent Chapter Read",
+            type = HomeSectionType.CHAPTERS,
+            formValues = listOf(
+                "search_type" to "getRecentChapterRead",
+                "search_limit" to "24",
+                "search_time" to "week",
+            ),
+        )
+        val popularThisSeason = fetchHomeSection(
+            id = "popular-this-season",
+            title = "Popular This Season",
+            type = HomeSectionType.MANGAS,
             formValues = listOf(
                 "search_type" to "getPopular",
                 "search_limit" to "24",
             ),
-        ).optJSONArray("data") ?: JSONArray()
+        )
+        val sections = listOf(
+            latestUpdates,
+            recommendedTitles,
+            topViewedTitles,
+            byOrigin,
+            recentChapterRead,
+            popularThisSeason,
+        ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() }
 
         return HomeFeed(
-            latestUpdates = latestItems.toChapterSummaries(),
-            popularChapters = popularChapterItems.toChapterSummaries(),
-            popularMangas = popularMangaItems.toMangaSummaries(),
+            latestUpdates = latestUpdates.chapters,
+            popularChapters = recentChapterRead.chapters,
+            popularMangas = popularThisSeason.mangas,
+            sections = sections,
         )
     }
 
@@ -146,7 +190,6 @@ class MangaBallProvider(
             add("filters[publicationYear]" to "")
             add("filters[tagIncludedMode]" to "or")
             add("filters[tagExcludedMode]" to "or")
-            add("filters[translatedLanguages][]" to "en")
             categoryIds.forEach { add("filters[tagIncludedIds][]" to it) }
         }
         val response = postJson(
@@ -164,9 +207,9 @@ class MangaBallProvider(
     }
 
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
-        ensureSession(detailPath)
-        val normalizedPath = normalizePath(detailPath)
-        val document = getDocument(normalizedPath)
+        val detailRequest = parseDetailRequest(detailPath)
+        ensureSession(detailRequest.basePath)
+        val document = getDocument(detailRequest.basePath)
         val title = document.selectFirst("#comicDetail h6")?.text()?.trim()
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.substringBefore(" Online Free")?.trim()
             .orEmpty()
@@ -192,18 +235,27 @@ class MangaBallProvider(
             .orEmpty()
         val chapterResponse = postJson(
             path = "/api/v1/chapter/chapter-listing-by-title-id/",
-            referer = normalizedPath,
+            referer = detailRequest.basePath,
             formValues = listOf(
                 "title_id" to titleId,
                 "userSettingsEnabled" to "false",
             ),
         )
-        val chapters = parseChapters(chapterResponse.optJSONArray("ALL_CHAPTERS") ?: JSONArray())
+        val allChapters = chapterResponse.optJSONArray("ALL_CHAPTERS") ?: JSONArray()
+        val chapterSources = buildLanguageOptions(detailRequest.basePath, allChapters)
+        val selectedLanguageId = chapterSources
+            .firstOrNull { it.id == detailRequest.selectedLanguageId }
+            ?.id
+            ?: LANGUAGE_ALL
+        val chapters = parseChapters(
+            chapters = allChapters,
+            selectedLanguageId = selectedLanguageId,
+        )
         return MangaDetail(
             providerId = id,
-            identification = titleId.ifBlank { normalizedPath.substringAfterLast('-').trimEnd('/') },
+            identification = titleId.ifBlank { detailRequest.basePath.substringAfterLast('-').trimEnd('/') },
             title = title,
-            detailPath = normalizedPath,
+            detailPath = withLanguageFilter(detailRequest.basePath, selectedLanguageId),
             coverUrl = coverUrl,
             bannerUrl = coverUrl,
             description = description,
@@ -211,6 +263,8 @@ class MangaBallProvider(
             publicationDate = publicationDate,
             periodicity = "",
             chapters = chapters,
+            chapterSources = chapterSources,
+            selectedChapterSourceId = selectedLanguageId,
         )
     }
 
@@ -257,7 +311,6 @@ class MangaBallProvider(
             formValues = listOf(
                 "title_id" to titleId,
                 "userSettingsEnabled" to "false",
-                "lang" to "en",
             ),
         ).optJSONArray("ALL_CHAPTERS") ?: JSONArray()
         val chapterEntries = buildList {
@@ -267,15 +320,27 @@ class MangaBallProvider(
                 val number = chapter.optDouble("number_float", Double.NaN)
                 for (translationIndex in 0 until translations.length()) {
                     val translation = translations.optJSONObject(translationIndex) ?: continue
-                    if (!translation.isEnglishTranslation()) continue
-                    add(ChapterEntry(number, translation.optString("id"), normalizePath(translation.optString("url"))))
+                    add(
+                        ChapterEntry(
+                            number = number,
+                            translationId = translation.optString("id"),
+                            path = normalizePath(translation.optString("url")),
+                            languageCode = translation.optString("language").trim().lowercase(),
+                        )
+                    )
                 }
             }
         }
         val currentChapterId = normalizedPath.trim('/').substringAfterLast('/')
-        val currentIndex = chapterEntries.indexOfFirst { it.translationId == currentChapterId }
-        val previousChapterPath = chapterEntries.getOrNull(currentIndex + 1)?.path
-        val nextChapterPath = chapterEntries.getOrNull(currentIndex - 1)?.path
+        val currentEntry = chapterEntries.firstOrNull { it.translationId == currentChapterId }
+        val navigationEntries = if (currentEntry?.languageCode.isNullOrBlank()) {
+            chapterEntries
+        } else {
+            chapterEntries.filter { it.languageCode == currentEntry?.languageCode }
+        }
+        val currentIndex = navigationEntries.indexOfFirst { it.translationId == currentChapterId }
+        val previousChapterPath = navigationEntries.getOrNull(currentIndex + 1)?.path
+        val nextChapterPath = navigationEntries.getOrNull(currentIndex - 1)?.path
 
         return ReaderData(
             providerId = id,
@@ -335,13 +400,6 @@ class MangaBallProvider(
             .getSharedPreferences("manga_library", Context.MODE_PRIVATE)
             .getBoolean(PREF_MANGABALL_ADULT_CONTENT, false)
 
-    companion object {
-        const val PROVIDER_ID = "mangaball-en"
-        const val PREF_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-    }
-
     private fun getDocument(path: String): Document {
         val request = Request.Builder()
             .url(toAbsoluteUrl(path))
@@ -370,6 +428,33 @@ class MangaBallProvider(
             .build()
         client.newCall(request).execute().use { response ->
             return JSONObject(response.body?.string().orEmpty())
+        }
+    }
+
+    private fun fetchHomeSection(
+        id: String,
+        title: String,
+        type: HomeSectionType,
+        formValues: List<Pair<String, String>>,
+    ): HomeFeedSection {
+        val items = postJson(
+            path = "/api/v1/title/search/",
+            referer = "/",
+            formValues = formValues,
+        ).optJSONArray("data") ?: JSONArray()
+        return when (type) {
+            HomeSectionType.CHAPTERS -> HomeFeedSection(
+                id = id,
+                title = title,
+                type = type,
+                chapters = items.toChapterSummaries(),
+            )
+            HomeSectionType.MANGAS -> HomeFeedSection(
+                id = id,
+                title = title,
+                type = type,
+                mangas = items.toMangaSummaries(),
+            )
         }
     }
 
@@ -409,11 +494,19 @@ class MangaBallProvider(
                 ?.ifBlank { row.select("img[title], img[alt]").lastOrNull()?.attr("alt") }
                 ?.trim()
                 .orEmpty()
-            if (!languageCode.equals("en", ignoreCase = true)) return@mapNotNull null
             val chapterLink = row.selectFirst("a[href*=chapter-detail]") ?: return@mapNotNull null
             val chapterPath = normalizePath(chapterLink.attr("href"))
             val chapterLabel = chapterLink.text().trim()
             if (chapterPath.isBlank() || chapterLabel.isBlank()) return@mapNotNull null
+            val registrationLabel = buildList {
+                languageCode.takeIf { it.isNotBlank() }?.let { add(languageDisplayLabel(it, it)) }
+                row.selectFirst(".text-muted")
+                    ?.text()
+                    ?.substringAfterLast(' ')
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::add)
+            }.joinToString(" • ")
             ChapterSummary(
                 providerId = id,
                 mangaTitle = mangaTitle,
@@ -423,30 +516,36 @@ class MangaBallProvider(
                 mangaPath = mangaPath,
                 chapterPath = chapterPath,
                 coverUrl = coverUrl,
-                registrationLabel = row.selectFirst(".text-muted")?.text()?.substringAfterLast(' ')?.trim().orEmpty(),
+                registrationLabel = registrationLabel,
             )
         }
     }
 
-    private fun parseChapters(chapters: JSONArray): List<MangaChapter> = buildList {
+    private fun parseChapters(
+        chapters: JSONArray,
+        selectedLanguageId: String,
+    ): List<MangaChapter> = buildList {
         for (index in 0 until chapters.length()) {
             val chapter = chapters.optJSONObject(index) ?: continue
             val number = chapter.optString("number")
-            val numberFloat = chapter.optDouble("number_float", Double.NaN)
             val translations = chapter.optJSONArray("translations") ?: continue
-            val englishTranslations = buildList {
+            val visibleTranslations = buildList {
                 for (translationIndex in 0 until translations.length()) {
                     val translation = translations.optJSONObject(translationIndex) ?: continue
-                    if (translation.isEnglishTranslation()) {
+                    val languageCode = translation.optString("language").trim().lowercase()
+                    if (selectedLanguageId == LANGUAGE_ALL || languageCode == selectedLanguageId) {
                         add(translation)
                     }
                 }
             }.sortedByDescending { it.optString("date") }
-            englishTranslations.forEach { translation ->
+            visibleTranslations.forEach { translation ->
                 val path = normalizePath(translation.optString("url"))
                 val group = translation.optJSONObject("group")?.optString("name").orEmpty()
-                val languageCode = translation.optString("language").trim()
-                val languageLabel = translation.optString("languageName").trim()
+                val languageCode = translation.optString("language").trim().lowercase()
+                val languageLabel = languageDisplayLabel(
+                    code = languageCode,
+                    label = translation.optString("languageName").trim(),
+                )
                 val label = translation.optString("name")
                     .trim()
                     .ifBlank { number }
@@ -467,8 +566,78 @@ class MangaBallProvider(
         }
     }
 
-    private fun JSONObject.isEnglishTranslation(): Boolean =
-        optString("language").equals("en", ignoreCase = true)
+    private fun buildLanguageOptions(
+        detailPath: String,
+        chapters: JSONArray,
+    ): List<ChapterSourceOption> {
+        val languages = linkedMapOf<String, String>()
+        for (index in 0 until chapters.length()) {
+            val chapter = chapters.optJSONObject(index) ?: continue
+            val translations = chapter.optJSONArray("translations") ?: continue
+            for (translationIndex in 0 until translations.length()) {
+                val translation = translations.optJSONObject(translationIndex) ?: continue
+                val languageCode = translation.optString("language").trim().lowercase()
+                if (languageCode.isBlank()) continue
+                languages.putIfAbsent(
+                    languageCode,
+                    languageDisplayLabel(
+                        code = languageCode,
+                        label = translation.optString("languageName").trim(),
+                    ),
+                )
+            }
+        }
+        if (languages.isEmpty()) return emptyList()
+        return buildList {
+            add(ChapterSourceOption(LANGUAGE_ALL, "All languages", withLanguageFilter(detailPath, LANGUAGE_ALL)))
+            languages
+                .toList()
+                .sortedBy { (_, label) -> label.lowercase() }
+                .forEach { (languageCode, label) ->
+                    add(ChapterSourceOption(languageCode, label, withLanguageFilter(detailPath, languageCode)))
+                }
+        }
+    }
+
+    private fun parseDetailRequest(detailPath: String): DetailRequest {
+        val normalizedPath = normalizePath(detailPath)
+        val pathPart = normalizedPath.substringBefore("?")
+        val queryPart = normalizedPath.substringAfter("?", "")
+        if (queryPart.isBlank()) return DetailRequest(pathPart, LANGUAGE_ALL)
+
+        var selectedLanguageId = LANGUAGE_ALL
+        val remainingQueryParts = mutableListOf<String>()
+        queryPart.split("&")
+            .filter { it.isNotBlank() }
+            .forEach { part ->
+                val key = part.substringBefore("=")
+                val value = part.substringAfter("=", "")
+                if (key == DETAIL_LANGUAGE_QUERY && value.isNotBlank()) {
+                    selectedLanguageId = value.lowercase()
+                } else {
+                    remainingQueryParts += part
+                }
+            }
+        val basePath = if (remainingQueryParts.isEmpty()) {
+            pathPart
+        } else {
+            "$pathPart?${remainingQueryParts.joinToString("&")}"
+        }
+        return DetailRequest(basePath, selectedLanguageId)
+    }
+
+    private fun withLanguageFilter(detailPath: String, languageId: String): String {
+        val basePath = parseDetailRequest(detailPath).basePath
+        if (languageId == LANGUAGE_ALL) return basePath
+        val separator = if ("?" in basePath) "&" else "?"
+        return "$basePath${separator}$DETAIL_LANGUAGE_QUERY=$languageId"
+    }
+
+    private fun languageDisplayLabel(code: String, label: String): String {
+        if (label.isNotBlank()) return label
+        if (code.isBlank()) return ""
+        return if (code.length <= 3) code.uppercase() else code.replaceFirstChar { it.uppercase() }
+    }
 
     private fun extractMangaDetailPath(document: Document, html: String, titleId: String): String {
         document.select("script[type=application/ld+json]").forEach { script ->
@@ -513,9 +682,24 @@ class MangaBallProvider(
         }
     }
 
+    companion object {
+        const val PROVIDER_ID = "mangaball-en"
+        const val PREF_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
+        private const val DETAIL_LANGUAGE_QUERY = "__lang"
+        private const val LANGUAGE_ALL = "all"
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+    }
+
     private data class ChapterEntry(
         val number: Double,
         val translationId: String,
         val path: String,
+        val languageCode: String,
+    )
+
+    private data class DetailRequest(
+        val basePath: String,
+        val selectedLanguageId: String,
     )
 }

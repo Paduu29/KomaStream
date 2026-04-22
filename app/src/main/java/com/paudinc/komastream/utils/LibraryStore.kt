@@ -286,7 +286,7 @@ class LibraryStore(context: Context) {
     }
 
     private fun mangaKey(providerId: String, detailPath: String): String {
-        val normalized = detailPath.trim('/')
+        val normalized = detailPath.substringBefore("?").trim('/')
         return when (providerId) {
             "inmanga-es" -> normalized.split("/").take(3).joinToString("/")
             else -> normalized
@@ -294,7 +294,7 @@ class LibraryStore(context: Context) {
     }
 
     private fun detailPathScore(providerId: String, detailPath: String): Int {
-        val normalized = detailPath.trim('/')
+        val normalized = detailPath.substringBefore("?").trim('/')
         return when (providerId) {
             "inmanga-es" -> normalized.split("/").size
             else -> normalized.length

@@ -186,7 +186,7 @@ class LibraryController(
         libraryStore.setAppLanguage(language)
         val languageTag = when (language) {
             AppLanguage.ES -> "es"
-            AppLanguage.EN -> "en"
+            else -> "en"
         }
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
         refreshState()

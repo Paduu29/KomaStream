@@ -58,6 +58,9 @@ fun SettingsScreen(
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(strings.updates, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(strings.currentVersionLabel(versionName), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (updateState != AppUpdateUiState.Disabled) {
+                        Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                    }
                     when (val state = updateState) {
                         AppUpdateUiState.Disabled -> {
                             Text(strings.updaterNotConfigured, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -81,7 +84,6 @@ fun SettingsScreen(
                         is AppUpdateUiState.Available -> {
                             Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
                             Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
-                            Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
                             if (state.release.body.isNotBlank()) {
                                 Text(strings.releaseNotes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Text(state.release.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -95,7 +97,6 @@ fun SettingsScreen(
                         is AppUpdateUiState.Downloaded -> {
                             Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
                             Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
-                            Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
                         }
                     }
                 }
