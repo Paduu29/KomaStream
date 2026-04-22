@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
@@ -19,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.data.model.HomeFeedSection
 import com.paudinc.komastream.data.model.HomeSectionType
 import com.paudinc.komastream.data.model.HomeFeed
+import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.AppStrings
 
@@ -28,6 +30,9 @@ fun HomeScreen(
     strings: AppStrings,
     onOpenManga: (String, String) -> Unit,
     onOpenChapter: (String, String) -> Unit,
+    onAddToReading: (SavedManga) -> Unit,
+    onToggleFavorite: (SavedManga) -> Unit,
+    isFavorite: (String, String) -> Boolean,
 ) {
     if (feed == null) {
         LoadingPlaceholder()
@@ -42,9 +47,11 @@ fun HomeScreen(
         mutableStateOf(sections.first().id)
     }
     val selectedSection = sections.firstOrNull { it.id == selectedSectionId } ?: sections.first()
+    val listState = rememberLazyListState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
@@ -69,10 +76,53 @@ fun HomeScreen(
         }
         when (selectedSection.type) {
             HomeSectionType.CHAPTERS -> items(selectedSection.chapters) {
-                ChapterRow(it, strings, onOpenChapter)
+                ChapterRow(
+                    item = it,
+                    strings = strings,
+                    onOpenChapter = onOpenChapter,
+                    onAddToReading = {
+                        onAddToReading(
+                            SavedManga(
+                                providerId = it.providerId,
+                                title = it.mangaTitle,
+                                detailPath = it.mangaPath,
+                                coverUrl = it.coverUrl,
+                                lastChapterTitle = it.chapterLabel,
+                                lastChapterPath = it.chapterPath,
+                            )
+                        )
+                    },
+                    onOpenManga = {
+                        val targetPath = if (
+                            it.providerId == "inmanga-es" &&
+                            it.mangaPath.trim('/').split("/").size <= 3
+                        ) {
+                            it.chapterPath
+                        } else {
+                            it.mangaPath
+                        }
+                        onOpenManga(it.providerId, targetPath)
+                    },
+                )
             }
             HomeSectionType.MANGAS -> items(selectedSection.mangas) {
-                MangaCoverCard(it, strings) { onOpenManga(it.providerId, it.detailPath) }
+                MangaCoverCard(
+                    manga = it,
+                    strings = strings,
+                    favoriteActionLabel = if (isFavorite(it.providerId, it.detailPath)) strings.removeFromFavorites else strings.addToFavorites,
+                    onClick = { onOpenManga(it.providerId, it.detailPath) },
+                    onFavoriteAction = {
+                        onToggleFavorite(
+                            SavedManga(
+                                providerId = it.providerId,
+                                title = it.title,
+                                detailPath = it.detailPath,
+                                coverUrl = it.coverUrl,
+                            )
+                        )
+                    },
+                    onOpenMangaAction = { onOpenManga(it.providerId, it.detailPath) },
+                )
             }
         }
     }

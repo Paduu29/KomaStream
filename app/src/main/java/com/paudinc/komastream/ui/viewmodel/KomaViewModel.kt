@@ -36,6 +36,7 @@ class KomaViewModel(
     workManager: WorkManager,
     updater: GitHubReleaseUpdater,
     private val strings: AppStrings,
+    initialNavigationStack: List<Screen>? = null,
     backupFileInteractor: BackupFileInteractor = BackupFileInteractor(context.contentResolver),
     libraryActionInteractor: LibraryActionInteractor = LibraryActionInteractor(),
     catalogStateInteractor: CatalogStateInteractor = CatalogStateInteractor(),
@@ -43,11 +44,13 @@ class KomaViewModel(
 ) : ViewModel() {
 
     val navigationController = NavigationController(
-        initialScreen = if (libraryStore.hasSeenProviderPicker()) {
-            Screen.Root(RootTab.Home)
-        } else {
-            Screen.ProviderPicker
-        }
+        initialStack = initialNavigationStack ?: listOf(
+            if (libraryStore.hasSeenProviderPicker()) {
+                Screen.Root(RootTab.Home)
+            } else {
+                Screen.ProviderPicker
+            }
+        )
     )
 
     val homeController = HomeController(viewModelScope)
@@ -211,6 +214,10 @@ class KomaViewModel(
 
     fun removeReading(manga: SavedManga) {
         libraryController.removeReading(manga)
+    }
+
+    fun addToReading(manga: SavedManga) {
+        libraryController.addToReading(manga)
     }
 
     fun changeLanguage(language: AppLanguage) {
