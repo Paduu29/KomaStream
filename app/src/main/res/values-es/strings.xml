@@ -12,6 +12,11 @@
     <string name="latest_updates">Últimas actualizaciones</string>
     <string name="popular_chapters">Capítulos populares</string>
     <string name="popular_mangas">Mangas populares</string>
+    <string name="recommended">Recomendados</string>
+    <string name="top_viewed">Más vistos</string>
+    <string name="by_origin">Por origen</string>
+    <string name="recent_reads">Lecturas recientes</string>
+    <string name="season_picks">Destacados de temporada</string>
     <string name="favorites">Favoritos</string>
     <string name="continue_reading">Seguir leyendo</string>
     <string name="search_available_mangas">Buscar mangas disponibles</string>
@@ -25,6 +30,10 @@
     <string name="only_favorites">Solo favoritos</string>
     <string name="search_empty_catalog">Busca un manga para explorar el catálogo.</string>
     <string name="status">Estado</string>
+    <string name="status_ongoing">En emisión</string>
+    <string name="status_completed">Finalizado</string>
+    <string name="status_hiatus">En pausa</string>
+    <string name="status_cancelled">Cancelado</string>
     <string name="periodicity">Periodicidad</string>
     <string name="latest">Último</string>
     <string name="chapters">Capítulos</string>
@@ -36,7 +45,7 @@
     <string name="until_chapter_placeholder">p. ej. 120 o 120.5</string>
     <string name="read_to_x">Leer hasta X</string>
     <string name="unread_to_x">No leído hasta X</string>
-    <string name="read">Leído</string>
+    <string name="read">Leer</string>
     <string name="unread">No leído</string>
     <string name="previous">Anterior</string>
     <string name="next">Siguiente</string>
@@ -94,6 +103,9 @@
     <string name="choose_provider">Elegir proveedor</string>
     <string name="choose_provider_description">Elige la fuente de manga que quieres usar. Puedes cambiarla luego desde el logo en la barra superior.</string>
     <string name="open_provider_site">Abrir sitio del proveedor</string>
+    <string name="chapter_source">Fuente del capítulo</string>
+    <string name="blocked_by_cloudflare">Bloqueado por Cloudflare</string>
+    <string name="solve_cloudflare">Resolver Cloudflare</string>
     <string name="auto_jump_to_unread">Saltar automaticamente al capítulo no leído</string>
     <string name="auto_jump_to_unread_enabled">Abre el manga en el siguiente capítulo no leído cuando corresponda.</string>
     <string name="auto_jump_to_unread_disabled">Abre siempre el manga al inicio de la pantalla de detalle.</string>
@@ -115,6 +127,7 @@
     <string name="no_chapter_opened_yet">Aún no has abierto ningún capítulo</string>
     <string name="latest_progress">Último progreso</string>
     <string name="open_manga">Abrir manga</string>
+    <string name="continue_reading_action">Continuar leyendo</string>
     <string name="add_to_continue_reading">Añadir a seguir leyendo</string>
     <string name="add_to_favorites">Añadir a favoritos</string>
     <string name="remove_from_continue_reading">Quitar de seguir leyendo</string>
@@ -127,6 +140,7 @@
     <string name="could_not_open_chapter">No se pudo abrir el capítulo</string>
     <string name="added_to_favorites">Añadido a favoritos</string>
     <string name="removed_from_favorites">Eliminado de favoritos</string>
+    <string name="chapter_read_action">Leído</string>
     <string name="removed_from_continue_reading">Eliminado de seguir leyendo</string>
     <string name="marked_as_read">Marcado como leído</string>
     <string name="marked_as_unread">Marcado como no leído</string>
@@ -137,6 +151,8 @@
     <string name="invalid_backup">Copia no válida</string>
     <string name="export_backup_error">No se pudo exportar la copia</string>
     <string name="result_count">%1$d resultados</string>
+    <string name="item_count_singular">%1$d elemento</string>
+    <string name="item_count_plural">%1$d elementos</string>
     <string name="active_series_count">%1$d series activas</string>
     <string name="favorites_count">%1$d favoritos</string>
     <string name="pages_count">%1$d páginas</string>
@@ -145,4 +161,16 @@
     <string name="no_chapters_found">No se encontraron capítulos para "%1$s".</string>
     <string name="marked_until_read">Marcado hasta el capítulo %1$s como leído</string>
     <string name="marked_until_unread">Marcado hasta el capítulo %1$s como no leído</string>
+    <string name="home_latest_subtitle">Los lanzamientos de capítulos más recientes de este proveedor</string>
+    <string name="home_popular_chapters_subtitle">Los capítulos con más actividad ahora mismo</string>
+    <string name="home_popular_mangas_subtitle">Los títulos que los lectores están abriendo más</string>
+    <string name="home_recommended_subtitle">Selecciones editoriales y algorítmicas de la fuente</string>
+    <string name="home_top_viewed_subtitle">Series con el tráfico de lectores más fuerte</string>
+    <string name="home_by_origin_subtitle">Explora títulos agrupados por origen de publicación</string>
+    <string name="home_recent_reads_subtitle">Capítulos leídos recientemente que están ganando atención</string>
+    <string name="home_season_picks_subtitle">Series con mejor rendimiento en el periodo actual</string>
+    <string name="home_chapters_fallback_subtitle">Actividad reciente de capítulos de este proveedor</string>
+    <string name="home_mangas_fallback_subtitle">Series destacadas seleccionadas de este proveedor</string>
+    <string name="loading_provider_home">Cargando el inicio de %1$s...</string>
+    <string name="empty_provider_home">No hay secciones de inicio disponibles para %1$s ahora mismo.</string>
 </resources>

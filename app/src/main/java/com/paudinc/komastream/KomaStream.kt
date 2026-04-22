@@ -124,8 +124,7 @@ fun KomaStream() {
     }
 
     LaunchedEffect(libraryState.selectedProviderId) {
-        viewModel.refreshCatalogFilterOptions()
-        viewModel.refreshHome()
+        viewModel.refreshCurrentProviderContent(clearVisibleData = true)
     }
 
     LaunchedEffect(viewModel.navigationController.navigationStack) {
@@ -221,7 +220,14 @@ fun KomaStream() {
                             is Screen.Root -> {
                                 when (screen.tab) {
                                 RootTab.Home -> HomeScreen(
+                                    providerId = currentProvider.id,
+                                    providerName = currentProvider.displayName,
                                     feed = homeUiState.feed,
+                                    reading = libraryState.reading,
+                                    readChapters = libraryState.readChapters,
+                                    chapterProgress = { providerId, chapterPath ->
+                                        libraryStore.getChapterProgress(providerId, chapterPath)
+                                    },
                                     strings = strings,
                                     onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                     onOpenChapter = { id, path -> viewModel.openReader(id, path) },

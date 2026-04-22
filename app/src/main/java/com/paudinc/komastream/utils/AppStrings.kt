@@ -17,6 +17,11 @@ data class AppStrings(
     val latestUpdates: String,
     val popularChapters: String,
     val popularMangas: String,
+    val recommended: String,
+    val topViewed: String,
+    val byOrigin: String,
+    val recentReads: String,
+    val seasonPicks: String,
     val favorites: String,
     val continueReading: String,
     val searchAvailableMangas: String,
@@ -30,6 +35,10 @@ data class AppStrings(
     val onlyFavorites: String,
     val searchEmptyCatalog: String,
     val status: String,
+    val ongoingStatus: String,
+    val completedStatus: String,
+    val hiatusStatus: String,
+    val cancelledStatus: String,
     val periodicity: String,
     val latest: String,
     val chapters: String,
@@ -95,6 +104,9 @@ data class AppStrings(
     val chooseProvider: String,
     val chooseProviderDescription: String,
     val openProviderSite: String,
+    val chapterSource: String,
+    val blockedByCloudflare: String,
+    val solveCloudflare: String,
     val autoJumpToUnreadLabel: String,
     val autoJumpToUnreadEnabled: String,
     val autoJumpToUnreadDisabled: String,
@@ -116,6 +128,7 @@ data class AppStrings(
     val noChapterOpenedYet: String,
     val latestProgress: String,
     val openManga: String,
+    val continueReadingAction: String,
     val addToContinueReading: String,
     val addToFavorites: String,
     val removeFromContinueReading: String,
@@ -129,6 +142,7 @@ data class AppStrings(
     val couldNotOpenChapter: String,
     val addedToFavorites: String,
     val removedFromFavorites: String,
+    val chapterReadAction: String,
     val markedAsRead: String,
     val markedAsUnread: String,
     val chapterDownloaded: String,
@@ -142,6 +156,8 @@ data class AppStrings(
     val invalidBackup: String,
     val exportBackupError: String,
     val resultCountTemplate: String,
+    val itemCountSingularTemplate: String,
+    val itemCountPluralTemplate: String,
     val activeSeriesCountTemplate: String,
     val favoritesCountTemplate: String,
     val pagesCountTemplate: String,
@@ -150,9 +166,22 @@ data class AppStrings(
     val noChaptersFoundTemplate: String,
     val markedUntilReadTemplate: String,
     val markedUntilUnreadTemplate: String,
+    val homeLatestSubtitle: String,
+    val homePopularChaptersSubtitle: String,
+    val homePopularMangasSubtitle: String,
+    val homeRecommendedSubtitle: String,
+    val homeTopViewedSubtitle: String,
+    val homeByOriginSubtitle: String,
+    val homeRecentReadsSubtitle: String,
+    val homeSeasonPicksSubtitle: String,
+    val homeChaptersFallbackSubtitle: String,
+    val homeMangasFallbackSubtitle: String,
+    val loadingProviderHomeTemplate: String,
+    val emptyProviderHomeTemplate: String,
 ) {
     fun chaptersCount(count: Int) = "$count ${chapters.lowercase()}"
     fun resultsCount(count: Int) = resultCountTemplate.format(count)
+    fun itemCount(count: Int) = if (count == 1) itemCountSingularTemplate.format(count) else itemCountPluralTemplate.format(count)
     fun activeSeriesCount(count: Int) = activeSeriesCountTemplate.format(count)
     fun favoritesCount(count: Int) = favoritesCountTemplate.format(count)
     fun pagesCount(count: Int) = pagesCountTemplate.format(count)
@@ -165,6 +194,19 @@ data class AppStrings(
     fun markedUntilChapter(number: Double, read: Boolean) =
         if (read) markedUntilReadTemplate.format(number)
         else markedUntilUnreadTemplate.format(number)
+    fun loadingProviderHome(providerName: String) = loadingProviderHomeTemplate.format(providerName)
+    fun emptyProviderHome(providerName: String) = emptyProviderHomeTemplate.format(providerName)
+    fun localizedStatus(value: String): String {
+        val normalized = value.trim().lowercase()
+        return when {
+            normalized.isBlank() -> value
+            "emisi" in normalized || "ongoing" in normalized || "publishing" in normalized -> ongoingStatus
+            "final" in normalized || "complet" in normalized || "finished" in normalized -> completedStatus
+            "paus" in normalized || "hiatus" in normalized -> hiatusStatus
+            "cancel" in normalized || "dropped" in normalized -> cancelledStatus
+            else -> value
+        }
+    }
 }
 
 @Composable
@@ -182,6 +224,11 @@ fun appStrings(): AppStrings {
         latestUpdates = stringResource(R.string.latest_updates),
         popularChapters = stringResource(R.string.popular_chapters),
         popularMangas = stringResource(R.string.popular_mangas),
+        recommended = stringResource(R.string.recommended),
+        topViewed = stringResource(R.string.top_viewed),
+        byOrigin = stringResource(R.string.by_origin),
+        recentReads = stringResource(R.string.recent_reads),
+        seasonPicks = stringResource(R.string.season_picks),
         favorites = stringResource(R.string.favorites),
         continueReading = stringResource(R.string.continue_reading),
         searchAvailableMangas = stringResource(R.string.search_available_mangas),
@@ -195,6 +242,10 @@ fun appStrings(): AppStrings {
         onlyFavorites = stringResource(R.string.only_favorites),
         searchEmptyCatalog = stringResource(R.string.search_empty_catalog),
         status = stringResource(R.string.status),
+        ongoingStatus = stringResource(R.string.status_ongoing),
+        completedStatus = stringResource(R.string.status_completed),
+        hiatusStatus = stringResource(R.string.status_hiatus),
+        cancelledStatus = stringResource(R.string.status_cancelled),
         periodicity = stringResource(R.string.periodicity),
         latest = stringResource(R.string.latest),
         chapters = stringResource(R.string.chapters),
@@ -260,6 +311,9 @@ fun appStrings(): AppStrings {
         chooseProvider = stringResource(R.string.choose_provider),
         chooseProviderDescription = stringResource(R.string.choose_provider_description),
         openProviderSite = stringResource(R.string.open_provider_site),
+        chapterSource = stringResource(R.string.chapter_source),
+        blockedByCloudflare = stringResource(R.string.blocked_by_cloudflare),
+        solveCloudflare = stringResource(R.string.solve_cloudflare),
         autoJumpToUnreadLabel = stringResource(R.string.auto_jump_to_unread),
         autoJumpToUnreadEnabled = stringResource(R.string.auto_jump_to_unread_enabled),
         autoJumpToUnreadDisabled = stringResource(R.string.auto_jump_to_unread_disabled),
@@ -281,6 +335,7 @@ fun appStrings(): AppStrings {
         noChapterOpenedYet = stringResource(R.string.no_chapter_opened_yet),
         latestProgress = stringResource(R.string.latest_progress),
         openManga = stringResource(R.string.open_manga),
+        continueReadingAction = stringResource(R.string.continue_reading_action),
         addToContinueReading = stringResource(R.string.add_to_continue_reading),
         addToFavorites = stringResource(R.string.add_to_favorites),
         removeFromContinueReading = stringResource(R.string.remove_from_continue_reading),
@@ -294,6 +349,7 @@ fun appStrings(): AppStrings {
         couldNotOpenChapter = stringResource(R.string.could_not_open_chapter),
         addedToFavorites = stringResource(R.string.added_to_favorites),
         removedFromFavorites = stringResource(R.string.removed_from_favorites),
+        chapterReadAction = stringResource(R.string.chapter_read_action),
         markedAsRead = stringResource(R.string.marked_as_read),
         markedAsUnread = stringResource(R.string.marked_as_unread),
         chapterDownloaded = stringResource(R.string.chapter_downloaded),
@@ -307,6 +363,8 @@ fun appStrings(): AppStrings {
         invalidBackup = stringResource(R.string.invalid_backup),
         exportBackupError = stringResource(R.string.export_backup_error),
         resultCountTemplate = stringResource(R.string.result_count),
+        itemCountSingularTemplate = stringResource(R.string.item_count_singular),
+        itemCountPluralTemplate = stringResource(R.string.item_count_plural),
         activeSeriesCountTemplate = stringResource(R.string.active_series_count),
         favoritesCountTemplate = stringResource(R.string.favorites_count),
         pagesCountTemplate = stringResource(R.string.pages_count),
@@ -315,6 +373,18 @@ fun appStrings(): AppStrings {
         noChaptersFoundTemplate = stringResource(R.string.no_chapters_found),
         markedUntilReadTemplate = stringResource(R.string.marked_until_read),
         markedUntilUnreadTemplate = stringResource(R.string.marked_until_unread),
+        homeLatestSubtitle = stringResource(R.string.home_latest_subtitle),
+        homePopularChaptersSubtitle = stringResource(R.string.home_popular_chapters_subtitle),
+        homePopularMangasSubtitle = stringResource(R.string.home_popular_mangas_subtitle),
+        homeRecommendedSubtitle = stringResource(R.string.home_recommended_subtitle),
+        homeTopViewedSubtitle = stringResource(R.string.home_top_viewed_subtitle),
+        homeByOriginSubtitle = stringResource(R.string.home_by_origin_subtitle),
+        homeRecentReadsSubtitle = stringResource(R.string.home_recent_reads_subtitle),
+        homeSeasonPicksSubtitle = stringResource(R.string.home_season_picks_subtitle),
+        homeChaptersFallbackSubtitle = stringResource(R.string.home_chapters_fallback_subtitle),
+        homeMangasFallbackSubtitle = stringResource(R.string.home_mangas_fallback_subtitle),
+        loadingProviderHomeTemplate = stringResource(R.string.loading_provider_home),
+        emptyProviderHomeTemplate = stringResource(R.string.empty_provider_home),
     )
     return strings
 }

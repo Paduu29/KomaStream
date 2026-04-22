@@ -30,11 +30,16 @@ import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.HttpCookie
 import java.net.URI
+import java.util.concurrent.Callable
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MangaBallProvider(
     context: Context,
 ) : MangaProvider {
     private val appContext = context.applicationContext
+    private val sessionLock = Any()
 
     override val id: String = PROVIDER_ID
     override val displayName: String = "MangaBall"
@@ -53,71 +58,84 @@ class MangaBallProvider(
 
     @Volatile
     private var csrfToken: String? = null
+    @Volatile
+    private var homeFeedCache: TimedValue<HomeFeed>? = null
+    @Volatile
+    private var catalogFilterCache: TimedValue<CatalogFilterOptions>? = null
+    private val chapterListingCache = ConcurrentHashMap<String, TimedValue<JSONArray>>()
 
     override fun fetchHomeFeed(): HomeFeed {
+        val adultContentEnabled = isAdultContentEnabled()
+        homeFeedCache?.takeIf { it.isValidFor(adultContentEnabled, HOME_FEED_CACHE_MS) }?.let { return it.value }
         ensureSession()
-        val latestUpdates = fetchHomeSection(
-            id = "latest-updates",
-            title = "Latest Updates",
-            type = HomeSectionType.CHAPTERS,
-            formValues = listOf(
-                "search_type" to "getLatestTable",
-                "search_limit" to "24",
+        val sectionRequests = listOf(
+            HomeSectionRequest(
+                id = "latest-updates",
+                title = "Latest Updates",
+                type = HomeSectionType.CHAPTERS,
+                formValues = listOf(
+                    "search_type" to "getLatestTable",
+                    "search_limit" to "24",
+                ),
+            ),
+            HomeSectionRequest(
+                id = "recommended-titles",
+                title = "Titles Recommended",
+                type = HomeSectionType.MANGAS,
+                formValues = listOf(
+                    "search_type" to "getRecommend",
+                    "search_limit" to "24",
+                ),
+            ),
+            HomeSectionRequest(
+                id = "top-viewed-titles",
+                title = "Top Viewed Titles",
+                type = HomeSectionType.MANGAS,
+                formValues = listOf(
+                    "search_type" to "getRecentRead",
+                    "search_limit" to "24",
+                    "search_time" to "week",
+                ),
+            ),
+            HomeSectionRequest(
+                id = "by-origin",
+                title = "By Origin",
+                type = HomeSectionType.MANGAS,
+                formValues = listOf(
+                    "search_type" to "getByOrigin",
+                    "search_limit" to "24",
+                    "search_origin" to "all",
+                ),
+            ),
+            HomeSectionRequest(
+                id = "recent-chapter-read",
+                title = "Recent Chapter Read",
+                type = HomeSectionType.CHAPTERS,
+                formValues = listOf(
+                    "search_type" to "getRecentChapterRead",
+                    "search_limit" to "24",
+                    "search_time" to "week",
+                ),
+            ),
+            HomeSectionRequest(
+                id = "popular-this-season",
+                title = "Popular This Season",
+                type = HomeSectionType.MANGAS,
+                formValues = listOf(
+                    "search_type" to "getPopular",
+                    "search_limit" to "24",
+                ),
             ),
         )
-        val recommendedTitles = fetchHomeSection(
-            id = "recommended-titles",
-            title = "Titles Recommended",
-            type = HomeSectionType.MANGAS,
-            formValues = listOf(
-                "search_type" to "getRecommend",
-                "search_limit" to "24",
-            ),
-        )
-        val topViewedTitles = fetchHomeSection(
-            id = "top-viewed-titles",
-            title = "Top Viewed Titles",
-            type = HomeSectionType.MANGAS,
-            formValues = listOf(
-                "search_type" to "getRecentRead",
-                "search_limit" to "24",
-                "search_time" to "week",
-            ),
-        )
-        val byOrigin = fetchHomeSection(
-            id = "by-origin",
-            title = "By Origin",
-            type = HomeSectionType.MANGAS,
-            formValues = listOf(
-                "search_type" to "getByOrigin",
-                "search_limit" to "24",
-                "search_origin" to "all",
-            ),
-        )
-        val recentChapterRead = fetchHomeSection(
-            id = "recent-chapter-read",
-            title = "Recent Chapter Read",
-            type = HomeSectionType.CHAPTERS,
-            formValues = listOf(
-                "search_type" to "getRecentChapterRead",
-                "search_limit" to "24",
-                "search_time" to "week",
-            ),
-        )
-        val popularThisSeason = fetchHomeSection(
-            id = "popular-this-season",
-            title = "Popular This Season",
-            type = HomeSectionType.MANGAS,
-            formValues = listOf(
-                "search_type" to "getPopular",
-                "search_limit" to "24",
-            ),
-        )
+        val sectionsById = fetchHomeSections(sectionRequests)
+        val latestUpdates = sectionsById.getValue("latest-updates")
+        val recentChapterRead = sectionsById.getValue("recent-chapter-read")
+        val popularThisSeason = sectionsById.getValue("popular-this-season")
         val sections = listOf(
             latestUpdates,
-            recommendedTitles,
-            topViewedTitles,
-            byOrigin,
+            sectionsById.getValue("recommended-titles"),
+            sectionsById.getValue("top-viewed-titles"),
+            sectionsById.getValue("by-origin"),
             recentChapterRead,
             popularThisSeason,
         ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() }
@@ -127,10 +145,12 @@ class MangaBallProvider(
             popularChapters = recentChapterRead.chapters,
             popularMangas = popularThisSeason.mangas,
             sections = sections,
-        )
+        ).also { homeFeedCache = TimedValue(adultContentEnabled, it) }
     }
 
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {
+        val adultContentEnabled = isAdultContentEnabled()
+        catalogFilterCache?.takeIf { it.isValidFor(adultContentEnabled, FILTER_CACHE_MS) }?.let { return it.value }
         ensureSession("/search-advanced")
         val document = getDocument("/search-advanced")
         val sortOptions = document.select("#sortBy option[value]").mapNotNull { option ->
@@ -164,7 +184,7 @@ class MangaBallProvider(
             categories = categories,
             sortOptions = sortOptions,
             statusOptions = statusOptions,
-        )
+        ).also { catalogFilterCache = TimedValue(adultContentEnabled, it) }
     }
 
     override fun searchCatalog(
@@ -233,15 +253,7 @@ class MangaBallProvider(
             ?.groupValues
             ?.getOrNull(1)
             .orEmpty()
-        val chapterResponse = postJson(
-            path = "/api/v1/chapter/chapter-listing-by-title-id/",
-            referer = detailRequest.basePath,
-            formValues = listOf(
-                "title_id" to titleId,
-                "userSettingsEnabled" to "false",
-            ),
-        )
-        val allChapters = chapterResponse.optJSONArray("ALL_CHAPTERS") ?: JSONArray()
+        val allChapters = fetchChapterListing(titleId, detailRequest.basePath)
         val chapterSources = buildLanguageOptions(detailRequest.basePath, allChapters)
         val selectedLanguageId = chapterSources
             .firstOrNull { it.id == detailRequest.selectedLanguageId }
@@ -305,14 +317,7 @@ class MangaBallProvider(
                 )
             }
         }
-        val chapterListing = postJson(
-            path = "/api/v1/chapter/chapter-listing-by-title-id/",
-            referer = normalizedPath,
-            formValues = listOf(
-                "title_id" to titleId,
-                "userSettingsEnabled" to "false",
-            ),
-        ).optJSONArray("ALL_CHAPTERS") ?: JSONArray()
+        val chapterListing = fetchChapterListing(titleId, normalizedPath)
         val chapterEntries = buildList {
             for (index in 0 until chapterListing.length()) {
                 val chapter = chapterListing.optJSONObject(index) ?: continue
@@ -369,30 +374,46 @@ class MangaBallProvider(
         }
     }
 
+    override fun invalidateCaches() {
+        synchronized(sessionLock) {
+            csrfToken = null
+            homeFeedCache = null
+            catalogFilterCache = null
+            chapterListingCache.clear()
+        }
+    }
+
     private fun ensureSession(path: String = "/") {
-        ensureAdultCookie()
-        if (!csrfToken.isNullOrBlank()) return
-        val document = getDocument(path)
-        csrfToken = document.selectFirst("meta[name=csrf-token]")?.attr("content")?.trim()
+        synchronized(sessionLock) {
+            ensureAdultCookie()
+            if (!csrfToken.isNullOrBlank()) return
+            val document = getDocument(path, retry = false)
+            csrfToken = document.selectFirst("meta[name=csrf-token]")?.attr("content")?.trim()
+        }
     }
 
     private fun ensureAdultCookie() {
         val cookieStore = cookieManager.cookieStore
-        val desiredValue = isAdultContentEnabled().toString()
+        val adultContentEnabled = isAdultContentEnabled()
         val existingCookies = cookieStore.get(baseUri)
         val adultCookies = existingCookies.filter { it.name == "show18PlusContent" }
         val currentValue = adultCookies.lastOrNull()?.value
 
-        if (currentValue == desiredValue) return
+        // MangaBall works with the opt-in cookie present for adult mode.
+        // When adult mode is off, omitting the cookie is more reliable than sending "false".
+        if (!adultContentEnabled && adultCookies.isEmpty()) return
+        if (adultContentEnabled && currentValue == "true") return
 
         adultCookies.forEach { cookieStore.remove(baseUri, it) }
-        cookieStore.add(
-            baseUri,
-            HttpCookie("show18PlusContent", desiredValue).apply {
-                path = "/"
-            }
-        )
-        csrfToken = null
+        if (adultContentEnabled) {
+            cookieStore.add(
+                baseUri,
+                HttpCookie("show18PlusContent", "true").apply {
+                    path = "/"
+                }
+            )
+        }
+        invalidateCaches()
     }
 
     private fun isAdultContentEnabled(): Boolean =
@@ -400,13 +421,20 @@ class MangaBallProvider(
             .getSharedPreferences("manga_library", Context.MODE_PRIVATE)
             .getBoolean(PREF_MANGABALL_ADULT_CONTENT, false)
 
-    private fun getDocument(path: String): Document {
-        val request = Request.Builder()
-            .url(toAbsoluteUrl(path))
-            .header("User-Agent", USER_AGENT)
-            .build()
-        client.newCall(request).execute().use { response ->
-            return Jsoup.parse(response.body?.string().orEmpty(), baseUrl)
+    private fun getDocument(path: String, retry: Boolean = true): Document {
+        return runCatching {
+            val request = Request.Builder()
+                .url(toAbsoluteUrl(path))
+                .header("User-Agent", USER_AGENT)
+                .build()
+            client.newCall(request).execute().use { response ->
+                Jsoup.parse(response.body?.string().orEmpty(), baseUrl)
+            }
+        }.getOrElse { error ->
+            if (!retry) throw error
+            invalidateCaches()
+            ensureSession(path)
+            getDocument(path, retry = false)
         }
     }
 
@@ -414,20 +442,28 @@ class MangaBallProvider(
         path: String,
         referer: String,
         formValues: List<Pair<String, String>>,
+        retry: Boolean = true,
     ): JSONObject {
-        ensureSession(referer)
-        val body = FormBody.Builder().apply {
-            formValues.forEach { (key, value) -> add(key, value) }
-        }.build()
-        val request = Request.Builder()
-            .url(toAbsoluteUrl(path))
-            .header("User-Agent", USER_AGENT)
-            .header("Referer", toAbsoluteUrl(referer))
-            .header("X-CSRF-TOKEN", csrfToken.orEmpty())
-            .post(body)
-            .build()
-        client.newCall(request).execute().use { response ->
-            return JSONObject(response.body?.string().orEmpty())
+        return runCatching {
+            ensureSession(referer)
+            val body = FormBody.Builder().apply {
+                formValues.forEach { (key, value) -> add(key, value) }
+            }.build()
+            val request = Request.Builder()
+                .url(toAbsoluteUrl(path))
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", toAbsoluteUrl(referer))
+                .header("X-CSRF-TOKEN", csrfToken.orEmpty())
+                .post(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                JSONObject(response.body?.string().orEmpty())
+            }
+        }.getOrElse { error ->
+            if (!retry) throw error
+            invalidateCaches()
+            ensureSession(referer)
+            postJson(path, referer, formValues, retry = false)
         }
     }
 
@@ -456,6 +492,59 @@ class MangaBallProvider(
                 mangas = items.toMangaSummaries(),
             )
         }
+    }
+
+    private fun fetchHomeSections(requests: List<HomeSectionRequest>): Map<String, HomeFeedSection> {
+        if (requests.isEmpty()) return emptyMap()
+        return runCatching {
+            val executor = Executors.newFixedThreadPool(minOf(requests.size, HOME_SECTION_PARALLELISM))
+            try {
+                executor.invokeAll(
+                    requests.map { request ->
+                        Callable {
+                            request.id to fetchHomeSection(
+                                id = request.id,
+                                title = request.title,
+                                type = request.type,
+                                formValues = request.formValues,
+                            )
+                        }
+                    }
+                ).associate { it.get() }
+            } finally {
+                executor.shutdown()
+                executor.awaitTermination(5, TimeUnit.SECONDS)
+            }
+        }.getOrElse {
+            invalidateCaches()
+            ensureSession()
+            requests.associate { request ->
+                request.id to fetchHomeSection(
+                    id = request.id,
+                    title = request.title,
+                    type = request.type,
+                    formValues = request.formValues,
+                )
+            }
+        }
+    }
+
+    private fun fetchChapterListing(titleId: String, referer: String): JSONArray {
+        if (titleId.isBlank()) return JSONArray()
+        val cacheKey = "${isAdultContentEnabled()}::$titleId"
+        chapterListingCache[cacheKey]
+            ?.takeIf { System.currentTimeMillis() - it.cachedAtMillis <= CHAPTER_LISTING_CACHE_MS }
+            ?.let { return JSONArray(it.value.toString()) }
+        val chapters = postJson(
+            path = "/api/v1/chapter/chapter-listing-by-title-id/",
+            referer = referer,
+            formValues = listOf(
+                "title_id" to titleId,
+                "userSettingsEnabled" to "false",
+            ),
+        ).optJSONArray("ALL_CHAPTERS") ?: JSONArray()
+        chapterListingCache[cacheKey] = TimedValue(isAdultContentEnabled(), JSONArray(chapters.toString()))
+        return chapters
     }
 
     private fun JSONArray.toMangaSummaries(): List<MangaSummary> = buildList(length()) {
@@ -687,6 +776,10 @@ class MangaBallProvider(
         const val PREF_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
         private const val DETAIL_LANGUAGE_QUERY = "__lang"
         private const val LANGUAGE_ALL = "all"
+        private const val HOME_FEED_CACHE_MS = 2 * 60 * 1000L
+        private const val FILTER_CACHE_MS = 30 * 60 * 1000L
+        private const val CHAPTER_LISTING_CACHE_MS = 10 * 60 * 1000L
+        private const val HOME_SECTION_PARALLELISM = 4
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
     }
@@ -698,8 +791,25 @@ class MangaBallProvider(
         val languageCode: String,
     )
 
+    private data class HomeSectionRequest(
+        val id: String,
+        val title: String,
+        val type: HomeSectionType,
+        val formValues: List<Pair<String, String>>,
+    )
+
     private data class DetailRequest(
         val basePath: String,
         val selectedLanguageId: String,
     )
+
+    private data class TimedValue<T>(
+        val adultContentEnabled: Boolean,
+        val value: T,
+        val cachedAtMillis: Long = System.currentTimeMillis(),
+    ) {
+        fun isValidFor(expectedAdultContentEnabled: Boolean, maxAgeMillis: Long): Boolean =
+            adultContentEnabled == expectedAdultContentEnabled &&
+                System.currentTimeMillis() - cachedAtMillis <= maxAgeMillis
+    }
 }

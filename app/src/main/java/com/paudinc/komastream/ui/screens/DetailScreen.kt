@@ -174,7 +174,11 @@ fun DetailScreen(
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (detail.status.isNotBlank()) {
-                                    TagChip(detail.status, containerColor = statusTagColor(detail.status), labelColor = Color.White)
+                                    TagChip(
+                                        strings.localizedStatus(detail.status),
+                                        containerColor = statusTagColor(detail.status),
+                                        labelColor = Color.White,
+                                    )
                                 }
                                 if (detail.periodicity.isNotBlank()) {
                                     TagChip(detail.periodicity, containerColor = periodicityTagColor(detail.periodicity), labelColor = Color.White)
@@ -241,7 +245,7 @@ fun DetailScreen(
                                     )
                                     if (detail.needsCloudflareClearance && onSolveCloudflare != null) {
                                         Text(
-                                            "Blocked by Cloudflare",
+                                            strings.blockedByCloudflare,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.error,
                                         )
@@ -264,7 +268,7 @@ fun DetailScreen(
                                     }
                                     if (detail.needsCloudflareClearance && onSolveCloudflare != null) {
                                         IconButton(onClick = onSolveCloudflare) {
-                                            Icon(Icons.Default.LockOpen, contentDescription = "Solve Cloudflare", tint = MaterialTheme.colorScheme.error)
+                                            Icon(Icons.Default.LockOpen, contentDescription = strings.solveCloudflare, tint = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
@@ -323,7 +327,7 @@ fun DetailScreen(
                                                 if (detail.providerId == MangaBallProvider.PROVIDER_ID) {
                                                     strings.languageLabel
                                                 } else {
-                                                    "Chapter Source"
+                                                    strings.chapterSource
                                                 }
                                             )
                                         },

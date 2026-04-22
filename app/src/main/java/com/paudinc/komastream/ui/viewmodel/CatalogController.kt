@@ -125,4 +125,12 @@ class CatalogController(
     fun resetForProviderChange() {
         uiState = CatalogUiState()
     }
+
+    fun clearResults() {
+        uiState = uiState.copy(
+            results = emptyList(),
+            hasMoreResults = false,
+            isLoadingMore = false,
+        )
+    }
 }
