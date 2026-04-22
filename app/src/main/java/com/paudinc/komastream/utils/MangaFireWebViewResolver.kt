@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import okhttp3.OkHttpClient
@@ -75,6 +76,18 @@ class MangaFireWebViewResolver(
             nextChapterPath = chapterContext?.nextPath,
             pages = pages,
         )
+    }
+
+    fun searchCatalog(providerId: String, query: String, skip: Int, take: Int): List<MangaSummary> {
+        val resolvedUrl = resolveSearchUrl(query)
+        Log.d("MangaFireWebView", "searchCatalog: query='$query' resolvedUrl='$resolvedUrl'")
+        val document = getDocumentAbsolute(resolvedUrl, referer = BASE_URL)
+        val items = parseCatalogCards(document, providerId)
+        Log.d(
+            "MangaFireWebView",
+            "searchCatalog: query='$query' parsed=${items.size} titles=${items.take(5).joinToString { it.title }}"
+        )
+        return items.drop(skip).take(take)
     }
 
     fun downloadBytes(url: String, referer: String?): ByteArray {
@@ -197,6 +210,88 @@ class MangaFireWebViewResolver(
         return result.firstOrNull() ?: throw IOException("Could not capture MangaFire reader request")
     }
 
+    private fun resolveSearchUrl(query: String): String {
+        val latch = CountDownLatch(1)
+        val result = mutableListOf<String>()
+        val errors = mutableListOf<Throwable>()
+        var webView: WebView? = null
+        val escapedQuery = JSONObject.quote(query)
+
+        mainHandler.post {
+            webView = WebView(context)
+            val activeWebView = checkNotNull(webView)
+            activeWebView.settings.javaScriptEnabled = true
+            activeWebView.settings.domStorageEnabled = true
+            activeWebView.settings.loadsImagesAutomatically = false
+            activeWebView.settings.blockNetworkImage = true
+            activeWebView.settings.userAgentString = USER_AGENT
+            activeWebView.webViewClient = object : WebViewClient() {
+                private var submitted = false
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    if (submitted) return
+                    if (url.isNullOrBlank()) return
+                    if (!url.startsWith(BASE_URL)) return
+                    submitted = true
+                    view?.evaluateJavascript(
+                        """
+                        (function() {
+                          const form = document.querySelector('#nav-search form[action="filter"]');
+                          const input = form ? form.querySelector('input[name="keyword"]') : null;
+                          if (!form || !input) return "missing-form";
+                          input.value = $escapedQuery;
+                          input.dispatchEvent(new Event('input', { bubbles: true }));
+                          input.dispatchEvent(new Event('change', { bubbles: true }));
+                          if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit();
+                            return "requestSubmit";
+                          }
+                          const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                          const allowed = form.dispatchEvent(submitEvent);
+                          if (allowed) {
+                            form.submit();
+                            return "fallback-submit";
+                          }
+                          return "submit-cancelled";
+                        })();
+                        """.trimIndent(),
+                        null
+                    )
+                }
+
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
+                    try {
+                        val url = request.url.toString()
+                        if (
+                            request.url.host == HOST &&
+                            request.url.encodedPath == "/filter" &&
+                            request.url.getQueryParameter("keyword").isNullOrBlank().not() &&
+                            request.url.getQueryParameter("vrf").isNullOrBlank().not()
+                        ) {
+                            result += url
+                            latch.countDown()
+                        }
+                    } catch (throwable: Throwable) {
+                        errors += throwable
+                        latch.countDown()
+                    }
+                    return super.shouldInterceptRequest(view, request)
+                }
+            }
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(activeWebView, true)
+            activeWebView.loadUrl("$BASE_URL/home")
+        }
+
+        if (!latch.await(20, TimeUnit.SECONDS)) {
+            mainHandler.post { webView?.destroy() }
+            throw IOException("Timed out while resolving MangaFire search flow")
+        }
+        mainHandler.post { webView?.destroy() }
+        errors.firstOrNull()?.let { throw IOException(it.message ?: "Could not resolve MangaFire search flow", it) }
+        return result.firstOrNull() ?: throw IOException("Could not capture MangaFire search request")
+    }
+
     private fun parseChapterContext(html: String, currentPath: String): ChapterContext? {
         if (html.isBlank()) return null
         val document = Jsoup.parseBodyFragment(html, BASE_URL)
@@ -224,6 +319,9 @@ class MangaFireWebViewResolver(
         }
     }
 
+    private fun getDocumentAbsolute(absoluteUrl: String, referer: String): Document =
+        Jsoup.parse(getText(absoluteUrl = absoluteUrl, referer = referer, ajax = false), BASE_URL)
+
     private fun getJson(path: String): JSONObject =
         JSONObject(getText(absoluteUrl = toAbsoluteUrl(path), referer = BASE_URL, ajax = true))
 
@@ -244,6 +342,39 @@ class MangaFireWebViewResolver(
             return response.body?.string().orEmpty()
         }
     }
+
+    private fun parseCatalogCards(document: Document, providerId: String): List<MangaSummary> =
+        document.select(".original.card-lg .unit .inner").mapNotNull { item ->
+            val detailLink = item.selectFirst(".info > a[href]") ?: return@mapNotNull null
+            val detailPath = normalizePath(detailLink.attr("href"))
+            val title = detailLink.text().trim()
+            val coverUrl = item.selectFirst(".poster img")?.absUrl("src").orEmpty()
+
+            var status = ""
+            var periodicity = ""
+            var chaptersCount = ""
+            item.select(".info-list .item").forEach { infoItem ->
+                val label = infoItem.selectFirst("b")?.text()?.trim().orEmpty().lowercase()
+                val value = infoItem.ownText().trim()
+                when {
+                    "status" in label -> status = value
+                    "period" in label -> periodicity = value
+                    "chap" in label -> chaptersCount = value
+                }
+            }
+
+            if (detailPath.isBlank() || title.isBlank()) null else {
+                MangaSummary(
+                    providerId = providerId,
+                    title = title,
+                    detailPath = detailPath,
+                    coverUrl = coverUrl,
+                    status = status,
+                    periodicity = periodicity,
+                    chaptersCount = chaptersCount,
+                )
+            }
+        }
 
     private fun JSONArray.toReaderPages(chapterPath: String): List<ReaderPage> =
         buildList(length()) {

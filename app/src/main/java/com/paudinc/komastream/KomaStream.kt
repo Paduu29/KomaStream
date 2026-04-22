@@ -212,6 +212,7 @@ fun KomaStream() {
                                     )
                                     RootTab.Catalog -> CatalogScreen(
                                         strings = strings,
+                                        providerId = currentProvider.id,
                                         query = catalogUiState.query,
                                         categories = catalogUiState.filterOptions.categories,
                                         sortOptions = catalogUiState.filterOptions.sortOptions,
