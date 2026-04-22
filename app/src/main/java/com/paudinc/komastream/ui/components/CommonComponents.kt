@@ -412,7 +412,7 @@ fun ChapterRow(
                 .fillMaxWidth()
                 .border(cardBorder(), RoundedCornerShape(22.dp))
                 .combinedClickable(
-                    onClick = { onOpenChapter(item.providerId, item.chapterPath) },
+                    onClick = { onOpenManga?.invoke() ?: onOpenChapter(item.providerId, item.chapterPath) },
                     onLongClick = {
                         if (onAddToReading != null || onOpenManga != null) menuExpanded = true
                     },
@@ -430,14 +430,21 @@ fun ChapterRow(
                     contentDescription = item.mangaTitle,
                     modifier = Modifier
                         .size(width = 62.dp, height = 84.dp)
-                        .clip(RoundedCornerShape(14.dp)),
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            onOpenManga?.invoke() ?: onOpenChapter(item.providerId, item.chapterPath)
+                        },
                     contentScale = ContentScale.Crop,
                     placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
                     error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                 )
                 Spacer(Modifier.width(14.dp))
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            onOpenManga?.invoke() ?: onOpenChapter(item.providerId, item.chapterPath)
+                        },
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
