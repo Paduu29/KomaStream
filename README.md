@@ -1,6 +1,6 @@
-<p style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-  <img src="docs/readme/logo.png" width="104" alt="KomaStream logo">
-  <strong style="font-size: 32px;">KomaStream</strong>
+<p align="center">
+  <img src="docs/readme/logo.png" width="104" alt="KomaStream logo" align="middle">
+  <b style="font-size:32px; vertical-align: middle;">KomaStream</b>
 </p>
 
 <p align="center">
