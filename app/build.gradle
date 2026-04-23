@@ -34,8 +34,8 @@ android {
         applicationId "com.paudinc.komastream"
         minSdk 24
         targetSdk 34
-        versionCode ciVersionCode ?: 19
-        versionName ciVersionName ?: "2.7"
+        versionCode ciVersionCode ?: 20
+        versionName ciVersionName ?: "2.8"
         buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
         buildConfigField "String", "GITHUB_RELEASE_ASSET_PATTERN", asBuildConfigString(githubReleaseAssetPattern)
         buildConfigField "String", "GITHUB_RELEASE_TOKEN", asBuildConfigString(githubReleaseToken)
