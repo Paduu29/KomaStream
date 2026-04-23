@@ -7,6 +7,7 @@ import com.paudinc.komastream.provider.providers.InMangaProvider
 import com.paudinc.komastream.provider.providers.LeerMangaEspProvider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.provider.providers.MangaFireProvider
+import com.paudinc.komastream.provider.providers.MangaTubeProvider
 
 class ProviderRegistry(
     providers: List<MangaProvider>,
@@ -33,6 +34,7 @@ fun createDefaultProviderRegistry(context: Context?): ProviderRegistry =
         buildList {
             add(InMangaProvider())
             add(LeerMangaEspProvider())
+            add(MangaTubeProvider(context))
             add(MangaFireProvider(context))
             context?.let { add(MangaBallProvider(it)) }
         }

@@ -13,9 +13,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.paudinc.komastream.R
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.ui.components.cardBorder
@@ -69,6 +71,7 @@ fun ProviderPickerScreen(
                     text = when (language) {
                         AppLanguage.EN -> strings.english
                         AppLanguage.ES -> strings.spanish
+                        AppLanguage.DE -> strings.german
                         AppLanguage.MULTI -> strings.multilingual
                     },
                     style = MaterialTheme.typography.titleLarge,
@@ -107,6 +110,14 @@ fun ProviderPickerScreen(
                             contentDescription = provider.displayName,
                             modifier = Modifier.size(44.dp),
                             contentScale = ContentScale.Fit,
+                            placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+                            error = painterResource(
+                                if (provider.id == "mangatube-de") {
+                                    R.drawable.mt_logo
+                                } else {
+                                    R.drawable.app_logo
+                                }
+                            ),
                         )
                         Column(
                             modifier = Modifier.weight(1f),

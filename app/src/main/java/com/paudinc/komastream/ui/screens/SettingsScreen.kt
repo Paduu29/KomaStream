@@ -151,6 +151,13 @@ fun SettingsScreen(
                                 contentColor = if (appLanguage == AppLanguage.ES) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                             ),
                         ) { Text(strings.spanish) }
+                        Button(
+                            onClick = { onLanguageChange(AppLanguage.DE) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (appLanguage == AppLanguage.DE) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (appLanguage == AppLanguage.DE) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            ),
+                        ) { Text(strings.german) }
                     }
                 }
             }

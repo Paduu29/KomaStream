@@ -289,7 +289,15 @@ fun KomaStream() {
                                             AsyncImage(
                                                 model = viewModel.currentProvider.logoUrl,
                                                 contentDescription = viewModel.currentProvider.displayName,
-                                                modifier = Modifier.size(24.dp).clip(CircleShape)
+                                                modifier = Modifier.size(24.dp).clip(CircleShape),
+                                                placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+                                                error = painterResource(
+                                                    if (viewModel.currentProvider.id == "mangatube-de") {
+                                                        R.drawable.mt_logo
+                                                    } else {
+                                                        R.drawable.app_logo
+                                                    }
+                                                ),
                                             )
                                         }
                                     }
