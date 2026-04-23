@@ -6,20 +6,31 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.work.WorkManager
 import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.SavedManga
@@ -28,6 +39,7 @@ import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.ui.components.BackupOperationDialog
 import com.paudinc.komastream.ui.components.LoadingPlaceholder
 import com.paudinc.komastream.ui.components.UpdateAvailableDialog
+import com.paudinc.komastream.ui.navigation.LibraryTab
 import com.paudinc.komastream.ui.navigation.RootTab
 import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.ui.navigation.ScreenStackSaver
@@ -132,24 +144,41 @@ fun KomaStream() {
     }
 
     MaterialTheme(
-        colorScheme = if (libraryState.useDarkTheme) darkColorScheme() else lightColorScheme()
+        colorScheme = if (libraryState.useDarkTheme) komaDarkColorScheme() else komaLightColorScheme(),
+        typography = komaTypography(),
     ) {
         Surface(color = MaterialTheme.colorScheme.background) {
             Scaffold(
+                containerColor = Color.Transparent,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = {
                     if (screen is Screen.Root) {
-                        NavigationBar {
+                        NavigationBar(
+                            modifier = Modifier
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .clip(RoundedCornerShape(26.dp)),
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                            tonalElevation = 0.dp,
+                        ) {
                             RootTab.entries.forEach { tab ->
                                 NavigationBarItem(
                                     selected = screen.tab == tab,
                                     onClick = { viewModel.replaceRoot(tab) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        indicatorColor = MaterialTheme.colorScheme.primary,
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
                                     label = {
                                         Text(
                                             when (tab) {
                                                 RootTab.Home -> strings.home
                                                 RootTab.Library -> strings.library
                                                 RootTab.Catalog -> strings.catalog
+                                                RootTab.Favorites -> strings.favorites
+                                                RootTab.Settings -> strings.settings
                                             }
                                         )
                                     },
@@ -157,8 +186,10 @@ fun KomaStream() {
                                         Icon(
                                             when (tab) {
                                                 RootTab.Home -> Icons.Default.Home
-                                                RootTab.Library -> Icons.Default.Favorite
-                                                RootTab.Catalog -> Icons.Default.Explore
+                                                RootTab.Library -> Icons.AutoMirrored.Filled.MenuBook
+                                                RootTab.Catalog -> Icons.Default.Search
+                                                RootTab.Favorites -> Icons.Default.FavoriteBorder
+                                                RootTab.Settings -> Icons.Default.Settings
                                             },
                                             contentDescription = null
                                         )
@@ -169,49 +200,103 @@ fun KomaStream() {
                     }
                 },
                 topBar = {
-                    CenterAlignedTopAppBar(
-                        title = {
-                            Text(
-                                text = when (screen) {
-                                    is Screen.Root -> strings.appName
-                                    is Screen.Detail -> readerUiState.selectedDetail?.title ?: ""
-                                    is Screen.Settings -> strings.settings
-                                    is Screen.ProviderPicker -> strings.chooseProvider
-                                    is Screen.Reader -> readerUiState.readerData?.let { reader ->
-                                        buildReaderTopBarTitle(
-                                            mangaTitle = reader.mangaTitle,
-                                            chapterTitle = reader.chapterTitle,
-                                            currentPageIndex = readerUiState.currentPageIndex,
-                                            totalPages = reader.pages.size,
+                    if (screen !is Screen.Reader) {
+                        CenterAlignedTopAppBar(
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                                actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            title = {
+                                when {
+                                    screen is Screen.Root && screen.tab != RootTab.Settings -> {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Image(
+                                                painter = painterResource(R.drawable.app_logo),
+                                                contentDescription = strings.appName,
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                            )
+                                            Row {
+                                                Text(
+                                                    text = "KOMA",
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                )
+                                                Text(
+                                                    text = "STREAM",
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    maxLines = 1,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        Text(
+                                            text = when (screen) {
+                                                is Screen.Detail -> readerUiState.selectedDetail?.title ?: ""
+                                                is Screen.Settings -> strings.settings
+                                                is Screen.ProviderPicker -> strings.chooseProvider
+                                                is Screen.Reader -> readerUiState.readerData?.let { reader ->
+                                                    buildReaderTopBarTitle(
+                                                        mangaTitle = reader.mangaTitle,
+                                                        chapterTitle = reader.chapterTitle,
+                                                        currentPageIndex = readerUiState.currentPageIndex,
+                                                        totalPages = reader.pages.size,
+                                                    )
+                                                }.orEmpty()
+                                                is Screen.HomeSection -> homeUiState.feed?.sections
+                                                    ?.firstOrNull { it.id == screen.sectionId }
+                                                    ?.let { homeSectionTitle(it, strings) }
+                                                    .orEmpty()
+                                                is Screen.Root -> when (screen.tab) {
+                                                    RootTab.Home -> strings.home
+                                                    RootTab.Library -> strings.library
+                                                    RootTab.Catalog -> strings.catalog
+                                                    RootTab.Favorites -> strings.favorites
+                                                    RootTab.Settings -> strings.settings
+                                                }
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
-                                    }.orEmpty()
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        navigationIcon = {
-                            if (screen !is Screen.Root && screen !is Screen.ProviderPicker) {
-                                IconButton(onClick = { viewModel.goBack() }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                                    }
+                                }
+                            },
+                            navigationIcon = {
+                                if (screen !is Screen.Root && screen !is Screen.ProviderPicker) {
+                                    IconButton(onClick = { viewModel.goBack() }) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                                    }
+                                }
+                            },
+                            actions = {
+                                if (screen is Screen.Root) {
+                                    IconButton(onClick = { viewModel.pushScreen(Screen.ProviderPicker) }) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            AsyncImage(
+                                                model = viewModel.currentProvider.logoUrl,
+                                                contentDescription = viewModel.currentProvider.displayName,
+                                                modifier = Modifier.size(24.dp).clip(CircleShape)
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        },
-                        actions = {
-                            if (screen is Screen.Root) {
-                                IconButton(onClick = { viewModel.pushScreen(Screen.ProviderPicker) }) {
-                                    AsyncImage(
-                                        model = viewModel.currentProvider.logoUrl,
-                                        contentDescription = viewModel.currentProvider.displayName,
-                                        modifier = Modifier.size(24.dp).clip(CircleShape)
-                                    )
-                                }
-                                IconButton(onClick = { viewModel.pushScreen(Screen.Settings) }) {
-                                    Icon(Icons.Default.Settings, contentDescription = null)
-                                }
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
             ) { padding ->
                 Box(modifier = Modifier.padding(padding)) {
@@ -231,6 +316,7 @@ fun KomaStream() {
                                     strings = strings,
                                     onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                     onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                    onOpenSection = { viewModel.pushScreen(Screen.HomeSection(it)) },
                                     onAddToReading = { viewModel.addToReading(it) },
                                     onToggleFavorite = { viewModel.toggleFavorite(it) },
                                     isFavorite = { providerId, detailPath ->
@@ -240,8 +326,12 @@ fun KomaStream() {
                                     RootTab.Library -> LibraryScreen(
                                         libraryState = libraryState,
                                         strings = strings,
-                                        selectedTab = libraryUiState.selectedTab,
-                                        onSelectTab = { viewModel.selectLibraryTab(it) },
+                                        selectedTab = LibraryTab.ContinueReading,
+                                        onSelectTab = {
+                                            viewModel.replaceRoot(
+                                                if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
+                                            )
+                                        },
                                         onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                         onOpenChapter = { id, path -> viewModel.openReader(id, path) },
                                         onRemoveFromContinueReading = { viewModel.removeReading(it) },
@@ -275,6 +365,40 @@ fun KomaStream() {
                                         libraryStore.isFavorite(providerId, detailPath)
                                     },
                                 )
+                                    RootTab.Favorites -> LibraryScreen(
+                                        libraryState = libraryState,
+                                        strings = strings,
+                                        selectedTab = LibraryTab.Favorites,
+                                        onSelectTab = {
+                                            viewModel.replaceRoot(
+                                                if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
+                                            )
+                                        },
+                                        onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                        onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                        onRemoveFromContinueReading = { viewModel.removeReading(it) },
+                                        onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
+                                    )
+                                    RootTab.Settings -> SettingsScreen(
+                                        strings = strings,
+                                        selectedProviderId = libraryState.selectedProviderId,
+                                        appLanguage = libraryState.appLanguage,
+                                        useDarkTheme = libraryState.useDarkTheme,
+                                        autoJumpToUnread = libraryState.autoJumpToUnread,
+                                        mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
+                                        versionName = BuildConfig.VERSION_NAME,
+                                        updateState = updateController.updateState,
+                                        onLanguageChange = { viewModel.changeLanguage(it) },
+                                        onThemeChange = { viewModel.changeTheme(it) },
+                                        onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
+                                        onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
+                                        onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
+                                        onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
+                                        onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
+                                        onDownloadUpdate = downloadUpdate,
+                                        onInstallUpdate = installUpdate,
+                                        onOpenReleasePage = openReleasePage,
+                                    )
                                 }
                             }
                             is Screen.Detail -> {
@@ -319,13 +443,34 @@ fun KomaStream() {
                                             }
                                             else viewModel.downloadChapter(data.providerId, data.chapterPath)
                                         },
+                                        isRead = canonicalChapterKey(data.providerId, data.chapterPath) in canonicalChapterKeys(data.providerId, libraryState.readChapters),
+                                        onToggleRead = { viewModel.toggleChapterRead(data.providerId, data.chapterPath) },
                                         onOpenChapter = { currentPath, targetPath, markCurrentRead ->
                                             viewModel.openAdjacentChapter(data.providerId, currentPath, targetPath, markCurrentRead)
                                         },
-                                        onOpenManga = { path -> viewModel.openDetail(data.providerId, path) }
+                                        onOpenManga = { path -> viewModel.openDetail(data.providerId, path) },
+                                        onBack = { viewModel.goBack() },
                                     )
                                 } ?: LoadingPlaceholder()
                             }
+                            is Screen.HomeSection -> HomeSectionScreen(
+                                sectionId = screen.sectionId,
+                                feed = homeUiState.feed,
+                                provider = currentProvider,
+                                reading = libraryState.reading,
+                                readChapters = libraryState.readChapters,
+                                chapterProgress = { providerId, chapterPath ->
+                                    libraryStore.getChapterProgress(providerId, chapterPath)
+                                },
+                                strings = strings,
+                                onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                onAddToReading = { viewModel.addToReading(it) },
+                                onToggleFavorite = { viewModel.toggleFavorite(it) },
+                                isFavorite = { providerId, detailPath ->
+                                    libraryStore.isFavorite(providerId, detailPath)
+                                },
+                            )
                             is Screen.Settings -> SettingsScreen(
                                 strings = strings,
                                 selectedProviderId = libraryState.selectedProviderId,
@@ -408,10 +553,69 @@ fun KomaStream() {
     }
 }
 
+private fun komaDarkColorScheme() = darkColorScheme(
+    primary = Color(0xFF7E57FF),
+    onPrimary = Color(0xFFF7F3FF),
+    primaryContainer = Color(0xFF2A194E),
+    onPrimaryContainer = Color(0xFFE5DCFF),
+    secondary = Color(0xFFA48EFF),
+    onSecondary = Color(0xFF140A24),
+    background = Color(0xFF0A0813),
+    onBackground = Color(0xFFF6F2FF),
+    surface = Color(0xFF12101D),
+    onSurface = Color(0xFFF5F2FB),
+    surfaceVariant = Color(0xFF1A1628),
+    onSurfaceVariant = Color(0xFFB4ACC9),
+    outlineVariant = Color(0xFF312A46),
+)
+
+private fun komaLightColorScheme() = lightColorScheme(
+    primary = Color(0xFF5D34E6),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFE9E1FF),
+    onPrimaryContainer = Color(0xFF1C1037),
+    secondary = Color(0xFF6A5C96),
+    onSecondary = Color.White,
+    background = Color(0xFFF7F4FC),
+    onBackground = Color(0xFF191522),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF191522),
+    surfaceVariant = Color(0xFFF0EBF8),
+    onSurfaceVariant = Color(0xFF635C74),
+    outlineVariant = Color(0xFFD9D2E7),
+)
+
+@Composable
+private fun komaTypography(): Typography {
+    val displayFamily = FontFamily(
+        Font(R.font.orbitron_regular, FontWeight.Normal),
+        Font(R.font.orbitron_semibold, FontWeight.SemiBold),
+    )
+    val bodyFamily = FontFamily(
+        Font(R.font.rajdhani_regular, FontWeight.Normal),
+        Font(R.font.rajdhani_semibold, FontWeight.SemiBold),
+    )
+    return Typography(
+        displayLarge = TextStyle(fontFamily = displayFamily, fontWeight = FontWeight.SemiBold, fontSize = 34.sp, letterSpacing = 0.5.sp),
+        displayMedium = TextStyle(fontFamily = displayFamily, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, letterSpacing = 0.4.sp),
+        headlineSmall = TextStyle(fontFamily = displayFamily, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, letterSpacing = 0.2.sp),
+        titleLarge = TextStyle(fontFamily = displayFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, letterSpacing = 1.2.sp),
+        titleMedium = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, letterSpacing = 0.15.sp),
+        titleSmall = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, letterSpacing = 0.15.sp),
+        bodyLarge = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.Normal, fontSize = 18.sp, letterSpacing = 0.15.sp),
+        bodyMedium = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, letterSpacing = 0.15.sp),
+        bodySmall = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp, letterSpacing = 0.15.sp),
+        labelLarge = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, letterSpacing = 0.4.sp),
+        labelMedium = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.5.sp),
+        labelSmall = TextStyle(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 0.5.sp),
+    )
+}
+
 private fun Screen.saveableKey(): String = when (this) {
     is Screen.Root -> "root:${tab.name}"
     is Screen.Detail -> "detail:$providerId:$detailPath"
     is Screen.Reader -> "reader:$providerId:$chapterPath"
+    is Screen.HomeSection -> "home-section:$sectionId"
     Screen.ProviderPicker -> "provider-picker"
     Screen.Settings -> "settings"
 }

@@ -5,9 +5,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -56,106 +60,179 @@ fun CatalogScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                TabRow(selectedTabIndex = catalogMode.ordinal) {
-                    Tab(
-                        selected = catalogMode == CatalogMode.Basic,
-                        onClick = { catalogMode = CatalogMode.Basic },
-                        text = { Text(strings.search) },
-                    )
-                    Tab(
-                        selected = catalogMode == CatalogMode.Advanced,
-                        onClick = { catalogMode = CatalogMode.Advanced },
-                        text = { Text(strings.additionalFilters) },
-                    )
-                }
-                when (catalogMode) {
-                    CatalogMode.Basic -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = onQueryChange,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(strings.searchAvailableMangas) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = onSearch) { Text(strings.search) }
-                                Button(onClick = onClearFilters) { Text(strings.clearFilters) }
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                border = cardBorder(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    TabRow(
+                        selectedTabIndex = catalogMode.ordinal,
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    ) {
+                        Tab(
+                            selected = catalogMode == CatalogMode.Basic,
+                            onClick = { catalogMode = CatalogMode.Basic },
+                            text = { Text(strings.search) },
+                        )
+                        Tab(
+                            selected = catalogMode == CatalogMode.Advanced,
+                            onClick = { catalogMode = CatalogMode.Advanced },
+                            text = { Text(strings.additionalFilters) },
+                        )
+                    }
+                    when (catalogMode) {
+                        CatalogMode.Basic -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = query,
+                                    onValueChange = onQueryChange,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(strings.searchAvailableMangas) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = onSearch) { Text(strings.search) }
+                                    Button(onClick = onClearFilters) { Text(strings.clearFilters) }
+                                }
                             }
                         }
-                    }
 
-                    CatalogMode.Advanced -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            if (categories.isNotEmpty()) {
+                        CatalogMode.Advanced -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                if (categories.isNotEmpty()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Text(strings.categories, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            categories.forEach { category ->
+                                                val selected = selectedCategoryIds.contains(category.id)
+                                                FilterChip(
+                                                    onClick = { onToggleCategory(category.id) },
+                                                    selected = selected,
+                                                    label = { Text(category.name, maxLines = 1) },
+                                                    leadingIcon = if (selected) {
+                                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                                                    } else null,
+                                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                                    border = FilterChipDefaults.filterChipBorder(
+                                                        enabled = true,
+                                                        selected = selected,
+                                                        borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                                    ),
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        containerColor = MaterialTheme.colorScheme.surface,
+                                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (sortOptions.isNotEmpty()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Text(strings.sortBy, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            sortOptions.forEach { option ->
+                                                val selected = option.id == selectedSortOptionId
+                                                FilterChip(
+                                                    onClick = { onSelectSort(option.id) },
+                                                    selected = selected,
+                                                    label = { Text(option.name, maxLines = 1) },
+                                                    leadingIcon = if (selected) {
+                                                        { Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                                                    } else null,
+                                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                                    border = FilterChipDefaults.filterChipBorder(
+                                                        enabled = true,
+                                                        selected = selected,
+                                                        borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                                    ),
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        containerColor = MaterialTheme.colorScheme.surface,
+                                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(strings.categories, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        categories.forEach { category ->
-                                            val selected = selectedCategoryIds.contains(category.id)
-                                            AssistChip(
-                                                onClick = { onToggleCategory(category.id) },
-                                                label = { Text(category.name) },
-                                                colors = AssistChipDefaults.assistChipColors(
-                                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                ),
-                                            )
+                                    Text(strings.additionalFilters, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                    if (statusOptions.isNotEmpty()) {
+                                        Text(strings.state, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            statusOptions.forEach { option ->
+                                                val selected = option.id == selectedStatusOptionId
+                                                FilterChip(
+                                                    onClick = { onSelectStatus(option.id) },
+                                                    selected = selected,
+                                                    label = { Text(option.name, maxLines = 1) },
+                                                    leadingIcon = if (selected) {
+                                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                                                    } else null,
+                                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                                    border = FilterChipDefaults.filterChipBorder(
+                                                        enabled = true,
+                                                        selected = selected,
+                                                        borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                                    ),
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        containerColor = MaterialTheme.colorScheme.surface,
+                                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                                                    ),
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                            }
-                            if (sortOptions.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(strings.sortBy, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        sortOptions.forEach { option ->
-                                            val selected = option.id == selectedSortOptionId
-                                            AssistChip(
-                                                onClick = { onSelectSort(option.id) },
-                                                label = { Text(option.name) },
-                                                colors = AssistChipDefaults.assistChipColors(
-                                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                ),
-                                            )
-                                        }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        FilterChip(
+                                            selected = onlyFavorites,
+                                            onClick = { onToggleOnlyFavorites(!onlyFavorites) },
+                                            label = { Text(strings.favorites) },
+                                            leadingIcon = if (onlyFavorites) {
+                                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                                            } else null,
+                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                            border = FilterChipDefaults.filterChipBorder(
+                                                enabled = true,
+                                                selected = onlyFavorites,
+                                                borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                                selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                            ),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surface,
+                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                                selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                                selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                                            ),
+                                        )
                                     }
                                 }
+                                Button(onClick = onSearch, modifier = Modifier.fillMaxWidth()) { Text(strings.search) }
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(strings.additionalFilters, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                if (statusOptions.isNotEmpty()) {
-                                    Text(strings.state, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        statusOptions.forEach { option ->
-                                            val selected = option.id == selectedStatusOptionId
-                                            AssistChip(
-                                                onClick = { onSelectStatus(option.id) },
-                                                label = { Text(option.name) },
-                                                colors = AssistChipDefaults.assistChipColors(
-                                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Checkbox(checked = onlyFavorites, onCheckedChange = onToggleOnlyFavorites)
-                                    Text(strings.favorites)
-                                }
-                            }
-                            Button(onClick = onSearch, modifier = Modifier.fillMaxWidth()) { Text(strings.search) }
                         }
                     }
                 }
             }
         }
-        item { SectionTitle(strings.search) }
         if (results.isEmpty()) {
             item { EmptyCard(strings.searchEmptyCatalog) }
         } else {

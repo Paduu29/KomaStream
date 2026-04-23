@@ -117,6 +117,13 @@ data class HomeFeedSection(
     val mangas: List<MangaSummary> = emptyList(),
 )
 
+data class HomeSectionPageResult(
+    val type: HomeSectionType,
+    val chapters: List<ChapterSummary> = emptyList(),
+    val mangas: List<MangaSummary> = emptyList(),
+    val hasMore: Boolean = false,
+)
+
 data class HomeFeed(
     val latestUpdates: List<ChapterSummary>,
     val popularChapters: List<ChapterSummary>,

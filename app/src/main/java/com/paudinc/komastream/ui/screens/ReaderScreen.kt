@@ -1,47 +1,88 @@
 package com.paudinc.komastream.ui.screens
 
 import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
-import com.paudinc.komastream.ui.components.LoadingPlaceholder
+import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.OfflineChapterStore
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
-import java.io.File
 import okhttp3.Headers
+import java.io.File
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(
     strings: AppStrings,
@@ -52,18 +93,30 @@ fun ReaderScreen(
     downloadPercent: Int?,
     onPagePositionChanged: (Int) -> Unit,
     onToggleDownload: () -> Unit,
+    isRead: Boolean,
+    onToggleRead: () -> Unit,
     onOpenChapter: (String, String, Boolean) -> Unit,
     onOpenManga: (String) -> Unit,
+    onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val colorScheme = MaterialTheme.colorScheme
+    val useLightReaderChrome = colorScheme.background.luminance() > 0.5f
+    val outerBackgroundTop = if (useLightReaderChrome) colorScheme.surfaceVariant.copy(alpha = 0.55f) else Color(0xFF06040D)
+    val outerBackgroundBottom = if (useLightReaderChrome) colorScheme.background else Color(0xFF06040D)
+    val readerSurfaceColor = if (useLightReaderChrome) colorScheme.surface else Color(0xFF090811)
+    val readerHeaderColor = if (useLightReaderChrome) colorScheme.surfaceContainerHighest else Color(0xFF0B0A13)
     val restoredPageIndex = remember(reader.chapterPath, initialPageIndex, reader.pages.size) {
-        if (reader.pages.isEmpty()) {
-            0
-        } else if (initialPageIndex in reader.pages.indices) {
-            initialPageIndex
-        } else {
-            0
-        }
+        if (reader.pages.isEmpty()) 0 else initialPageIndex.coerceIn(0, reader.pages.lastIndex)
+    }
+    var sliderPage by remember(reader.chapterPath) { mutableIntStateOf(restoredPageIndex) }
+    var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
+    var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
+    val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
+
+    LaunchedEffect(zoomedPageKey) {
+        Log.d(READER_GESTURE_TAG, "zoomedPageKey=$zoomedPageKey chapter=${reader.chapterPath}")
     }
 
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
@@ -75,84 +128,304 @@ fun ReaderScreen(
             .map { index -> (index - 1).coerceAtLeast(0) }
             .filter { pageIndex -> pageIndex in reader.pages.indices }
             .distinctUntilChanged()
-            .collect { pageIndex -> onPagePositionChanged(pageIndex) }
+            .collect { pageIndex ->
+                sliderPage = pageIndex
+                onPagePositionChanged(pageIndex)
+            }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        state = listState,
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        outerBackgroundTop,
+                        colorScheme.background,
+                        outerBackgroundBottom,
+                    )
+                )
+            )
+            .padding(horizontal = 4.dp, vertical = 4.dp),
     ) {
-        item {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(reader.chapterTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (downloadPercent != null) {
-                    Text("${strings.downloading} ${downloadPercent}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                } else if (isDownloaded) {
-                    Text(strings.offlineAvailable, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                }
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(24.dp),
+            color = readerSurfaceColor,
+            border = cardBorder(),
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    userScrollEnabled = zoomedPageKey == null,
+                    contentPadding = PaddingValues(top = 6.dp, bottom = 86.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Button(onClick = { onOpenManga(reader.mangaDetailPath) }) { Text(strings.manga) }
-                    Button(onClick = onToggleDownload) {
-                        Icon(
-                            if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
-                            contentDescription = null
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp),
+                            shape = RoundedCornerShape(22.dp),
+                            color = readerHeaderColor,
+                            border = cardBorder(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier.width(36.dp),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    ReaderHeaderActionButton(
+                                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = strings.back,
+                                        onClick = onBack,
+                                    )
+                                }
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                                ) {
+                                    Text(
+                                        text = reader.mangaTitle,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                    Text(
+                                        text = chapterSubtitle,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.width(72.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    ReaderHeaderActionButton(
+                                        icon = if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                        contentDescription = strings.chapterReadAction,
+                                        onClick = onToggleRead,
+                                    )
+                                    Box {
+                                        ReaderHeaderActionButton(
+                                            icon = Icons.Default.MoreVert,
+                                            contentDescription = strings.settings,
+                                            onClick = { overflowExpanded = true },
+                                        )
+                                        DropdownMenu(
+                                            expanded = overflowExpanded,
+                                            onDismissRequest = { overflowExpanded = false },
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text(strings.manga) },
+                                                onClick = {
+                                                    overflowExpanded = false
+                                                    onOpenManga(reader.mangaDetailPath)
+                                                },
+                                                leadingIcon = {
+                                                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null)
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (isRead) strings.markAllUnread else strings.chapterReadAction
+                                                    )
+                                                },
+                                                onClick = {
+                                                    overflowExpanded = false
+                                                    onToggleRead()
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                                        contentDescription = null,
+                                                    )
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        when {
+                                                            downloadPercent != null -> strings.cancel
+                                                            isDownloaded -> strings.removeDownload
+                                                            else -> strings.download
+                                                        }
+                                                    )
+                                                },
+                                                onClick = {
+                                                    overflowExpanded = false
+                                                    onToggleDownload()
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
+                                                        contentDescription = null,
+                                                    )
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    itemsIndexed(
+                        items = reader.pages,
+                        key = { index, page -> "${reader.chapterPath}:${page.id}:$index" }
+                    ) { _, page ->
+                        val pageKey = "${reader.chapterPath}:${page.id}"
+                        ZoomableReaderPage(
+                            providerId = reader.providerId,
+                            chapterPath = reader.chapterPath,
+                            page = page,
+                            offlineStore = offlineStore,
+                            onZoomStateChanged = { isZoomed ->
+                                zoomedPageKey = when {
+                                    isZoomed -> pageKey
+                                    zoomedPageKey == pageKey -> null
+                                    else -> zoomedPageKey
+                                }
+                            },
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            if (downloadPercent != null) strings.cancel
-                            else if (isDownloaded) strings.removeDownload
-                            else strings.download
+                    }
+                    item {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                            Text(
+                                text = reader.chapterTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    border = cardBorder(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SmallReaderNavButton(
+                                onClick = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, false) } },
+                                enabled = reader.previousChapterPath != null,
+                                icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = strings.previous,
+                            )
+                            Text(
+                                text = "${sliderPage + 1} / ${reader.pages.size}",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            SmallReaderNavButton(
+                                onClick = { reader.nextChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
+                                enabled = reader.nextChapterPath != null,
+                                icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = strings.next,
+                            )
+                        }
+                        Slider(
+                            value = sliderPage.toFloat(),
+                            onValueChange = { sliderPage = it.toInt() },
+                            onValueChangeFinished = {
+                                scope.launch {
+                                    listState.animateScrollToItem((sliderPage + 1).coerceAtMost(reader.pages.size))
+                                }
+                            },
+                            valueRange = 0f..(reader.pages.lastIndex.coerceAtLeast(0)).toFloat(),
+                            modifier = Modifier.height(22.dp),
                         )
                     }
                 }
-                ReaderChapterNavigationButtons(
-                    currentChapterPath = reader.chapterPath,
-                    previousChapterPath = reader.previousChapterPath,
-                    nextChapterPath = reader.nextChapterPath,
-                    strings = strings,
-                    onOpenChapter = onOpenChapter,
-                )
-            }
-        }
-        itemsIndexed(
-            items = reader.pages,
-            key = { index, page -> "${reader.chapterPath}:${page.id}:$index" }
-        ) { _, page ->
-            ZoomableReaderPage(
-                providerId = reader.providerId,
-                chapterPath = reader.chapterPath,
-                page = page,
-                offlineStore = offlineStore,
-            )
-        }
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                HorizontalDivider()
-                Text(
-                    text = reader.chapterTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                ReaderChapterNavigationButtons(
-                    currentChapterPath = reader.chapterPath,
-                    previousChapterPath = reader.previousChapterPath,
-                    nextChapterPath = reader.nextChapterPath,
-                    strings = strings,
-                    onOpenChapter = onOpenChapter,
-                )
             }
         }
     }
 }
+
+@Composable
+private fun ReaderHeaderActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(34.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun SmallReaderNavButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(28.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+private fun readerChapterSubtitle(chapterTitle: String): String {
+    val normalized = chapterTitle.trim()
+    val explicit = Regex("(?i)(chapter|capitulo|capítulo)\\s*([0-9]+(?:\\.[0-9]+)?)").find(normalized)
+    if (explicit != null) return "Chapter ${explicit.groupValues[2]}"
+    val numeric = Regex("([0-9]+(?:\\.[0-9]+)?)").find(normalized)
+    return if (numeric != null) "Chapter ${numeric.groupValues[1]}" else normalized
+}
+
+private const val DOUBLE_TAP_ZOOM_SCALE = 2f
+private const val ZOOM_PAN_SPEED_MULTIPLIER = 1.6f
+private const val READER_GESTURE_TAG = "KomaReaderGesture"
 
 @Composable
 fun ReaderChapterNavigationButtons(
@@ -167,26 +440,28 @@ fun ReaderChapterNavigationButtons(
             onClick = { previousChapterPath?.let { onOpenChapter(currentChapterPath, it, false) } },
             enabled = previousChapterPath != null,
             modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         ) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null)
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.size(4.dp))
             Text(strings.previous)
         }
         Button(
             onClick = { nextChapterPath?.let { onOpenChapter(currentChapterPath, it, true) } },
             enabled = nextChapterPath != null,
             modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                contentColor = MaterialTheme.colorScheme.primary
             )
         ) {
             Text(strings.next)
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.size(4.dp))
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
         }
     }
@@ -197,11 +472,21 @@ fun ZoomableReaderPage(
     providerId: String,
     chapterPath: String,
     page: ReaderPage,
-    offlineStore: OfflineChapterStore
+    offlineStore: OfflineChapterStore,
+    onZoomStateChanged: (Boolean) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val colorScheme = MaterialTheme.colorScheme
+    val useLightReaderChrome = colorScheme.background.luminance() > 0.5f
+    val pageSurfaceColor = if (useLightReaderChrome) colorScheme.surfaceContainerLow else Color.Black
+    val zoomBorderColor = if (useLightReaderChrome) colorScheme.primary else colorScheme.tertiary
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val pageKey = remember(providerId, chapterPath, page.id) { "$providerId:$chapterPath:${page.id}" }
+    LaunchedEffect(scale > 1f) {
+        Log.d(READER_GESTURE_TAG, "zoom-state page=$pageKey zoomed=${scale > 1f} scale=$scale")
+        onZoomStateChanged(scale > 1f)
+    }
 
     val offlineFile = remember(providerId, chapterPath, page.offlineFileName) {
         if (page.offlineFileName.isBlank()) null else {
@@ -212,26 +497,98 @@ fun ZoomableReaderPage(
         }
     }
 
-    val imageModifier = Modifier
+    val pageZoomModifier = Modifier
         .fillMaxWidth()
+        .padding(horizontal = 1.dp)
+        .zIndex(if (scale > 1f) 10f else 0f)
+        .pointerInput(providerId, chapterPath, page.id) {
+            detectTapGestures(
+                onDoubleTap = {
+                    Log.d(READER_GESTURE_TAG, "double-tap page=$pageKey scaleBefore=$scale")
+                    if (scale > 1f) {
+                        scale = 1f
+                        offset = androidx.compose.ui.geometry.Offset.Zero
+                    } else {
+                        scale = DOUBLE_TAP_ZOOM_SCALE
+                        offset = androidx.compose.ui.geometry.Offset.Zero
+                    }
+                }
+            )
+        }
         .graphicsLayer(
             scaleX = scale,
             scaleY = scale,
             translationX = offset.x,
-            translationY = offset.y
+            translationY = offset.y,
+            clip = false,
         )
-        .pointerInput(Unit) {
+        .pointerInput(providerId, chapterPath, page.id) {
+            Log.d(READER_GESTURE_TAG, "attach-raw-gestures page=$pageKey")
             awaitEachGesture {
                 do {
                     val event = awaitPointerEvent()
-                    scale = (scale * event.calculateZoom()).coerceIn(1f, 4f)
-                    if (scale > 1f) {
-                        val pan = event.calculatePan()
-                        offset = androidx.compose.ui.geometry.Offset(offset.x + pan.x, offset.y + pan.y)
-                    } else {
-                        offset = androidx.compose.ui.geometry.Offset.Zero
+                    val pressed = event.changes.filter { it.pressed }
+
+                    when {
+                        pressed.size >= 2 -> {
+                            val currentCentroid = pressed
+                                .map { it.position }
+                                .reduce { acc, position -> acc + position } / pressed.size.toFloat()
+                            val previousCentroid = pressed
+                                .map { it.previousPosition }
+                                .reduce { acc, position -> acc + position } / pressed.size.toFloat()
+                            val currentSpan = pressed
+                                .map { (it.position - currentCentroid).getDistance() }
+                                .average()
+                                .toFloat()
+                            val previousSpan = pressed
+                                .map { (it.previousPosition - previousCentroid).getDistance() }
+                                .average()
+                                .toFloat()
+                            val zoomChange = if (previousSpan > 0f) {
+                                (currentSpan / previousSpan).takeIf { it.isFinite() } ?: 1f
+                            } else {
+                                1f
+                            }
+                            val panChange = pressed
+                                .map { it.positionChange() }
+                                .reduce { acc, delta -> acc + delta } / pressed.size.toFloat()
+                            val updatedScale = (scale * zoomChange).coerceIn(1f, 4f)
+                            val appliedPan = panChange * ZOOM_PAN_SPEED_MULTIPLIER
+                            if (kotlin.math.abs(zoomChange - 1f) > 0.001f ||
+                                panChange != androidx.compose.ui.geometry.Offset.Zero
+                            ) {
+                                Log.d(
+                                    READER_GESTURE_TAG,
+                                    "raw-transform page=$pageKey pointers=${pressed.size} span=$currentSpan zoomChange=$zoomChange pan=(${panChange.x},${panChange.y}) scale=$scale->$updatedScale"
+                                )
+                            }
+                            scale = updatedScale
+                            offset = if (updatedScale > 1f) {
+                                offset + appliedPan
+                            } else {
+                                androidx.compose.ui.geometry.Offset.Zero
+                            }
+                            pressed.forEach { it.consume() }
+                        }
+
+                        pressed.size == 1 && scale > 1f -> {
+                            val change = pressed.first()
+                            val panChange = change.positionChange()
+                            if (panChange != androidx.compose.ui.geometry.Offset.Zero) {
+                                val appliedPan = panChange * ZOOM_PAN_SPEED_MULTIPLIER
+                                Log.d(
+                                    READER_GESTURE_TAG,
+                                    "raw-drag page=$pageKey pan=(${panChange.x},${panChange.y}) scale=$scale"
+                                )
+                                offset += appliedPan
+                                change.consume()
+                            }
+                        }
+
+                        else -> Unit
                     }
-                } while (event.changes.any { it.pressed && it.positionChanged() })
+                } while (event.changes.any { it.pressed })
             }
         }
 
@@ -244,37 +601,45 @@ fun ZoomableReaderPage(
             .crossfade(false)
             .build()
     }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black)
-            .padding(vertical = 4.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (offlineFile != null && offlineFile.exists()) {
-            val bitmap = remember(offlineFile) {
-                BitmapFactory.decodeFile(offlineFile.absolutePath)?.asImageBitmap()
+    Box(modifier = pageZoomModifier) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = pageSurfaceColor,
+            border = if (scale > 1f) BorderStroke(4.dp, zoomBorderColor) else null,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(pageSurfaceColor),
+                contentAlignment = Alignment.Center
+            ) {
+                if (offlineFile != null && offlineFile.exists()) {
+                    val bitmap = remember(offlineFile) {
+                        BitmapFactory.decodeFile(offlineFile.absolutePath)?.asImageBitmap()
+                    }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = "Page ${page.numberLabel}",
+                            modifier = Modifier.fillMaxWidth(),
+                            contentScale = ContentScale.FillWidth,
+                        )
+                    } else {
+                        ReaderNetworkImage(
+                            pageNumberLabel = page.numberLabel,
+                            imageModifier = Modifier.fillMaxWidth(),
+                            imageRequest = imageRequest,
+                        )
+                    }
+                } else {
+                    ReaderNetworkImage(
+                        pageNumberLabel = page.numberLabel,
+                        imageModifier = Modifier.fillMaxWidth(),
+                        imageRequest = imageRequest,
+                    )
+                }
             }
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = "Page ${page.numberLabel}",
-                    modifier = imageModifier,
-                    contentScale = ContentScale.FillWidth,
-                )
-            } else {
-                ReaderNetworkImage(
-                    pageNumberLabel = page.numberLabel,
-                    imageModifier = imageModifier,
-                    imageRequest = imageRequest,
-                )
-            }
-        } else {
-            ReaderNetworkImage(
-                pageNumberLabel = page.numberLabel,
-                imageModifier = imageModifier,
-                imageRequest = imageRequest,
-            )
         }
     }
 }

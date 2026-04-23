@@ -70,6 +70,15 @@ class MangaBallProvider(
         ensureSession()
         val sectionRequests = listOf(
             HomeSectionRequest(
+                id = "featured",
+                title = "Featured",
+                type = HomeSectionType.MANGAS,
+                formValues = listOf(
+                    "search_type" to "getFeatured",
+                    "search_limit" to "12",
+                ),
+            ),
+            HomeSectionRequest(
                 id = "latest-updates",
                 title = "Latest Updates",
                 type = HomeSectionType.CHAPTERS,
@@ -132,9 +141,10 @@ class MangaBallProvider(
         val recentChapterRead = sectionsById.getValue("recent-chapter-read")
         val popularThisSeason = sectionsById.getValue("popular-this-season")
         val sections = listOf(
-            latestUpdates,
+            sectionsById.getValue("featured"),
             sectionsById.getValue("recommended-titles"),
             sectionsById.getValue("top-viewed-titles"),
+            latestUpdates,
             sectionsById.getValue("by-origin"),
             recentChapterRead,
             popularThisSeason,

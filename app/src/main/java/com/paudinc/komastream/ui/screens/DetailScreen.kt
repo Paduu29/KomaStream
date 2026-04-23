@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -137,7 +138,16 @@ fun DetailScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surface,
+                        )
+                    )
+                ),
             state = listState,
         ) {
             item {
@@ -145,33 +155,59 @@ fun DetailScreen(
                     AsyncImage(
                         model = detail.bannerUrl.ifBlank { detail.coverUrl },
                         contentDescription = detail.title,
-                        modifier = Modifier.fillMaxWidth().height(240.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
                         contentScale = ContentScale.Crop,
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(240.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD0B1220))))
+                            .height(300.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color(0x55000000),
+                                        Color(0xCC0A0813),
+                                        MaterialTheme.colorScheme.background,
+                                    )
+                                )
+                            )
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp).align(Alignment.BottomStart),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 24.dp)
+                            .align(Alignment.BottomStart),
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         AsyncImage(
                             model = detail.coverUrl,
                             contentDescription = detail.title,
-                            modifier = Modifier.size(width = 102.dp, height = 146.dp).clip(RoundedCornerShape(20.dp)),
+                            modifier = Modifier
+                                .size(width = 116.dp, height = 168.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .border(cardBorder(), RoundedCornerShape(22.dp)),
                             contentScale = ContentScale.Crop,
                         )
                         Spacer(Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Text(
                                 detail.title,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold
                             )
+                            detail.publicationDate.takeIf { it.isNotBlank() }?.let {
+                                Text(
+                                    text = strings.publishedDate(formatDateEu(it)),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (detail.status.isNotBlank()) {
                                     TagChip(
@@ -191,35 +227,75 @@ fun DetailScreen(
             item {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
+                        FilledTonalButton(
                             onClick = onToggleFavorite,
                             modifier = Modifier.weight(1f),
-                            colors = if (isFavorite) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) else ButtonDefaults.buttonColors()
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isFavorite) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+                                },
+                                contentColor = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            ),
                         ) {
                             Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (isFavorite) strings.removeFromFavorites else strings.favorites)
+                            Text(if (isFavorite) strings.removeFromFavorites else strings.addToFavorites)
                         }
                         if (targetUnreadChapterPath != null) {
-                            Button(onClick = { onReadChapter(targetUnreadChapterPath) }, modifier = Modifier.weight(1f)) {
+                            Button(
+                                onClick = { onReadChapter(targetUnreadChapterPath) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(16.dp),
+                            ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text(strings.read)
+                                Text(strings.continueReadingAction)
                             }
                         }
                     }
-                    Text(detail.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    OutlinedCard(
-                        shape = RoundedCornerShape(20.dp),
-                        border = CardDefaults.outlinedCardBorder().copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+                        border = cardBorder(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                detail.description.ifBlank { strings.noDescription },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        ),
-                        colors = CardDefaults.outlinedCardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                DetailStatCard(
+                                    modifier = Modifier.weight(1f),
+                                    value = detail.chapters.size.toString(),
+                                    label = strings.chapters,
+                                    leadingIcon = Icons.AutoMirrored.Filled.MenuBook,
+                                )
+                                DetailStatCard(
+                                    modifier = Modifier.weight(1f),
+                                    value = unreadCount.toString(),
+                                    label = strings.unread,
+                                    leadingIcon = Icons.Default.BookmarkBorder,
+                                )
+                                DetailStatCard(
+                                    modifier = Modifier.weight(1f),
+                                    value = if (lastOpenedChapterLabel.isNotBlank()) lastOpenedChapterLabel else "--",
+                                    label = strings.latest,
+                                    leadingIcon = Icons.Default.History,
+                                )
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                        border = cardBorder(),
                     ) {
                         Column(
                             modifier = Modifier
@@ -446,91 +522,108 @@ fun DetailScreen(
                 val isDownloaded = isChapterDownloaded(path)
                 val progress = downloadProgress[path]
 
-                Row(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onReadChapter(path) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clickable { onReadChapter(path) },
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = cardBorder(),
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            chapter.chapterLabel,
-                            fontWeight = if (path == lastOpenedChapterPath) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isRead) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (chapter.languageCode.isNotBlank() || chapter.uploaderLabel.isNotBlank()) {
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
-                                chapter.languageCode
-                                    .takeIf { it.isNotBlank() }
-                                    ?.let { code ->
-                                        AssistChip(
-                                            onClick = {},
-                                            enabled = false,
-                                            label = {
-                                                Text(
-                                                    "${chapterLanguageFlag(code)} ${chapter.languageLabel.ifBlank { code.uppercase() }}".trim(),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                        )
-                                    }
-                                chapter.uploaderLabel
-                                    .takeIf { it.isNotBlank() }
-                                    ?.let { uploader ->
-                                        AssistChip(
-                                            onClick = {},
-                                            enabled = false,
-                                            label = {
-                                                Text(
-                                                    uploader,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                        )
-                                    }
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                chapter.chapterLabel,
+                                fontWeight = if (path == lastOpenedChapterPath) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isRead) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (chapter.languageCode.isNotBlank() || chapter.uploaderLabel.isNotBlank()) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(top = 6.dp)
+                                ) {
+                                    chapter.languageCode
+                                        .takeIf { it.isNotBlank() }
+                                        ?.let { code ->
+                                            AssistChip(
+                                                onClick = {},
+                                                enabled = false,
+                                                label = {
+                                                    Text(
+                                                        "${chapterLanguageFlag(code)} ${chapter.languageLabel.ifBlank { code.uppercase() }}".trim(),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                },
+                                                colors = AssistChipDefaults.assistChipColors(
+                                                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                                    disabledLabelColor = MaterialTheme.colorScheme.primary,
+                                                    disabledLeadingIconContentColor = MaterialTheme.colorScheme.primary,
+                                                ),
+                                            )
+                                        }
+                                    chapter.uploaderLabel
+                                        .takeIf { it.isNotBlank() }
+                                        ?.let { uploader ->
+                                            AssistChip(
+                                                onClick = {},
+                                                enabled = false,
+                                                label = {
+                                                    Text(
+                                                        uploader,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                },
+                                                colors = AssistChipDefaults.assistChipColors(
+                                                    disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                ),
+                                            )
+                                        }
+                                }
+                            }
+                            Text(
+                                formatDateEu(chapter.registrationDate),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+                        Box(contentAlignment = Alignment.Center) {
+                            if (progress != null) {
+                                CircularProgressIndicator(
+                                    progress = { progress / 100f },
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 3.dp,
+                                )
+                            }
+                            IconButton(onClick = { onToggleChapterDownload(path, isDownloaded || progress != null) }) {
+                                Icon(
+                                    if (isDownloaded || progress != null) Icons.Default.Delete else Icons.Default.Download,
+                                    contentDescription = when {
+                                        progress != null -> strings.cancel
+                                        isDownloaded -> strings.removeDownload
+                                        else -> strings.download
+                                    },
+                                    tint = if (isDownloaded || progress != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
-                        Text(
-                            formatDateEu(chapter.registrationDate),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
-                Box(contentAlignment = Alignment.Center) {
-                    if (progress != null) {
-                        CircularProgressIndicator(
-                            progress = { progress / 100f },
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 3.dp,
-                        )
-                    }
-                    IconButton(onClick = { onToggleChapterDownload(path, isDownloaded || progress != null) }) {
-                        Icon(
-                            if (isDownloaded || progress != null) Icons.Default.Delete else Icons.Default.Download,
-                            contentDescription = when {
-                                progress != null -> strings.cancel
-                                isDownloaded -> strings.removeDownload
-                                else -> strings.download
-                            },
-                            tint = if (isDownloaded || progress != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                    IconButton(onClick = { onToggleChapterRead(path) }) {
-                        Icon(
-                            if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                            contentDescription = if (isRead) strings.unread else strings.read,
-                            tint = if (isRead) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        IconButton(onClick = { onToggleChapterRead(path) }) {
+                            Icon(
+                                if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                contentDescription = if (isRead) strings.unread else strings.read,
+                                tint = if (isRead) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -637,5 +730,46 @@ private fun periodicityTagColor(periodicity: String): Color {
         "diar" in normalized || "day" in normalized -> Color(0xFFB85C38)
         "irreg" in normalized -> Color(0xFF8A6B2F)
         else -> Color(0xFF5D6B82)
+    }
+}
+
+@Composable
+private fun DetailStatCard(
+    modifier: Modifier = Modifier,
+    value: String,
+    label: String,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+        border = cardBorder(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

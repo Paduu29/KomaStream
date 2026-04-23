@@ -27,14 +27,44 @@ class MangaFireProvider(
     private val readerResolver = context?.let { MangaFireWebViewResolver(it.applicationContext, client) }
 
     override fun fetchHomeFeed(): HomeFeed {
+        val homeDocument = getDocument("/home")
         val latestUpdates = parseCatalogCards(getDocument("/updated")).mapNotNull { card ->
             card.toChapterSummary(id, languageCode)
         }
-        val popularCards = parseCatalogCards(getDocument("/filter?language=$languageCode&sort=most_viewed"))
+        val mostViewedCards = parseCatalogCards(getDocument("/filter?language=$languageCode&sort=most_viewed"))
+        val newReleaseCards = parseHomeSectionCards(homeDocument, "New Release")
+        val featuredCards = parseFeaturedCards(homeDocument)
+        val sections = listOf(
+            HomeFeedSection(
+                id = "featured-carousel",
+                title = "Featured",
+                type = HomeSectionType.MANGAS,
+                mangas = featuredCards,
+            ),
+            HomeFeedSection(
+                id = "most-viewed",
+                title = "Most Viewed",
+                type = HomeSectionType.MANGAS,
+                mangas = mostViewedCards.map { it.toMangaSummary(id) },
+            ),
+            HomeFeedSection(
+                id = "recently-updated",
+                title = "Recently Updated",
+                type = HomeSectionType.CHAPTERS,
+                chapters = latestUpdates,
+            ),
+            HomeFeedSection(
+                id = "new-release",
+                title = "New Release",
+                type = HomeSectionType.MANGAS,
+                mangas = newReleaseCards,
+            ),
+        ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() }
         return HomeFeed(
             latestUpdates = latestUpdates,
-            popularChapters = popularCards.mapNotNull { card -> card.toChapterSummary(id, languageCode) },
-            popularMangas = popularCards.map { it.toMangaSummary(id) },
+            popularChapters = latestUpdates,
+            popularMangas = mostViewedCards.map { it.toMangaSummary(id) },
+            sections = sections,
         )
     }
 
@@ -234,6 +264,52 @@ class MangaFireProvider(
                 periodicity = periodicity,
                 chaptersCount = chaptersCount,
             )
+        }
+
+    private fun parseHomeSectionCards(document: Document, heading: String): List<MangaSummary> =
+        document.select("section.home-swiper")
+            .firstOrNull { section ->
+                section.selectFirst("h2")?.text()?.trim()?.equals(heading, ignoreCase = true) == true
+            }
+            ?.select(".swiper-slide.unit a[href]")
+            .orEmpty()
+            .mapNotNull { item ->
+            val link = item.attr("href").trim()
+            val title = item.selectFirst("span")?.text()?.trim().orEmpty()
+            val coverUrl = item.selectFirst("img")?.absUrl("src").orEmpty()
+            if (link.isBlank() || title.isBlank()) null else {
+                MangaSummary(
+                    providerId = id,
+                    title = title,
+                    detailPath = normalizePath(link),
+                    coverUrl = coverUrl,
+                )
+            }
+        }
+
+    private fun parseFeaturedCards(document: Document): List<MangaSummary> =
+        document.select("#top-trending .swiper-slide .swiper-inner").mapNotNull { item ->
+            val link = item.selectFirst("a.unit[href]")?.attr("href")?.trim().orEmpty()
+            val title = item.selectFirst(".info .above a.unit")?.text()?.trim().orEmpty()
+            val coverUrl = item.selectFirst("a.poster img")?.absUrl("src").orEmpty()
+            val status = item.selectFirst(".info .above span")?.text()?.trim().orEmpty()
+            val latest = item.selectFirst(".info .below p")?.text()?.trim().orEmpty()
+            val genres = item.select(".info .below div a")
+                .map { it.text().trim() }
+                .filter { it.isNotBlank() }
+                .take(3)
+                .joinToString(" · ")
+            if (link.isBlank() || title.isBlank()) null else {
+                MangaSummary(
+                    providerId = id,
+                    title = title,
+                    detailPath = normalizePath(link),
+                    coverUrl = coverUrl,
+                    status = status,
+                    periodicity = genres,
+                    latestPublication = latest,
+                )
+            }
         }
 
     private fun parseChapterList(html: String): List<MangaChapter> {

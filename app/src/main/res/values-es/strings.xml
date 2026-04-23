@@ -4,7 +4,7 @@
     <string name="home">Inicio</string>
     <string name="library">Biblioteca</string>
     <string name="catalog">Catálogo</string>
-    <string name="settings">Configuración</string>
+    <string name="settings">Ajustes</string>
     <string name="manga">Manga</string>
     <string name="reader">Lector</string>
     <string name="back">Atrás</string>
@@ -69,8 +69,8 @@
     <string name="backup_description">La exportación guarda un archivo JSON. La importación restaura desde un archivo JSON seleccionado.</string>
     <string name="backup_exporting">Exportando copia</string>
     <string name="backup_importing">Importando copia</string>
-    <string name="backup_export_success">La exportación de la copia se completó correctamente.</string>
-    <string name="backup_import_success">La importación de la copia se completó correctamente.</string>
+    <string name="backup_export_success">La copia de seguridad fue exportada correctamente.</string>
+    <string name="backup_import_success">La copia de seguridad fue importada correctamente.</string>
     <string name="backup_import_error">No se pudo importar la copia.</string>
     <string name="ok">Aceptar</string>
     <string name="updates">Actualizaciones</string>
@@ -110,7 +110,7 @@
     <string name="auto_jump_to_unread_enabled">Abre el manga en el siguiente capítulo no leído cuando corresponda.</string>
     <string name="auto_jump_to_unread_disabled">Abre siempre el manga al inicio de la pantalla de detalle.</string>
     <string name="mangaball_adult_content">Contenido 18+ de MangaBall</string>
-    <string name="mangaball_adult_content_description">Activa o desactiva el contenido para adultos de MangaBall en esta app. Permanece desactivado por defecto.</string>
+    <string name="mangaball_adult_content_description">Activa o desactiva el contenido para adultos de MangaBall. Permanece desactivado por defecto.</string>
     <string name="mangaball_adult_content_warning_title">¿Activar contenido 18+ de MangaBall?</string>
     <string name="mangaball_adult_content_warning_message">Esto puede mostrar material para adultos o explícito de MangaBall. Actívalo solo si legalmente puedes ver este contenido y quieres que aparezca dentro de la app.</string>
     <string name="enable_adult_content">Activar</string>
