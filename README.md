@@ -1,227 +1,137 @@
-# KomaStream
+<p style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+  <img src="docs/readme/logo.png" width="104" alt="KomaStream logo">
+  <strong style="font-size: 32px;">KomaStream</strong>
+</p>
 
-KomaStream is an Android manga reader client designed for browsing, tracking, and reading manga content from third-party services.
+<p align="center">
+  <img src="docs/readme/banner.png" alt="KomaStream banner">
+</p>
 
-The application functions as a user-controlled interface and does not host, upload, or distribute any copyrighted content.
+<p align="center">
+  Android manga reader client focused on a clean native UI, local-first tracking, and user-controlled provider access.
+</p>
 
-Copyright (C) 2026 Paduu29
+<p align="center">
+  <a href="https://github.com/Paduu29/KomaStream/releases">Download latest release</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#building-from-source">Build from source</a>
+  ·
+  <a href="#legal-and-usage">Legal and usage</a>
+</p>
 
-## Overview
+KomaStream is an Android app for browsing catalogs, tracking progress, and reading chapters from third-party services directly on your device. The project is built as a client application only: it does not host, upload, mirror, or distribute manga content.
 
-KomaStream provides a native Android interface for:
+> The screenshots below use sanitized or low-risk examples to avoid exposing unnecessary provider details or third-party artwork in the repository.
 
-- browsing manga catalogs
-- searching and filtering content
-- viewing manga details and chapter lists
-- reading chapters within the app
-- saving favorites and reading progress locally
-- exporting and importing local backups
+## Screenshots
+
+| Home | Catalog | Provider picker |
+| --- | --- | --- |
+| ![Sanitized home screen](docs/readme/home-sanitized.png) | ![Catalog search screen](docs/readme/catalog-search.png) | ![Provider picker screen](docs/readme/provider-picker.png) |
+| Detail | Chapters | Reader |
+| ![Sanitized detail screen](docs/readme/details-sanitized.png) | ![Chapter list screen](docs/readme/chapters-list.png) | ![Sanitized reader screen](docs/readme/reader-sanitized.png) |
+| Library empty | Library active | Favorites empty |
+| ![Empty library screen](docs/readme/library-empty.png) | ![Active library screen](docs/readme/library-active.png) | ![Empty favorites screen](docs/readme/favorites-empty.png) |
+| Favorites active | Settings |  |
+| ![Active favorites screen](docs/readme/favorites-active.png) | ![Settings screen](docs/readme/settings.png) |  |
 
 ## Features
 
-- Native Android app written in Kotlin  
-- Jetpack Compose UI  
-- Local favorites, history, and chapter progress  
-- Backup export and import  
-- Light and dark theme support  
-- English and Spanish localization  
-- In-app updater for GitHub release builds  
+- Native Android app written in Kotlin
+- Jetpack Compose UI with light and dark themes
+- Browse provider catalogs with search and filtering
+- Track favorites, library entries, history, and chapter progress locally
+- Backup export and import for local data
+- English and Spanish localization
+- In-app updater for GitHub release builds
+- No account system and no project-operated backend
 
 ## How It Works
 
-KomaStream acts as a client interface that retrieves data from third-party services at the user's request.
+KomaStream acts as a user-controlled client.
 
-The app itself:
-
-- does not host or store manga content on external servers  
-- does not operate as a content provider or distributor  
-- does not control or modify third-party content sources  
-
-All requests are made directly from the user’s device to external services.
-
-The application stores only local user data, including:
-
-- favorites  
-- reading history  
-- reading progress  
-- app preferences  
-
-## Important Usage Notice
-
-KomaStream is intended to be used only with content sources that the user has the legal right to access.
-
-The developer of this project:
-
-- does not provide or maintain any content sources  
-- does not endorse or promote access to unauthorized or infringing material  
-- is not responsible for how third-party services are used within the app  
-
-Users are solely responsible for ensuring that their use of any third-party service complies with:
-
-- applicable copyright laws  
-- local regulations  
-- the terms of service of the respective content providers  
-
-## Legal Disclaimer
-
-This project is provided as an open-source software client.
-
-- No copyrighted material is included in this repository  
-- No content is redistributed by the project itself  
-- All trademarks and copyrights belong to their respective owners  
-
-This repository is intended for software development and educational purposes only.
-
-Nothing in this project should be interpreted as:
-
-- legal advice  
-- authorization to access protected content  
-- endorsement of any specific third-party service  
-
-If you are a rights holder and have concerns regarding this project, please open an issue or contact the repository owner with relevant details.
-
-## Privacy
-
-KomaStream does not require user accounts.
-
-All user data is stored locally on the device.  
-The app does not operate backend servers or collect personal data.
-
-Network requests are performed directly between the user’s device and third-party services.
+- Content requests are made from the user device to the selected third-party service
+- The app does not run content servers or proxy manga files through project infrastructure
+- The repository does not ship copyrighted manga content
+- User data such as favorites, reading history, progress, and preferences stays on-device
 
 ## Tech Stack
 
-- Kotlin  
-- Android SDK  
-- Jetpack Compose  
-- OkHttp  
-- Jsoup  
-- WorkManager  
+- Kotlin
+- Android SDK
+- Jetpack Compose
+- OkHttp
+- Jsoup
+- WorkManager
 
-## Building
+## Requirements
 
-### Requirements
+### App runtime
 
-- Android Studio with JDK 17 support  
-- Android SDK configured locally  
+- Android 7.0 or newer (`minSdk 24`)
 
-### Debug build
+### Development
 
-```bash
-sh gradlew :app:assembleDebug
-```
-# Contributing & Setup
+- Android Studio
+- JDK 17
+- Android SDK installed locally
 
-## Getting Started
+## Building From Source
 
-### Clone the Repository
+### Clone
 
 ```bash
 git clone https://github.com/Paduu29/KomaStream.git
 cd KomaStream
 ```
 
-### Open in Android Studio
-
-1. Open Android Studio  
-2. Select **Open**  
-3. Choose the cloned `KomaStream` directory  
-4. Let Gradle sync complete  
-
----
-
-## Building the App
-
-### Debug Build (CLI)
+### Build a debug APK
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-The generated APK will be located at:
+Output:
 
-```
+```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Run on Device / Emulator
+### Open in Android Studio
 
-- Connect an Android device with USB debugging enabled  
-  **or**
-- Start an emulator via Android Studio  
-
-Then press **Run** in Android Studio.
-
----
+1. Open Android Studio.
+2. Select **Open**.
+3. Choose the `KomaStream` project directory.
+4. Let Gradle sync finish.
+5. Run the app on an emulator or a physical device.
 
 ## Contributing
 
-Contributions are welcome, but must align with the project's scope and legal constraints.
+Contributions are welcome if they stay within the project scope and legal constraints.
 
-### Guidelines
+- Keep changes focused and well-scoped
+- Follow the existing code style and architecture
+- Include screenshots for UI changes where useful
+- Test changes before opening a pull request
+- Do not add or promote unauthorized or infringing content sources
 
-- Do not add or integrate sources that provide unauthorized or infringing content  
-- Keep changes focused and well-scoped  
-- Follow existing code style and architecture  
-- Test changes before submitting  
+## Privacy
 
-### Creating a Pull Request
+KomaStream does not require user accounts and does not operate its own backend. App data is stored locally on the device, and network traffic goes directly from the device to the selected third-party service.
 
-1. Fork the repository  
-2. Create a new branch:
+## Legal and Usage
 
-```bash
-git checkout -b feature/your-feature-name
-```
+KomaStream is open-source client software. It is intended to be used only with content sources that the user is legally allowed to access.
 
-3. Make your changes  
-4. Commit with clear messages:
+- No copyrighted manga content is included in this repository
+- The project does not redistribute third-party content
+- All trademarks and copyrights belong to their respective owners
+- Nothing in this repository should be interpreted as legal advice or authorization to access protected content unlawfully
 
-```bash
-git commit -m "Add: short description of changes"
-```
-
-5. Push to your fork:
-
-```bash
-git push origin feature/your-feature-name
-```
-
-6. Open a Pull Request on GitHub  
-
-### Pull Request Requirements
-
-- Clear description of what was changed and why  
-- Screenshots or recordings for UI changes (if applicable)  
-- No unrelated changes bundled together  
-- Must not introduce legal or policy risks  
-
----
-
-## Reporting Issues
-
-If you encounter bugs or have suggestions:
-
-- Open an issue on GitHub  
-- Provide clear steps to reproduce  
-- Include logs or screenshots if relevant  
-
----
-
-## Code of Conduct
-
-By contributing, you agree to:
-
-- Act respectfully and constructively  
-- Avoid submitting harmful, illegal, or policy-violating code  
-- Follow project guidelines and maintain code quality  
-
-## Project Status
-
-KomaStream is an actively maintained personal Android project.
-Functionality and integrations may change over time.
+Users are responsible for complying with applicable laws, local regulations, and the terms of service of any third-party service they choose to use.
 
 ## License
 
 This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
-
