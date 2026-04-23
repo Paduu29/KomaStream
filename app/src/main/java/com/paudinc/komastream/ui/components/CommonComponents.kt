@@ -1,6 +1,7 @@
 package com.paudinc.komastream.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +62,10 @@ fun MangaCoverCard(
                     },
                 ),
             shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+            ),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
         ) {
             if (constrained) {
                 Column {
@@ -71,11 +80,20 @@ fun MangaCoverCard(
                             placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
                             error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                         )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, Color(0xCC0B0911)),
+                                    )
+                                )
+                        )
                         manga.status.takeIf { it.isNotBlank() }?.let { status ->
                             TagChip(
                                 label = strings.localizedStatus(status),
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                                labelColor = MaterialTheme.colorScheme.primary,
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                labelColor = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.padding(10.dp),
                             )
                         }
@@ -123,23 +141,23 @@ fun MangaCoverCard(
                 }
             } else {
                 Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
                     AsyncImage(
                         model = manga.coverUrl,
                         contentDescription = manga.title,
                         modifier = Modifier
-                            .size(width = 100.dp, height = 140.dp)
+                            .size(width = 84.dp, height = 116.dp)
                             .clip(RoundedCornerShape(16.dp)),
                         contentScale = ContentScale.Crop,
                         placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
                         error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                     )
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
                             manga.title,
@@ -167,6 +185,15 @@ fun MangaCoverCard(
                                 )
                             }
                         }
+                        manga.chaptersCount.takeIf { it.isNotBlank() }?.let { chapters ->
+                            Text(
+                                text = "${strings.chapters} $chapters",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         manga.periodicity.takeIf { it.isNotBlank() }?.let {
                             InfoRow(strings.periodicity, it)
                         }
@@ -178,6 +205,8 @@ fun MangaCoverCard(
                                 it,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -248,6 +277,10 @@ fun ContinueReadingCard(
                     onLongClick = { menuExpanded = true },
                 ),
             shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+            ),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
         ) {
             Row(
                 modifier = Modifier
@@ -289,12 +322,25 @@ fun ContinueReadingCard(
                             onClick = onResume,
                             enabled = manga.lastChapterPath.isNotBlank(),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                contentColor = MaterialTheme.colorScheme.primary,
+                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                            ),
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
                             Text(strings.resume, maxLines = 1)
                         }
-                        IconButton(onClick = onRemove) {
+                        FilledTonalIconButton(
+                            onClick = onRemove,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        ) {
                             Icon(Icons.Default.Delete, contentDescription = strings.removeFromContinueReading)
                         }
                     }
@@ -346,6 +392,10 @@ fun FavoriteMangaCard(
             .border(cardBorder(), RoundedCornerShape(24.dp))
             .clickable(onClick = onOpen),
         shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
     ) {
         Row(
             modifier = Modifier
@@ -384,11 +434,16 @@ fun FavoriteMangaCard(
                     )
                 }
             }
-            IconButton(onClick = onRemove) {
+            FilledTonalIconButton(
+                onClick = onRemove,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = strings.removeFromFavorites,
-                    tint = MaterialTheme.colorScheme.error,
                 )
             }
         }
@@ -418,6 +473,10 @@ fun ChapterRow(
                     },
                 ),
             shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f),
+            ),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
         ) {
             Row(
                 modifier = Modifier
@@ -456,8 +515,8 @@ fun ChapterRow(
                     )
                     TagChip(
                         label = item.chapterLabel,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        labelColor = MaterialTheme.colorScheme.primary,
                     )
                     if (item.registrationLabel.isNotBlank()) {
                         Text(
@@ -473,7 +532,11 @@ fun ChapterRow(
                 FilledTonalButton(
                     onClick = { onOpenChapter(item.providerId, item.chapterPath) },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -545,7 +608,9 @@ fun LoadingPlaceholder(message: String) {
 fun EmptyCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        border = cardBorder(),
+        shape = RoundedCornerShape(24.dp),
     ) {
         Box(modifier = Modifier.padding(24.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -563,11 +628,11 @@ fun TagChip(
     Surface(
         modifier = modifier,
         color = containerColor,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelSmall,
             color = labelColor,
             fontWeight = FontWeight.Bold,
@@ -577,7 +642,12 @@ fun TagChip(
 
 @Composable
 fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+    Text(
+        text,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(vertical = 8.dp),
+    )
 }
 
 @Composable
@@ -723,4 +793,4 @@ fun BackupOperationDialog(
 }
 
 @Composable
-fun cardBorder() = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+fun cardBorder() = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f))

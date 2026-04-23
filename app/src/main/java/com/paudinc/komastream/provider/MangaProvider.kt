@@ -10,6 +10,7 @@ interface MangaProvider {
     val logoUrl: String
 
     fun fetchHomeFeed(): HomeFeed
+    fun fetchHomeSectionPage(sectionId: String, page: Int): HomeSectionPageResult? = null
     fun fetchCatalogFilterOptions(): CatalogFilterOptions
     fun searchCatalog(
         query: String,

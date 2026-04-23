@@ -7,6 +7,9 @@ import com.paudinc.komastream.data.model.CategoryOption
 import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.FilterOption
 import com.paudinc.komastream.data.model.HomeFeed
+import com.paudinc.komastream.data.model.HomeSectionPageResult
+import com.paudinc.komastream.data.model.HomeFeedSection
+import com.paudinc.komastream.data.model.HomeSectionType
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.MangaSummary
@@ -35,18 +38,76 @@ class LeerMangaEspProvider : MangaProvider {
     private val client = OkHttpClient()
 
     override fun fetchHomeFeed(): HomeFeed {
-        val latestItems = JSONArray(getText("/api/latest_chapters_with_dates/"))
-        val latestUpdates = buildList(latestItems.length()) {
-            for (index in 0 until latestItems.length()) {
-                add(latestItems.getJSONObject(index).toLatestChapterSummary())
+        val homeDocument = getDocument("/")
+        val featuredMangas = parseFeaturedMangas(homeDocument)
+        val popularMangas = parseHomeMangaSection(homeDocument, "populares-grid")
+        val latestUpdates = parseHomeChapterSection(homeDocument, "capitulos-recientes-grid")
+        val latestAdded = parseHomeMangaSection(homeDocument, "ultimos-anadidos")
+        val fallbackLatestUpdates = latestUpdates.ifEmpty {
+            val latestItems = JSONArray(getText("/api/latest_chapters_with_dates/"))
+            buildList(latestItems.length()) {
+                for (index in 0 until latestItems.length()) {
+                    add(latestItems.getJSONObject(index).toLatestChapterSummary())
+                }
             }
         }
-        val popularMangas = fetchCatalogPage(page = 1, query = "", categoryIds = emptyList(), take = 20)
+        val fallbackPopularMangas = popularMangas.ifEmpty {
+            fetchCatalogPage(page = 1, query = "", categoryIds = emptyList(), take = 20).items
+        }
         return HomeFeed(
-            latestUpdates = latestUpdates,
-            popularChapters = latestUpdates,
-            popularMangas = popularMangas.items,
+            latestUpdates = fallbackLatestUpdates,
+            popularChapters = fallbackLatestUpdates,
+            popularMangas = fallbackPopularMangas,
+            sections = listOf(
+                HomeFeedSection(
+                    id = "featured",
+                    title = "Featured",
+                    type = HomeSectionType.MANGAS,
+                    mangas = featuredMangas,
+                ),
+                HomeFeedSection(
+                    id = "populares",
+                    title = "Populares",
+                    type = HomeSectionType.MANGAS,
+                    mangas = fallbackPopularMangas,
+                ),
+                HomeFeedSection(
+                    id = "capitulos-recientes",
+                    title = "Capítulos Recientes",
+                    type = HomeSectionType.CHAPTERS,
+                    chapters = fallbackLatestUpdates,
+                ),
+                HomeFeedSection(
+                    id = "ultimos-anadidos",
+                    title = "Ultimos Añadidos",
+                    type = HomeSectionType.MANGAS,
+                    mangas = latestAdded,
+                ),
+            ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() },
         )
+    }
+
+    override fun fetchHomeSectionPage(sectionId: String, page: Int): HomeSectionPageResult? {
+        if (page < 1) return null
+        return when (sectionId) {
+            "populares" -> {
+                val result = fetchCatalogPage(page = page, query = "", categoryIds = emptyList(), take = HOME_SECTION_PAGE_SIZE)
+                HomeSectionPageResult(
+                    type = HomeSectionType.MANGAS,
+                    mangas = result.items,
+                    hasMore = result.hasMore,
+                )
+            }
+            "capitulos-recientes" -> {
+                val chapters = fetchLatestChapterPage(page = page, take = HOME_SECTION_PAGE_SIZE)
+                HomeSectionPageResult(
+                    type = HomeSectionType.CHAPTERS,
+                    chapters = chapters,
+                    hasMore = chapters.size >= HOME_SECTION_PAGE_SIZE,
+                )
+            }
+            else -> null
+        }
     }
 
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {
@@ -190,6 +251,28 @@ class LeerMangaEspProvider : MangaProvider {
         )
     }
 
+    private fun fetchLatestChapterPage(page: Int, take: Int): List<ChapterSummary> {
+        val url = "$baseUrl/api/latest_chapters_with_dates/".toHttpUrl().newBuilder()
+            .addQueryParameter("page", page.toString())
+            .addQueryParameter("page_size", take.coerceAtLeast(1).toString())
+            .build()
+        val raw = getText(url.toString()).trim()
+        if (raw.isBlank()) return emptyList()
+        val items = when {
+            raw.startsWith("[") -> JSONArray(raw)
+            raw.startsWith("{") -> JSONObject(raw).optJSONArray("resultados")
+                ?: JSONObject(raw).optJSONArray("results")
+                ?: JSONObject(raw).optJSONArray("data")
+                ?: JSONArray()
+            else -> JSONArray()
+        }
+        return buildList(items.length()) {
+            for (index in 0 until items.length()) {
+                add(items.getJSONObject(index).toLatestChapterSummary())
+            }
+        }
+    }
+
     private fun fetchAllChapters(detailPath: String): List<MangaChapter> {
         val chapters = mutableListOf<MangaChapter>()
         var nextPath: String? = detailPath
@@ -263,6 +346,84 @@ class LeerMangaEspProvider : MangaProvider {
         )
     }
 
+    private fun parseFeaturedMangas(document: Document): List<MangaSummary> {
+        return document.select(".carousel-container-principal .carousel .slide a[href]")
+            .mapNotNull { link ->
+                val detailPath = normalizePath(link.attr("href"))
+                val title = link.selectFirst(".slide-content h3")?.text()?.trim().orEmpty()
+                val coverUrl = link.selectFirst("img")?.let(::imageUrlFromElement).orEmpty()
+                val demography = link.selectFirst(".demografia-tag")?.text()?.trim().orEmpty()
+                val genres = link.select(".genre-tag")
+                    .map { it.text().trim() }
+                    .filter { it.isNotBlank() }
+                    .take(4)
+                    .joinToString(" · ")
+                if (detailPath.isBlank() || title.isBlank()) return@mapNotNull null
+                MangaSummary(
+                    providerId = id,
+                    title = title,
+                    detailPath = detailPath,
+                    coverUrl = coverUrl,
+                    status = demography,
+                    periodicity = genres,
+                )
+            }
+            .distinctBy { it.detailPath }
+    }
+
+    private fun parseHomeMangaSection(document: Document, sectionId: String): List<MangaSummary> {
+        return document.select("#$sectionId .manga-item").mapNotNull { item ->
+            val link = item.selectFirst("a[href^=/manga/]") ?: return@mapNotNull null
+            val detailPath = normalizePath(link.attr("href"))
+            val title = item.selectFirst(".manga-title")?.text()?.trim().orEmpty()
+            val coverUrl = item.selectFirst("img")?.let(::imageUrlFromElement).orEmpty()
+            val demography = item.selectFirst(".manga-demografia")?.text()?.trim().orEmpty()
+            val type = item.selectFirst(".manga-type")?.text()?.trim()?.replaceFirstChar { it.uppercase(Locale.ROOT) }.orEmpty()
+            val latestPublication = item.selectFirst(".chapter-button")?.text()?.trim().orEmpty()
+            if (detailPath.isBlank() || title.isBlank()) return@mapNotNull null
+            MangaSummary(
+                providerId = id,
+                title = title,
+                detailPath = detailPath,
+                coverUrl = coverUrl,
+                status = demography,
+                periodicity = type,
+                latestPublication = latestPublication,
+            )
+        }
+    }
+
+    private fun parseHomeChapterSection(document: Document, sectionId: String): List<ChapterSummary> {
+        return document.select("#$sectionId .manga-item").mapNotNull { item ->
+            val mangaLink = item.selectFirst("a[href^=/manga/]") ?: return@mapNotNull null
+            val chapterLink = item.selectFirst(".chapter-button[href^=/leer-m/]") ?: return@mapNotNull null
+            val mangaTitle = item.selectFirst(".manga-title")?.text()?.trim().orEmpty()
+            val mangaPath = normalizePath(mangaLink.attr("href"))
+            val chapterPath = normalizePath(chapterLink.attr("href"))
+            val coverUrl = item.selectFirst("img")?.let(::imageUrlFromElement).orEmpty()
+            val chapterLabel = chapterLink.text().trim()
+            if (mangaTitle.isBlank() || mangaPath.isBlank() || chapterPath.isBlank()) return@mapNotNull null
+            ChapterSummary(
+                providerId = id,
+                mangaTitle = mangaTitle,
+                chapterLabel = chapterLabel,
+                chapterNumberUrl = chapterPath.trim('/').substringAfterLast('/'),
+                chapterId = chapterPath.trim('/').substringAfterLast('/'),
+                mangaPath = mangaPath,
+                chapterPath = chapterPath,
+                coverUrl = coverUrl,
+                registrationLabel = "",
+            )
+        }
+    }
+
+    private fun imageUrlFromElement(element: org.jsoup.nodes.Element): String {
+        return element.absUrl("data-src")
+            .ifBlank { resolveAbsoluteUrl(element.attr("data-src")) }
+            .ifBlank { element.absUrl("src") }
+            .ifBlank { resolveAbsoluteUrl(element.attr("src")) }
+    }
+
     private fun portadaUrl(value: String): String {
         if (value.isBlank()) return ""
         return if (value.startsWith("http://") || value.startsWith("https://")) value
@@ -323,6 +484,7 @@ class LeerMangaEspProvider : MangaProvider {
     }
 
     private companion object {
+        private const val HOME_SECTION_PAGE_SIZE = 20
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }

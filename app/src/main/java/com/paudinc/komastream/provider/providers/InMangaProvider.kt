@@ -34,7 +34,31 @@ class InMangaProvider : MangaProvider {
         val latest = parseChapterCards(getText("/chapter/getRecentChapters", "/", ajax = true))
         val popularChapters = parseChapterCards(getText("/chapter/getMostViewedChapters", "/", ajax = true))
         val popularMangas = parsePopularMangas(getText("/manga/getMostViewedMangas", "/", ajax = true))
-        return HomeFeed(latest, popularChapters, popularMangas)
+        return HomeFeed(
+            latestUpdates = latest,
+            popularChapters = popularChapters,
+            popularMangas = popularMangas,
+            sections = listOf(
+                HomeFeedSection(
+                    id = "ultimas-actualizaciones",
+                    title = "Últimas Actualizaciones",
+                    type = HomeSectionType.CHAPTERS,
+                    chapters = latest,
+                ),
+                HomeFeedSection(
+                    id = "capitulos-populares",
+                    title = "Capítulos Populares",
+                    type = HomeSectionType.CHAPTERS,
+                    chapters = popularChapters,
+                ),
+                HomeFeedSection(
+                    id = "mangas-populares",
+                    title = "Mangas Populares",
+                    type = HomeSectionType.MANGAS,
+                    mangas = popularMangas,
+                ),
+            ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() },
+        )
     }
 
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {

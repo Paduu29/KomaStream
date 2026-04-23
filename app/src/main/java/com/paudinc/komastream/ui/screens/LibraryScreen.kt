@@ -1,8 +1,6 @@
 package com.paudinc.komastream.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +15,6 @@ import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.ui.navigation.LibraryTab
 import com.paudinc.komastream.utils.AppStrings
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LibraryScreen(
     libraryState: LibraryState,
@@ -36,21 +33,6 @@ fun LibraryScreen(
     ) {
         item {
             SectionTitle(strings.library)
-        }
-        item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LibraryTab.entries.forEach { tab ->
-                    val selected = selectedTab == tab
-                    AssistChip(
-                        onClick = { onSelectTab(tab) },
-                        label = { Text(if (tab == LibraryTab.ContinueReading) strings.continueReading else strings.favorites) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            labelColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    )
-                }
-            }
         }
         when (selectedTab) {
             LibraryTab.Favorites -> {
