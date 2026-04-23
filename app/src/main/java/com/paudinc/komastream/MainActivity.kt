@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity() {
         val appLanguage = prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name
         val languageTag = when (appLanguage) {
             AppLanguage.ES.name -> "es"
+            AppLanguage.DE.name -> "de"
             else -> "en"
         }
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))

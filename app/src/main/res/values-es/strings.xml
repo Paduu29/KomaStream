@@ -119,6 +119,7 @@
     <string name="off">Desactivado</string>
     <string name="english">Inglés</string>
     <string name="spanish">Español</string>
+    <string name="german">Alemán</string>
     <string name="multilingual">Multilenguaje</string>
     <string name="no_description">No hay descripción disponible.</string>
     <string name="add_manga_hint">Agrega mangas desde el catálogo o la pantalla de detalle.</string>

@@ -62,10 +62,7 @@ fun HomeSectionScreen(
     var isLoadingMore by remember(sectionId) { mutableStateOf(false) }
     var hasMore by remember(sectionId) {
         mutableStateOf(
-            provider.id == "leermangaesp-es" && when (sectionId) {
-                "populares", "capitulos-recientes" -> true
-                else -> false
-            }
+            providerSupportsHomePaging(provider.id, sectionId)
         )
     }
 
@@ -75,9 +72,10 @@ fun HomeSectionScreen(
         chapterItems.clear()
         chapterItems.addAll(section.chapters)
         currentPage = 1
-        hasMore = provider.id == "leermangaesp-es" && when (sectionId) {
-            "populares" -> section.mangas.size >= 20
-            "capitulos-recientes" -> section.chapters.size >= 20
+        hasMore = when {
+            provider.id == "leermangaesp-es" && sectionId == "populares" -> section.mangas.size >= 20
+            provider.id == "leermangaesp-es" && sectionId == "capitulos-recientes" -> section.chapters.size >= 20
+            provider.id == "mangatube-de" && sectionId == "latest-updates" -> section.chapters.size >= 40
             else -> false
         }
     }
@@ -227,3 +225,10 @@ fun HomeSectionScreen(
         }
     }
 }
+
+private fun providerSupportsHomePaging(providerId: String, sectionId: String): Boolean =
+    when (providerId) {
+        "leermangaesp-es" -> sectionId == "populares" || sectionId == "capitulos-recientes"
+        "mangatube-de" -> sectionId == "latest-updates"
+        else -> false
+    }
