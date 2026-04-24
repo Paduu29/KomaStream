@@ -105,7 +105,14 @@ jobs:
           for i in {1..30}; do
             RESPONSE=$(curl --silent --request GET \
               --url "https://www.virustotal.com/api/v3/analyses/$ANALYSIS_ID" \
-              --header "x-apikey: ${{ secrets.VT_API_KEY }}")fi
+              --header "x-apikey: ${{ secrets.VT_API_KEY }}")
+          
+            if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
+              echo "VirusTotal API error:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+            
             STATUS=$(echo "$RESPONSE" | jq -r '.data.attributes.status')
 
             if [ "$STATUS" = "completed" ]; then
