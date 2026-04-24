@@ -127,7 +127,7 @@ fun HomeScreen(
             item(key = "header:${section.id}") {
                 HomeRailHeader(
                     title = homeSectionTitle(section, strings),
-                    actionLabel = "View all",
+                    actionLabel = strings.viewAll,
                     onAction = { onOpenSection(section.id) },
                 )
             }
@@ -228,7 +228,7 @@ private fun FeaturedCarousel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "View all",
+                    text = strings.viewAll,
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -420,17 +420,27 @@ private fun HomeRailHeader(
 }
 
 internal fun homeSectionTitle(section: HomeFeedSection, strings: AppStrings): String = when (section.id) {
+    "featured", "featured-carousel" -> strings.featured
+    "latest-updates", "ultimas-actualizaciones", "recently-updated", "capitulos-recientes" -> strings.latestUpdates
+    "popular-chapters", "capitulos-populares" -> strings.popularChapters
+    "popular-mangas", "mangas-populares", "populares" -> strings.popularMangas
+    "recommended-titles" -> strings.recommended
+    "top-viewed-titles", "most-viewed" -> strings.topViewed
+    "by-origin" -> strings.byOrigin
+    "recent-chapter-read" -> strings.recentReads
+    "popular-this-season" -> strings.seasonPicks
+    "new-release", "ultimos-anadidos", "new-on-mangatube" -> strings.newArrivals
     else -> section.title
 }
 
 internal fun homeSectionSubtitle(section: HomeFeedSection, strings: AppStrings): String = when (section.id) {
-    "latest-updates", "ultimas-actualizaciones", "recently-updated" -> strings.homeLatestSubtitle
+    "latest-updates", "ultimas-actualizaciones", "recently-updated", "capitulos-recientes" -> strings.homeLatestSubtitle
     "popular-chapters", "capitulos-populares" -> strings.homePopularChaptersSubtitle
     "popular-mangas", "mangas-populares", "populares" -> strings.homePopularMangasSubtitle
     "recommended-titles" -> strings.homeRecommendedSubtitle
-    "top-viewed-titles" -> strings.homeTopViewedSubtitle
+    "top-viewed-titles", "most-viewed" -> strings.homeTopViewedSubtitle
     "by-origin" -> strings.homeByOriginSubtitle
-    "recent-chapter-read", "capitulos-recientes" -> strings.homeRecentReadsSubtitle
+    "recent-chapter-read" -> strings.homeRecentReadsSubtitle
     "popular-this-season", "trending" -> strings.homeSeasonPicksSubtitle
     else -> if (section.chapters.isNotEmpty()) strings.homeChaptersFallbackSubtitle else strings.homeMangasFallbackSubtitle
 }

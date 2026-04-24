@@ -21,6 +21,7 @@ import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.provider.providers.MangaBallProvider
+import com.paudinc.komastream.ui.components.MarkdownReleaseNotes
 
 @Composable
 fun SettingsScreen(
@@ -86,7 +87,10 @@ fun SettingsScreen(
                             Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
                             if (state.release.body.isNotBlank()) {
                                 Text(strings.releaseNotes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text(state.release.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                MarkdownReleaseNotes(
+                                    markdown = state.release.body,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                         is AppUpdateUiState.Downloading -> {

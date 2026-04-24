@@ -202,10 +202,10 @@ class MangaFireWebViewResolver(
         }
 
         if (!latch.await(20, TimeUnit.SECONDS)) {
-            mainHandler.post { webView?.destroy() }
+            disposeWebView(webView)
             throw IOException("Timed out while resolving MangaFire reader flow")
         }
-        mainHandler.post { webView?.destroy() }
+        disposeWebView(webView)
         errors.firstOrNull()?.let { throw IOException(it.message ?: "Could not resolve MangaFire reader flow", it) }
         return result.firstOrNull() ?: throw IOException("Could not capture MangaFire reader request")
     }
@@ -284,12 +284,23 @@ class MangaFireWebViewResolver(
         }
 
         if (!latch.await(20, TimeUnit.SECONDS)) {
-            mainHandler.post { webView?.destroy() }
+            disposeWebView(webView)
             throw IOException("Timed out while resolving MangaFire search flow")
         }
-        mainHandler.post { webView?.destroy() }
+        disposeWebView(webView)
         errors.firstOrNull()?.let { throw IOException(it.message ?: "Could not resolve MangaFire search flow", it) }
         return result.firstOrNull() ?: throw IOException("Could not capture MangaFire search request")
+    }
+
+    private fun disposeWebView(webView: WebView?) {
+        mainHandler.post {
+            webView ?: return@post
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.clearHistory()
+            webView.removeAllViews()
+            webView.destroy()
+        }
     }
 
     private fun parseChapterContext(html: String, currentPath: String): ChapterContext? {
