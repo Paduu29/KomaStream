@@ -2,9 +2,11 @@
 <resources>
     <string name="app_name">KomaStream</string>
     <string name="home">Startseite</string>
+    <string name="view_all">Alles ansehen</string>
     <string name="library">Bibliothek</string>
     <string name="catalog">Katalog</string>
     <string name="settings">Einstellungen</string>
+    <string name="settings_tab">Optionen</string>
     <string name="manga">Manga</string>
     <string name="reader">Reader</string>
     <string name="back">Zurück</string>
@@ -12,6 +14,8 @@
     <string name="latest_updates">Neueste Updates</string>
     <string name="popular_chapters">Beliebte Kapitel</string>
     <string name="popular_mangas">Beliebte Mangas</string>
+    <string name="featured">Highlights</string>
+    <string name="new_arrivals">Neu hinzugefügt</string>
     <string name="recommended">Empfohlen</string>
     <string name="top_viewed">Am meisten angesehen</string>
     <string name="by_origin">Nach Herkunft</string>

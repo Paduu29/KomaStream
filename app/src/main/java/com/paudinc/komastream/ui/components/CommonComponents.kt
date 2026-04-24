@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -651,6 +652,56 @@ fun SectionTitle(text: String) {
 }
 
 @Composable
+fun MarkdownReleaseNotes(
+    markdown: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    val blocks = remember(markdown) { parseMarkdownBlocks(markdown) }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        blocks.forEach { block ->
+            when (block) {
+                is MarkdownBlock.Heading -> Text(
+                    text = block.text,
+                    style = when (block.level) {
+                        1 -> MaterialTheme.typography.titleLarge
+                        2 -> MaterialTheme.typography.titleMedium
+                        else -> MaterialTheme.typography.titleSmall
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                is MarkdownBlock.Paragraph -> Text(
+                    text = block.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = color,
+                )
+                is MarkdownBlock.Bullet -> Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = if (block.orderedIndex != null) "${block.orderedIndex}." else "•",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = color,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = block.text,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = color,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun UpdateAvailableDialog(
     strings: AppStrings,
     updateState: AppUpdateUiState,
@@ -707,8 +758,8 @@ fun UpdateAvailableDialog(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
-                        text = release.body,
+                    MarkdownReleaseNotes(
+                        markdown = release.body,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -730,6 +781,73 @@ fun UpdateAvailableDialog(
         },
     )
 }
+
+private sealed interface MarkdownBlock {
+    data class Heading(val level: Int, val text: String) : MarkdownBlock
+    data class Paragraph(val text: AnnotatedString) : MarkdownBlock
+    data class Bullet(val text: AnnotatedString, val orderedIndex: Int?) : MarkdownBlock
+}
+
+private fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
+    val blocks = mutableListOf<MarkdownBlock>()
+    val paragraphLines = mutableListOf<String>()
+
+    fun flushParagraph() {
+        if (paragraphLines.isEmpty()) return
+        val text = paragraphLines.joinToString(" ").trim()
+        if (text.isNotBlank()) {
+            blocks += MarkdownBlock.Paragraph(parseInlineMarkdown(text))
+        }
+        paragraphLines.clear()
+    }
+
+    markdown.lines().forEach { rawLine ->
+        val line = rawLine.trim()
+        when {
+            line.isBlank() -> flushParagraph()
+            line.startsWith("#") -> {
+                flushParagraph()
+                val level = line.takeWhile { it == '#' }.length.coerceIn(1, 3)
+                val text = line.dropWhile { it == '#' }.trim()
+                if (text.isNotBlank()) {
+                    blocks += MarkdownBlock.Heading(level, text)
+                }
+            }
+            BULLET_MARKDOWN_REGEX.matches(line) -> {
+                flushParagraph()
+                val text = BULLET_MARKDOWN_REGEX.matchEntire(line)?.groupValues?.get(1).orEmpty()
+                blocks += MarkdownBlock.Bullet(parseInlineMarkdown(text), orderedIndex = null)
+            }
+            NUMBERED_MARKDOWN_REGEX.matches(line) -> {
+                flushParagraph()
+                val match = NUMBERED_MARKDOWN_REGEX.matchEntire(line)
+                val index = match?.groupValues?.get(1)?.toIntOrNull()
+                val text = match?.groupValues?.get(2).orEmpty()
+                blocks += MarkdownBlock.Bullet(parseInlineMarkdown(text), orderedIndex = index)
+            }
+            else -> paragraphLines += line
+        }
+    }
+    flushParagraph()
+    return blocks
+}
+
+private fun parseInlineMarkdown(value: String): AnnotatedString {
+    val cleaned = value
+        .replace(LINK_MARKDOWN_REGEX, "$1")
+        .replace(INLINE_CODE_MARKDOWN_REGEX, "$1")
+        .replace(STRONG_MARKDOWN_REGEX, "$1")
+        .replace(EMPHASIS_MARKDOWN_REGEX, "$1")
+        .trim()
+    return AnnotatedString(cleaned)
+}
+
+private val BULLET_MARKDOWN_REGEX = Regex("^[-*+]\\s+(.+)$")
+private val NUMBERED_MARKDOWN_REGEX = Regex("^(\\d+)\\.\\s+(.+)$")
+private val LINK_MARKDOWN_REGEX = Regex("\\[([^\\]]+)]\\(([^)]+)\\)")
+private val INLINE_CODE_MARKDOWN_REGEX = Regex("`([^`]+)`")
+private val STRONG_MARKDOWN_REGEX = Regex("(\\*\\*|__)(.*?)\\1")
+private val EMPHASIS_MARKDOWN_REGEX = Regex("(\\*|_)(.*?)\\1")
 
 @Composable
 fun BackupOperationDialog(

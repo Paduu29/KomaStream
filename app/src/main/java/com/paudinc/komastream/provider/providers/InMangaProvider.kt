@@ -295,7 +295,7 @@ class InMangaProvider : MangaProvider {
     private fun resolveMangaDetailPathFromChapterPath(chapterPath: String): String {
         val normalizedChapterPath = chapterPath.normalizePath()
         val chapterDocument = getDocument(normalizedChapterPath, referer = "/")
-        var mangaDetailPath = extractMangaDetailPathFromChapterMetadata(chapterDocument, normalizedChapterPath)
+        val mangaDetailPath = extractMangaDetailPathFromChapterMetadata(chapterDocument, normalizedChapterPath)
             .ifBlank { extractMangaDetailPathFromChapterScript(chapterDocument) }
             .ifBlank { extractMangaDetailPathFromChapterPage(chapterDocument) }
             .ifBlank { extractCanonicalMangaPathFromLinks(chapterDocument, normalizedChapterPath) }

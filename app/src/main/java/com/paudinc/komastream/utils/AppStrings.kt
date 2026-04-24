@@ -10,6 +10,7 @@ data class AppStrings(
     val library: String,
     val catalog: String,
     val settings: String,
+    val settingsTab: String,
     val manga: String,
     val reader: String,
     val back: String,
@@ -17,6 +18,8 @@ data class AppStrings(
     val latestUpdates: String,
     val popularChapters: String,
     val popularMangas: String,
+    val featured: String,
+    val newArrivals: String,
     val recommended: String,
     val topViewed: String,
     val byOrigin: String,
@@ -179,6 +182,7 @@ data class AppStrings(
     val homeMangasFallbackSubtitle: String,
     val loadingProviderHomeTemplate: String,
     val emptyProviderHomeTemplate: String,
+    val viewAll: String,
 ) {
     fun chaptersCount(count: Int) = "$count ${chapters.lowercase()}"
     fun resultsCount(count: Int) = resultCountTemplate.format(count)
@@ -218,6 +222,7 @@ fun appStrings(): AppStrings {
         library = stringResource(R.string.library),
         catalog = stringResource(R.string.catalog),
         settings = stringResource(R.string.settings),
+        settingsTab = stringResource(R.string.settings_tab),
         manga = stringResource(R.string.manga),
         reader = stringResource(R.string.reader),
         back = stringResource(R.string.back),
@@ -225,6 +230,8 @@ fun appStrings(): AppStrings {
         latestUpdates = stringResource(R.string.latest_updates),
         popularChapters = stringResource(R.string.popular_chapters),
         popularMangas = stringResource(R.string.popular_mangas),
+        featured = stringResource(R.string.featured),
+        newArrivals = stringResource(R.string.new_arrivals),
         recommended = stringResource(R.string.recommended),
         topViewed = stringResource(R.string.top_viewed),
         byOrigin = stringResource(R.string.by_origin),
@@ -387,6 +394,8 @@ fun appStrings(): AppStrings {
         homeMangasFallbackSubtitle = stringResource(R.string.home_mangas_fallback_subtitle),
         loadingProviderHomeTemplate = stringResource(R.string.loading_provider_home),
         emptyProviderHomeTemplate = stringResource(R.string.empty_provider_home),
+        viewAll = stringResource(R.string.view_all),
+
     )
     return strings
 }
