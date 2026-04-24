@@ -10,6 +10,7 @@ import com.paudinc.komastream.ui.navigation.LibraryTab
 
 data class HomeUiState(
     val feed: HomeFeed? = null,
+    val isRefreshing: Boolean = false
 )
 
 data class CatalogUiState(

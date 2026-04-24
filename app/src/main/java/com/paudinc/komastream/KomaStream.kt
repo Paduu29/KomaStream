@@ -295,12 +295,18 @@ fun KomaStream() {
                                                 model = viewModel.currentProvider.logoUrl,
                                                 contentDescription = viewModel.currentProvider.displayName,
                                                 modifier = Modifier.size(24.dp).clip(CircleShape),
-                                                placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+                                                placeholder = painterResource(R.drawable.app_logo),
                                                 error = painterResource(
-                                                    if (viewModel.currentProvider.id == "mangatube-de") {
-                                                        R.drawable.mt_logo
-                                                    } else {
-                                                        R.drawable.app_logo
+                                                    when (viewModel.currentProvider.id) {
+                                                        "mangatube-de" -> {
+                                                            R.drawable.mt_logo
+                                                        }
+                                                        "akaicomic-en" -> {
+                                                            R.drawable.akai_comic
+                                                        }
+                                                        else -> {
+                                                            R.drawable.app_logo
+                                                        }
                                                     }
                                                 ),
                                             )
@@ -313,10 +319,12 @@ fun KomaStream() {
                 }
             ) { padding ->
                 Box(modifier = Modifier.padding(padding)) {
+                    val homeUiState = homeController.uiState
                     saveableStateHolder.SaveableStateProvider(screen.saveableKey()) {
                         when (screen) {
                             is Screen.Root -> {
                                 when (screen.tab) {
+
                                 RootTab.Home -> HomeScreen(
                                     providerId = currentProvider.id,
                                     providerName = currentProvider.displayName,
@@ -334,6 +342,17 @@ fun KomaStream() {
                                     onToggleFavorite = { viewModel.toggleFavorite(it) },
                                     isFavorite = { providerId, detailPath ->
                                         libraryStore.isFavorite(providerId, detailPath)
+                                    },
+                                    isRefreshing = homeUiState.isRefreshing,
+                                    onRefresh = {
+                                        homeController.refreshHome(
+                                            provider = currentProvider,
+                                            onError = { message ->
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(message)
+                                                }
+                                            }
+                                        )
                                     },
                                 )
                                     RootTab.Library -> LibraryScreen(

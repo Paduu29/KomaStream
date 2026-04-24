@@ -3,6 +3,7 @@ package com.paudinc.komastream.utils
 import android.content.Context
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.provider.providers.AkaiComicProvider
 import com.paudinc.komastream.provider.providers.InMangaProvider
 import com.paudinc.komastream.provider.providers.LeerMangaEspProvider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
@@ -37,5 +38,6 @@ fun createDefaultProviderRegistry(context: Context?): ProviderRegistry =
             add(MangaTubeProvider(context))
             add(MangaFireProvider(context))
             context?.let { add(MangaBallProvider(it)) }
+            context?.let { add(AkaiComicProvider(it)) }
         }
     )
