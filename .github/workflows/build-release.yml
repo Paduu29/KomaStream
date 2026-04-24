@@ -161,12 +161,12 @@ jobs:
             printf 'Release %s\n\n' "${{ steps.version.outputs.version_name }}" > release-notes.txt
           fi
 
-          printf '## Security\n\n' >> release-notes.txt
-          printf '- VirusTotal scan: %s\n' "${{ steps.vtresult.outputs.vt_url }}" >> release-notes.txt
-          printf '- Malicious: %s\n' "${{ steps.vtresult.outputs.malicious }}" >> release-notes.txt
-          printf '- Suspicious: %s\n' "${{ steps.vtresult.outputs.suspicious }}" >> release-notes.txt
-          printf '- Harmless: %s\n' "${{ steps.vtresult.outputs.harmless }}" >> release-notes.txt
-          printf '- Undetected: %s\n' "${{ steps.vtresult.outputs.undetected }}" >> release-notes.txt
+          printf -- '## Security\n\n' >> release-notes.txt
+          printf -- '- VirusTotal scan: %s\n' "${{ steps.vtresult.outputs.vt_url }}" >> release-notes.txt
+          printf -- '- Malicious: %s\n' "${{ steps.vtresult.outputs.malicious }}" >> release-notes.txt
+          printf -- '- Suspicious: %s\n' "${{ steps.vtresult.outputs.suspicious }}" >> release-notes.txt
+          printf -- '- Harmless: %s\n' "${{ steps.vtresult.outputs.harmless }}" >> release-notes.txt
+          printf -- '- Undetected: %s\n' "${{ steps.vtresult.outputs.undetected }}" >> release-notes.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
