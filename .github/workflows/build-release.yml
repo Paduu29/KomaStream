@@ -62,22 +62,104 @@ jobs:
         run: |
           cp "app/build/outputs/apk/release/app-release.apk" "app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}"
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Upload APK to VirusTotal
+        id: virustotal
+        shell: bash
+        run: |
+          FILE_PATH="app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}"
+
+          RESPONSE=$(curl --silent --request POST \
+            --url https://www.virustotal.com/api/v3/files \
+            --header "x-apikey: ${{ secrets.VT_API_KEY }}" \
+            --form file=@"$FILE_PATH")
+          if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
+            echo "VirusTotal API error:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+
+          ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.data.id')
+
+          echo "analysis_id=$ANALYSIS_ID" >> "$GITHUB_OUTPUT"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.version.outputs.apk_name }}
           path: app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}
 
+      - name: Wait for VirusTotal analysis
+        id: vtresult
+        shell: bash
+        run: |
+          ANALYSIS_ID="${{ steps.virustotal.outputs.analysis_id }}"
+
+          echo "Waiting for VirusTotal analysis..."
+          
+          COMPLETED=false
+          
+          for i in {1..30}; do
+            RESPONSE=$(curl --silent --request GET \
+              --url "https://www.virustotal.com/api/v3/analyses/$ANALYSIS_ID" \
+              --header "x-apikey: ${{ secrets.VT_API_KEY }}")fi
+            STATUS=$(echo "$RESPONSE" | jq -r '.data.attributes.status')
+
+            if [ "$STATUS" = "completed" ]; then
+              echo "Analysis complete"
+              COMPLETED=true
+              break
+            fi
+
+            sleep 10
+          done
+          if [ "$COMPLETED" != "true" ]; then
+            echo "VirusTotal analysis timed out"
+            exit 1
+          fi
+          
+          RESPONSE=$(curl --silent --request GET \
+            --url "https://www.virustotal.com/api/v3/analyses/$ANALYSIS_ID" \
+            --header "x-apikey: ${{ secrets.VT_API_KEY }}")
+          if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
+            echo "VirusTotal API error:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+          MALICIOUS=$(echo "$RESPONSE" | jq -r '.data.attributes.stats.malicious')
+          SUSPICIOUS=$(echo "$RESPONSE" | jq -r '.data.attributes.stats.suspicious')
+          HARMLESS=$(echo "$RESPONSE" | jq -r '.data.attributes.stats.harmless')
+          UNDETECTED=$(echo "$RESPONSE" | jq -r '.data.attributes.stats.undetected')
+          
+          FILE_PATH="app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}"
+          SHA256=$(sha256sum "$FILE_PATH" | awk '{ print $1 }')
+          VT_URL="https://www.virustotal.com/gui/file/$SHA256"
+          
+          echo "vt_url=$VT_URL" >> "$GITHUB_OUTPUT"
+          echo "malicious=$MALICIOUS" >> "$GITHUB_OUTPUT"
+          echo "suspicious=$SUSPICIOUS" >> "$GITHUB_OUTPUT"
+          echo "harmless=$HARMLESS" >> "$GITHUB_OUTPUT"
+          echo "undetected=$UNDETECTED" >> "$GITHUB_OUTPUT"
       - name: Prepare release notes from tagged commit message
         shell: bash
         run: |
           COMMIT_MESSAGE="$(git log -1 --format=%B "$GITHUB_SHA" | sed '/^[[:space:]]*$/d')"
 
           if [ -n "$COMMIT_MESSAGE" ]; then
-            printf '%s\n' "$COMMIT_MESSAGE" > release-notes.txt
+            printf '%s\n\n' "$COMMIT_MESSAGE" > release-notes.txt
           else
-            printf 'Release %s\n' "${{ steps.version.outputs.version_name }}" > release-notes.txt
+            printf 'Release %s\n\n' "${{ steps.version.outputs.version_name }}" > release-notes.txt
           fi
+
+          printf '## Security\n\n' >> release-notes.txt
+          printf '- VirusTotal scan: %s\n' "${{ steps.vtresult.outputs.vt_url }}" >> release-notes.txt
+          printf '- Malicious: %s\n' "${{ steps.vtresult.outputs.malicious }}" >> release-notes.txt
+          printf '- Suspicious: %s\n' "${{ steps.vtresult.outputs.suspicious }}" >> release-notes.txt
+          printf '- Harmless: %s\n' "${{ steps.vtresult.outputs.harmless }}" >> release-notes.txt
+          printf '- Undetected: %s\n' "${{ steps.vtresult.outputs.undetected }}" >> release-notes.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
