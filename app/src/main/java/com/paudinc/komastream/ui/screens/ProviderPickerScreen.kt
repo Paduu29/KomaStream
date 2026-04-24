@@ -102,7 +102,7 @@ fun ProviderPickerScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        verticalAlignment = Alignment.Top,
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         AsyncImage(
@@ -119,19 +119,15 @@ fun ProviderPickerScreen(
                                 }
                             ),
                         )
+
                         Column(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(provider.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text(
-                                provider.websiteUrl,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            AssistChip(
-                                onClick = { onOpenProviderSite(provider.websiteUrl) },
-                                label = { Text(strings.openProviderSite) },
+                                provider.displayName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
