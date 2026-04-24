@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +61,11 @@ fun ProviderPickerScreen(
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(strings.chooseProvider, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        strings.chooseProvider,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(strings.chooseProviderDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -112,10 +119,16 @@ fun ProviderPickerScreen(
                             contentScale = ContentScale.Fit,
                             placeholder = painterResource(android.R.drawable.ic_menu_gallery),
                             error = painterResource(
-                                if (provider.id == "mangatube-de") {
-                                    R.drawable.mt_logo
-                                } else {
-                                    R.drawable.app_logo
+                                when (provider.id) {
+                                    "mangatube-de" -> {
+                                        R.drawable.mt_logo
+                                    }
+                                    "akaicomic-en" -> {
+                                        R.drawable.akai_comic
+                                    }
+                                    else -> {
+                                        R.drawable.app_logo
+                                    }
                                 }
                             ),
                         )

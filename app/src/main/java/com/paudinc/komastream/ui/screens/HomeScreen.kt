@@ -2,18 +2,7 @@ package com.paudinc.komastream.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -22,11 +11,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -39,18 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.paudinc.komastream.data.model.ChapterSummary
-import com.paudinc.komastream.data.model.HomeFeed
-import com.paudinc.komastream.data.model.HomeFeedSection
-import com.paudinc.komastream.data.model.HomeSectionType
-import com.paudinc.komastream.data.model.MangaSummary
-import com.paudinc.komastream.data.model.SavedManga
-import com.paudinc.komastream.ui.components.ChapterRow
-import com.paudinc.komastream.ui.components.EmptyCard
-import com.paudinc.komastream.ui.components.LoadingPlaceholder
-import com.paudinc.komastream.ui.components.MangaCoverCard
-import com.paudinc.komastream.ui.components.TagChip
-import com.paudinc.komastream.ui.components.cardBorder
+import com.paudinc.komastream.data.model.*
+import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.canonicalChapterKey
 import com.paudinc.komastream.utils.sameChapterPath
@@ -70,117 +46,131 @@ fun HomeScreen(
     onAddToReading: (SavedManga) -> Unit,
     onToggleFavorite: (SavedManga) -> Unit,
     isFavorite: (String, String) -> Boolean,
+    onRefresh: () -> Unit,
+    isRefreshing: Boolean,
 ) {
     if (feed == null) {
         LoadingPlaceholder(strings.loadingProviderHome(providerName))
-        return
-    }
-
-    val sections = remember(feed) { feed.sections.filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() } }
-    if (sections.isEmpty()) {
-        EmptyCard(strings.emptyProviderHome(providerName))
-        return
-    }
-
-    val canonicalReadChapterKeys = remember(providerId, readChapters) {
-        readChapters.map { canonicalChapterKey(providerId, it) }.toSet()
-    }
-    val topCarouselSection = sections.firstOrNull { it.type == HomeSectionType.MANGAS && it.mangas.isNotEmpty() }
-    val sectionsToRender = if (topCarouselSection != null) {
-        sections.filterNot { it.id == topCarouselSection.id }
     } else {
-        sections
-    }
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
+        ) {
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        if (topCarouselSection != null) {
-            item {
-                FeaturedCarousel(
-                    section = topCarouselSection,
-                    strings = strings,
-                    onOpenManga = onOpenManga,
-                    onOpenSection = onOpenSection,
-                )
-            }
-        } else {
-            val featuredChapter = feed.latestUpdates.firstOrNull()
-            if (featuredChapter != null) {
-            item {
-                FeaturedBanner(
-                    imageUrl = featuredChapter.coverUrl,
-                    eyebrow = strings.latestUpdates.uppercase(),
-                    title = featuredChapter.mangaTitle,
-                    subtitle = featuredChapter.chapterLabel,
-                    supportingText = strings.homeLatestSubtitle,
-                    actionLabel = strings.read,
-                    onClick = { onOpenChapter(featuredChapter.providerId, featuredChapter.chapterPath) },
-                )
-            }
-            }
-        }
 
-        sectionsToRender.forEach { section ->
-            item(key = "header:${section.id}") {
-                HomeRailHeader(
-                    title = homeSectionTitle(section, strings),
-                    actionLabel = strings.viewAll,
-                    onAction = { onOpenSection(section.id) },
-                )
+            val sections = remember(feed) { feed.sections.filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() } }
+            if (sections.isEmpty()) {
+                EmptyCard(strings.emptyProviderHome(providerName))
             }
-            when (section.type) {
-                HomeSectionType.MANGAS -> {
-                    item(key = "rail:${section.id}") {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            contentPadding = PaddingValues(end = 4.dp),
-                        ) {
-                            items(section.mangas.take(10), key = { "${it.providerId}:${it.detailPath}" }) { manga ->
-                                MangaCoverCard(
-                                    manga = manga,
-                                    strings = strings,
-                                    constrained = true,
-                                    favoriteActionLabel = if (isFavorite(manga.providerId, manga.detailPath)) strings.removeFromFavorites else strings.addToFavorites,
-                                    onClick = { onOpenManga(manga.providerId, manga.detailPath) },
-                                    onFavoriteAction = {
-                                        onToggleFavorite(
-                                            SavedManga(
-                                                providerId = manga.providerId,
-                                                title = manga.title,
-                                                detailPath = manga.detailPath,
-                                                coverUrl = manga.coverUrl,
-                                            )
+
+            val canonicalReadChapterKeys = remember(providerId, readChapters) {
+                readChapters.map { canonicalChapterKey(providerId, it) }.toSet()
+            }
+            val topCarouselSection = sections.firstOrNull { it.type == HomeSectionType.MANGAS && it.mangas.isNotEmpty() }
+            val sectionsToRender = if (topCarouselSection != null) {
+                sections.filterNot { it.id == topCarouselSection.id }
+            } else {
+                sections
+            }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                if (topCarouselSection != null) {
+                    item {
+                        FeaturedCarousel(
+                            section = topCarouselSection,
+                            strings = strings,
+                            onOpenManga = onOpenManga,
+                            onOpenSection = onOpenSection,
+                        )
+                    }
+                } else {
+                    val featuredChapter = feed.latestUpdates.firstOrNull()
+                    if (featuredChapter != null) {
+                        item {
+                            FeaturedBanner(
+                                imageUrl = featuredChapter.coverUrl,
+                                eyebrow = strings.latestUpdates.uppercase(),
+                                title = featuredChapter.mangaTitle,
+                                subtitle = featuredChapter.chapterLabel,
+                                supportingText = strings.homeLatestSubtitle,
+                                actionLabel = strings.read,
+                                onClick = { onOpenChapter(featuredChapter.providerId, featuredChapter.chapterPath) },
+                            )
+                        }
+                    }
+                }
+
+                sectionsToRender.forEach { section ->
+                    item(key = "header:${section.id}") {
+                        HomeRailHeader(
+                            title = homeSectionTitle(section, strings),
+                            actionLabel = strings.viewAll,
+                            onAction = { onOpenSection(section.id) },
+                        )
+                    }
+                    when (section.type) {
+                        HomeSectionType.MANGAS -> {
+                            item(key = "rail:${section.id}") {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    contentPadding = PaddingValues(end = 4.dp),
+                                ) {
+                                    items(section.mangas.take(10), key = { "${it.providerId}:${it.detailPath}" }) { manga ->
+                                        MangaCoverCard(
+                                            manga = manga,
+                                            strings = strings,
+                                            constrained = true,
+                                            favoriteActionLabel = if (isFavorite(
+                                                    manga.providerId,
+                                                    manga.detailPath
+                                                )
+                                            ) strings.removeFromFavorites else strings.addToFavorites,
+                                            onClick = { onOpenManga(manga.providerId, manga.detailPath) },
+                                            onFavoriteAction = {
+                                                onToggleFavorite(
+                                                    SavedManga(
+                                                        providerId = manga.providerId,
+                                                        title = manga.title,
+                                                        detailPath = manga.detailPath,
+                                                        coverUrl = manga.coverUrl,
+                                                    )
+                                                )
+                                            },
+                                            onOpenMangaAction = { onOpenManga(manga.providerId, manga.detailPath) },
                                         )
-                                    },
-                                    onOpenMangaAction = { onOpenManga(manga.providerId, manga.detailPath) },
+                                    }
+                                }
+                            }
+                        }
+
+                        HomeSectionType.CHAPTERS -> {
+                            items(
+                                items = section.chapters.take(5),
+                                key = { "${section.id}:${it.providerId}:${it.chapterPath}" },
+                            ) { chapter ->
+                                HomeChapterRow(
+                                    chapter = chapter,
+                                    reading = reading,
+                                    canonicalReadChapterKeys = canonicalReadChapterKeys,
+                                    chapterProgress = chapterProgress,
+                                    strings = strings,
+                                    onOpenChapter = onOpenChapter,
+                                    onOpenManga = onOpenManga,
+                                    onAddToReading = onAddToReading,
                                 )
                             }
                         }
                     }
                 }
-                HomeSectionType.CHAPTERS -> {
-                    items(
-                        items = section.chapters.take(5),
-                        key = { "${section.id}:${it.providerId}:${it.chapterPath}" },
-                    ) { chapter ->
-                        HomeChapterRow(
-                            chapter = chapter,
-                            reading = reading,
-                            canonicalReadChapterKeys = canonicalReadChapterKeys,
-                            chapterProgress = chapterProgress,
-                            strings = strings,
-                            onOpenChapter = onOpenChapter,
-                            onOpenManga = onOpenManga,
-                            onAddToReading = onAddToReading,
-                        )
-                    }
-                }
             }
         }
     }
+
 }
 
 @Composable
@@ -217,7 +207,10 @@ private fun FeaturedCarousel(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 mangas.forEachIndexed { index, _ ->
                     Surface(
-                        modifier = Modifier.size(width = if (index == pagerState.currentPage) 18.dp else 6.dp, height = 6.dp),
+                        modifier = Modifier.size(
+                            width = if (index == pagerState.currentPage) 18.dp else 6.dp,
+                            height = 6.dp
+                        ),
                         shape = RoundedCornerShape(999.dp),
                         color = if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                     ) {}
@@ -259,7 +252,7 @@ private fun HomeChapterRow(
     val progress = chapterProgress(chapter.providerId, chapter.chapterPath)
     val isCurrentReadingEntry = reading.any { saved ->
         saved.providerId == chapter.providerId &&
-            sameChapterPath(chapter.providerId, saved.lastChapterPath, chapter.chapterPath)
+                sameChapterPath(chapter.providerId, saved.lastChapterPath, chapter.chapterPath)
     }
     val isRead = canonicalChapterKey(chapter.providerId, chapter.chapterPath) in canonicalReadChapterKeys
     ChapterRow(

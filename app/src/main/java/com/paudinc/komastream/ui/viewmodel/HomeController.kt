@@ -20,11 +20,20 @@ class HomeController(
         provider: MangaProvider,
         onError: (String) -> Unit,
     ) {
+        if (uiState.isRefreshing) return
+
         scope.launch {
+            uiState = uiState.copy(isRefreshing = true)
+
             runCatching { withContext(Dispatchers.IO) { provider.fetchHomeFeed() } }
-                .onSuccess { uiState = uiState.copy(feed = it) }
+                .onSuccess {
+                    uiState = uiState.copy(
+                        feed = it,
+                        isRefreshing = false
+                    )
+                }
                 .onFailure {
-                    Log.e("KomaStream", "Could not fetch home feed", it)
+                    uiState = uiState.copy(isRefreshing = false)
                     onError(it.message ?: "Could not load home")
                 }
         }
