@@ -1,10 +1,30 @@
 package com.paudinc.komastream.data.model
 
+import java.util.Locale
+
 enum class AppLanguage {
     EN,
     ES,
     DE,
     MULTI,
+    ;
+
+    fun toLanguageTag(): String = when (this) {
+        ES -> "es"
+        DE -> "de"
+        else -> "en"
+    }
+
+    companion object {
+        fun fromStored(value: String?): AppLanguage =
+            entries.firstOrNull { it.name == value } ?: EN
+
+        fun defaultForSystem(locale: Locale?): AppLanguage = when (locale?.language?.lowercase(Locale.ROOT)) {
+            "es" -> ES
+            "de" -> DE
+            else -> EN
+        }
+    }
 }
 
 data class MangaSummary(

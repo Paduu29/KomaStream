@@ -201,12 +201,7 @@ class LibraryController(
 
     fun changeLanguage(language: AppLanguage) {
         libraryStore.setAppLanguage(language)
-        val languageTag = when (language) {
-            AppLanguage.ES -> "es"
-            AppLanguage.DE -> "de"
-            else -> "en"
-        }
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.toLanguageTag()))
         refreshState()
     }
 
@@ -226,6 +221,7 @@ class LibraryController(
     }
 
     fun selectProvider(providerId: String) {
+        android.util.Log.d("LibraryController", "selectProvider: $providerId")
         libraryStore.setSelectedProviderId(providerId)
         libraryStore.setHasSeenProviderPicker(true)
         refreshState(filterBySelectedProvider = true)

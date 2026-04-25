@@ -7,10 +7,8 @@ import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.content.ContextCompat
-import androidx.core.os.LocaleListCompat
-import com.paudinc.komastream.data.model.AppLanguage
 
 class MainActivity : AppCompatActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -18,22 +16,22 @@ class MainActivity : AppCompatActivity() {
     ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val prefs = getSharedPreferences("manga_library", MODE_PRIVATE)
-        val appLanguage = prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name
-        val languageTag = when (appLanguage) {
-            AppLanguage.ES.name -> "es"
-            AppLanguage.DE.name -> "de"
-            else -> "en"
-        }
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
         super.onCreate(savedInstanceState)
+
+        if (savedInstanceState == null) {
+            recreate()
+            return
+        }
+
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+
         setContent {
+            val configuration = LocalConfiguration.current
             KomaStream()
         }
     }

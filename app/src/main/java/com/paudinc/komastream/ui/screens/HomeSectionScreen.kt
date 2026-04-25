@@ -182,7 +182,7 @@ fun HomeSectionScreen(
                                     title = chapter.mangaTitle,
                                     detailPath = chapter.mangaPath,
                                     coverUrl = chapter.coverUrl,
-                                    lastChapterTitle = chapter.chapterLabel,
+                                    lastChapterTitle = strings.chapterLabelWithNumber(chapter),
                                     lastChapterPath = chapter.chapterPath,
                                 )
                             )

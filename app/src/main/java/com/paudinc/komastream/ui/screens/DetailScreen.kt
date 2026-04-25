@@ -537,7 +537,7 @@ fun DetailScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                chapter.chapterLabel,
+                                strings.chapterLabelWithNumber(chapter),
                                 fontWeight = if (path == lastOpenedChapterPath) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isRead) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,

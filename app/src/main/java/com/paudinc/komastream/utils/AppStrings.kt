@@ -3,6 +3,9 @@ package com.paudinc.komastream.utils
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.paudinc.komastream.R
+import com.paudinc.komastream.data.model.ChapterSummary
+import com.paudinc.komastream.data.model.MangaChapter
+import kotlin.math.abs
 
 data class AppStrings(
     val appName: String,
@@ -45,6 +48,7 @@ data class AppStrings(
     val periodicity: String,
     val latest: String,
     val chapters: String,
+    val chapterNumberPrefix: String,
     val searchChapter: String,
     val searchChapterPlaceholder: String,
     val markAllRead: String,
@@ -202,6 +206,46 @@ data class AppStrings(
         else markedUntilUnreadTemplate.format(number)
     fun loadingProviderHome(providerName: String) = loadingProviderHomeTemplate.format(providerName)
     fun emptyProviderHome(providerName: String) = emptyProviderHomeTemplate.format(providerName)
+    fun chapterLabelWithNumber(chapterNumberUrl: String, chapterLabel: String): String {
+        if (chapterLabel.isBlank()) return ""
+        val rawTitle = chapterLabel.trim()
+        val number = parseChapterInput(chapterNumberUrl) ?: parseChapterInput(rawTitle)
+        if (number == null) return rawTitle
+
+        val prefix = chapterNumberPrefix.format(number)
+        var title = rawTitle
+            .replaceFirst(CHAPTER_PREFIX_REGEX, "")
+            .trim()
+            .trimStart('-', '–', '—', ':', '.', ' ')
+            .trim()
+
+        val leadingNumber = LEADING_NUMBER_REGEX.find(title)?.takeIf { it.range.first == 0 }?.value
+        if (leadingNumber != null) {
+            val leadingValue = parseChapterInput(leadingNumber)
+            if (leadingValue != null && abs(leadingValue - number) < 0.0001) {
+                title = title
+                    .removeRange(leadingNumber.indices)
+                    .trim()
+                    .trimStart('-', '–', '—', ':', '.', ' ')
+                    .trim()
+            }
+        }
+
+        return if (
+            title.isBlank() ||
+            NUMBER_ONLY_REGEX.matches(title) ||
+            CHAPTER_ONLY_REGEX.matches(rawTitle) ||
+            CHAPTER_ONLY_REGEX.matches(title)
+        ) {
+            prefix
+        } else {
+            "$prefix - $title"
+        }
+    }
+    fun chapterLabelWithNumber(chapter: MangaChapter): String =
+        chapterLabelWithNumber(chapter.chapterNumberUrl, chapter.chapterLabel)
+    fun chapterLabelWithNumber(chapter: ChapterSummary): String =
+        chapterLabelWithNumber(chapter.chapterNumberUrl, chapter.chapterLabel)
     fun localizedStatus(value: String): String {
         val normalized = value.trim().lowercase()
         return when {
@@ -258,6 +302,7 @@ fun appStrings(): AppStrings {
         periodicity = stringResource(R.string.periodicity),
         latest = stringResource(R.string.latest),
         chapters = stringResource(R.string.chapters),
+        chapterNumberPrefix = stringResource(R.string.chapter_number_prefix),
         searchChapter = stringResource(R.string.search_chapter),
         searchChapterPlaceholder = stringResource(R.string.search_chapter_placeholder),
         markAllRead = stringResource(R.string.mark_all_read),
@@ -401,3 +446,14 @@ fun appStrings(): AppStrings {
     )
     return strings
 }
+
+private val CHAPTER_PREFIX_REGEX = Regex(
+    "^(?:(?:chapter|chap(?:ter)?|ch\\.?|kapitel|cap(?:[ií]tulo)?|cap\\.?)\\s*)+",
+    RegexOption.IGNORE_CASE,
+)
+private val CHAPTER_ONLY_REGEX = Regex(
+    "^(?:(?:chapter|chap(?:ter)?|ch\\.?|kapitel|cap(?:[ií]tulo)?|cap\\.?)\\s*)+\\d+(?:[.,]\\d+)?\\s*$",
+    RegexOption.IGNORE_CASE,
+)
+private val NUMBER_ONLY_REGEX = Regex("^\\d+(?:[.,]\\d+)?$")
+private val LEADING_NUMBER_REGEX = Regex("^\\d+(?:[.,]\\d+)?(?:\\s*[-–—:]\\s*)?")

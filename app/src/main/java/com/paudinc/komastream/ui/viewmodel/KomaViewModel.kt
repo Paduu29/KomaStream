@@ -87,13 +87,19 @@ class KomaViewModel(
     val screen: Screen
         get() = navigationController.screen
 
-    val currentProvider
+val currentProvider
         get() = providerRegistry.get(libraryController.uiState.state.selectedProviderId)
 
     init {
+        android.util.Log.d("KomaViewModel", "init: starting, providerId=${libraryController.uiState.state.selectedProviderId}")
         libraryController.refreshOfflineDownloads()
         libraryController.startDownloadProgressTracking()
         updateController.checkForUpdates(openDialogOnUpdate = true)
+        val providerId = libraryController.uiState.state.selectedProviderId
+        if (providerId.isNotBlank()) {
+            android.util.Log.d("KomaViewModel", "init: calling refreshHome")
+            refreshHome()
+        }
     }
 
     fun pushScreen(next: Screen) {
@@ -261,10 +267,14 @@ class KomaViewModel(
     }
 
     fun selectProvider(providerId: String) {
+        val previousProviderId = libraryController.uiState.state.selectedProviderId
         libraryController.selectProvider(providerId)
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         navigationController.replaceRoot(RootTab.Home)
+        if (previousProviderId != providerId) {
+            refreshHome()
+        }
     }
 
     fun refreshCurrentProviderContent(clearVisibleData: Boolean = false) {

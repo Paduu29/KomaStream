@@ -41,6 +41,7 @@
     <string name="periodicity">Periodizität</string>
     <string name="latest">Neueste</string>
     <string name="chapters">Kapitel</string>
+    <string name="chapter_number_prefix">Kapitel %1$s</string>
     <string name="search_chapter">Kapitel suchen</string>
     <string name="search_chapter_placeholder">z. B. 1, 25, 1180</string>
     <string name="mark_all_read">Alles als gelesen markieren</string>

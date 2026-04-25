@@ -930,7 +930,7 @@ class MangaTubeProvider(
             MangaChapter(
                 id = item.id,
                 chapterLabel = item.label.ifBlank { buildFallbackChapterLabel(item.number, item.subNumber, item.volume, manga) },
-                chapterNumberUrl = item.id,
+                chapterNumberUrl = item.number.toString(),
                 path = item.path,
                 pagesCount = 0,
                 registrationDate = item.date,

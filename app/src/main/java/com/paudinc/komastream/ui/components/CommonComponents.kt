@@ -515,7 +515,7 @@ fun ChapterRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     TagChip(
-                        label = item.chapterLabel,
+                        label = strings.chapterLabelWithNumber(item),
                         containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                         labelColor = MaterialTheme.colorScheme.primary,
                     )

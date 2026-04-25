@@ -37,9 +37,11 @@ class LibraryStore(context: Context) {
             autoJumpToUnread = prefs.getBoolean("autoJumpToUnread", true),
             mangaBallAdultContentEnabled = prefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
             selectedProviderId = selectedProviderId,
-            appLanguage = AppLanguage.valueOf(
-                prefs.getString("appLanguage", AppLanguage.EN.name) ?: AppLanguage.EN.name
-            ),
+            appLanguage = if (prefs.contains("appLanguage")) {
+                AppLanguage.fromStored(prefs.getString("appLanguage", AppLanguage.EN.name))
+            } else {
+                AppLanguage.EN
+            },
         )
     }
 
@@ -185,7 +187,7 @@ class LibraryStore(context: Context) {
     }
 
     fun selectedProviderId(): String =
-        prefs.getString("selectedProviderId", defaultProviderId) ?: defaultProviderId
+        prefs.getString("selectedProviderId", "") ?: ""
 
     fun setSelectedProviderId(providerId: String) {
         prefs.edit().putString("selectedProviderId", providerId).apply()

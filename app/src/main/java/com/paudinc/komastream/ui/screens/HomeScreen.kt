@@ -96,7 +96,7 @@ fun HomeScreen(
                                 imageUrl = featuredChapter.coverUrl,
                                 eyebrow = strings.latestUpdates.uppercase(),
                                 title = featuredChapter.mangaTitle,
-                                subtitle = featuredChapter.chapterLabel,
+                                subtitle = strings.chapterLabelWithNumber(featuredChapter),
                                 supportingText = strings.homeLatestSubtitle,
                                 actionLabel = strings.read,
                                 onClick = { onOpenChapter(featuredChapter.providerId, featuredChapter.chapterPath) },
@@ -272,7 +272,7 @@ private fun HomeChapterRow(
                     title = chapter.mangaTitle,
                     detailPath = chapter.mangaPath,
                     coverUrl = chapter.coverUrl,
-                    lastChapterTitle = chapter.chapterLabel,
+                    lastChapterTitle = strings.chapterLabelWithNumber(chapter),
                     lastChapterPath = chapter.chapterPath,
                 )
             )
