@@ -7,7 +7,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,9 +63,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -156,7 +158,15 @@ fun ReaderScreen(
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .edgeSwipeGesture(
+                            dragThresholdPx = HORIZONTAL_DRAG_THRESHOLD_DP,
+                            density = LocalDensity.current.density,
+                            isZoomed = zoomedPageKey != null,
+                            onSwipeLeft = { reader.nextChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
+                            onSwipeRight = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, false) } },
+                        ),
                     state = listState,
                     userScrollEnabled = zoomedPageKey == null,
                     contentPadding = PaddingValues(top = 6.dp, bottom = 86.dp),
@@ -426,6 +436,7 @@ private fun readerChapterSubtitle(chapterTitle: String): String {
 private const val DOUBLE_TAP_ZOOM_SCALE = 2f
 private const val ZOOM_PAN_SPEED_MULTIPLIER = 1.6f
 private const val READER_GESTURE_TAG = "KomaReaderGesture"
+private const val HORIZONTAL_DRAG_THRESHOLD_DP = 100f
 
 @Composable
 fun ReaderChapterNavigationButtons(
@@ -551,7 +562,7 @@ fun ZoomableReaderPage(
                                 1f
                             }
                             val panChange = pressed
-                                .map { it.positionChange() }
+                                .map { it.position - it.previousPosition }
                                 .reduce { acc, delta -> acc + delta } / pressed.size.toFloat()
                             val updatedScale = (scale * zoomChange).coerceIn(1f, 4f)
                             val appliedPan = panChange * ZOOM_PAN_SPEED_MULTIPLIER
@@ -574,7 +585,7 @@ fun ZoomableReaderPage(
 
                         pressed.size == 1 && scale > 1f -> {
                             val change = pressed.first()
-                            val panChange = change.positionChange()
+                            val panChange = change.position - change.previousPosition
                             if (panChange != androidx.compose.ui.geometry.Offset.Zero) {
                                 val appliedPan = panChange * ZOOM_PAN_SPEED_MULTIPLIER
                                 Log.d(
@@ -668,5 +679,45 @@ private fun readerRequestHeaders(providerId: String, chapterPath: String): Heade
             )
             .build()
         else -> null
+    }
+}
+
+fun Modifier.edgeSwipeGesture(
+    dragThresholdPx: Float,
+    density: Float,
+    isZoomed: Boolean,
+    onSwipeLeft: () -> Unit,
+    onSwipeRight: () -> Unit,
+): Modifier = this.pointerInput(dragThresholdPx, isZoomed) {
+    val thresholdPx = dragThresholdPx * density
+
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        if (isZoomed) return@awaitEachGesture
+
+        val startX = down.position.x
+        var totalDragX = 0f
+        var triggered = false
+
+        do {
+            val event = awaitPointerEvent()
+            val drag = event.changes.firstOrNull() ?: continue
+            if (!drag.pressed) break
+
+            totalDragX = drag.position.x - startX
+
+            if (kotlin.math.abs(totalDragX) > thresholdPx && !triggered) {
+                triggered = true
+                event.changes.forEach { it.consume() }
+                if (totalDragX < 0) {
+                    Log.d(READER_GESTURE_TAG, "swipe LEFT triggered dragX=$totalDragX")
+                    onSwipeLeft()
+                } else {
+                    Log.d(READER_GESTURE_TAG, "swipe RIGHT triggered dragX=$totalDragX")
+                    onSwipeRight()
+                }
+                break
+            }
+        } while (true)
     }
 }
