@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -100,6 +101,7 @@ fun ReaderScreen(
     onOpenChapter: (String, String, Boolean) -> Unit,
     onOpenManga: (String) -> Unit,
     onBack: () -> Unit,
+    isChapterLoading: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -402,6 +404,14 @@ fun ReaderScreen(
                             modifier = Modifier.height(22.dp),
                         )
                     }
+                }
+
+                if (isChapterLoading) {
+                    ChapterLoadingOverlay(
+                        modifier = Modifier.fillMaxSize(),
+                        backgroundColor = readerSurfaceColor.copy(alpha = 0.85f),
+                        text = strings.loadingChapter,
+                    )
                 }
             }
         }
@@ -711,14 +721,18 @@ fun Modifier.edgeSwipeGesture(
     onSwipeRight: () -> Unit,
 ): Modifier = this.pointerInput(dragThresholdPx, isZoomed) {
     val thresholdPx = dragThresholdPx * density
+    val verticalCancelPx = thresholdPx * 0.5f
 
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         if (isZoomed) return@awaitEachGesture
 
         val startX = down.position.x
+        val startY = down.position.y
         var totalDragX = 0f
+        var totalDragY = 0f
         var triggered = false
+        var cancelled = false
 
         do {
             val event = awaitPointerEvent()
@@ -726,8 +740,13 @@ fun Modifier.edgeSwipeGesture(
             if (!drag.pressed) break
 
             totalDragX = drag.position.x - startX
+            totalDragY = drag.position.y - startY
 
-            if (kotlin.math.abs(totalDragX) > thresholdPx && !triggered) {
+            if (!cancelled && kotlin.math.abs(totalDragY) > verticalCancelPx) {
+                cancelled = true
+            }
+
+            if (!cancelled && kotlin.math.abs(totalDragX) > thresholdPx && !triggered) {
                 triggered = true
                 event.changes.forEach { it.consume() }
                 if (totalDragX < 0) {
@@ -738,7 +757,42 @@ fun Modifier.edgeSwipeGesture(
                     onSwipeRight()
                 }
                 break
+            } else if (cancelled && kotlin.math.abs(totalDragX) > thresholdPx * 2f) {
+                break
             }
         } while (true)
+    }
+}
+
+@Composable
+private fun ChapterLoadingOverlay(
+    modifier: Modifier = Modifier,
+    backgroundColor: Color,
+    text: String,
+) {
+    Surface(
+        modifier = modifier,
+        color = backgroundColor,
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 4.dp,
+                )
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
     }
 }

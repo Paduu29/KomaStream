@@ -482,6 +482,7 @@ fun KomaStream() {
                                         },
                                         onOpenManga = { path -> viewModel.openDetail(data.providerId, path) },
                                         onBack = { viewModel.goBack() },
+                                        isChapterLoading = readerUiState.isChapterLoading,
                                     )
                                 } ?: LoadingPlaceholder()
                             }
@@ -535,7 +536,7 @@ fun KomaStream() {
                         }
                     }
 
-                    if (viewModel.loading) {
+                    if (viewModel.loading && screen !is Screen.Reader) {
                         LoadingPlaceholder()
                     }
                 }

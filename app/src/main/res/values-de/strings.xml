@@ -56,6 +56,7 @@
     <string name="resume">Fortsetzen</string>
     <string name="download">Herunterladen</string>
     <string name="downloading">Wird heruntergeladen</string>
+    <string name="loading_chapter">Kapitel wird geladen…</string>
     <string name="remove_download">Download entfernen</string>
     <string name="offline_available">Offline verfügbar</string>
     <string name="chapter_downloaded">Kapitel heruntergeladen</string>

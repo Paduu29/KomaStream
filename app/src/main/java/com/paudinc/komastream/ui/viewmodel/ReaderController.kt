@@ -59,6 +59,7 @@ class ReaderController(
         onError: (String) -> Unit,
     ) {
         scope.launch {
+            uiState = uiState.copy(isChapterLoading = true)
             onLoadingChange(true)
             val provider = providerRegistry.get(providerId)
             runCatching { withContext(Dispatchers.IO) { provider.fetchReaderData(path) } }
@@ -82,6 +83,7 @@ class ReaderController(
                         readerData = resolvedData,
                         initialPageIndex = initialPageIndex,
                         currentPageIndex = initialPageIndex,
+                        isChapterLoading = false,
                     )
                     libraryStore.upsertReading(
                         readerActionInteractor.buildReadingEntry(

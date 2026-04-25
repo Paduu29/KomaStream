@@ -37,4 +37,5 @@ data class ReaderUiState(
     val readerData: ReaderData? = null,
     val initialPageIndex: Int = 0,
     val currentPageIndex: Int = 0,
+    val isChapterLoading: Boolean = false,
 )
