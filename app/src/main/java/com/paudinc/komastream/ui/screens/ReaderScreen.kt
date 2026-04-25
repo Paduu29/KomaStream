@@ -126,14 +126,36 @@ fun ReaderScreen(
     }
 
     LaunchedEffect(reader.chapterPath, listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }
-            .map { index -> (index - 1).coerceAtLeast(0) }
-            .filter { pageIndex -> pageIndex in reader.pages.indices }
-            .distinctUntilChanged()
-            .collect { pageIndex ->
-                sliderPage = pageIndex
-                onPagePositionChanged(pageIndex)
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            val totalItems = layoutInfo.totalItemsCount
+            val pageCount = reader.pages.size
+
+            if (visibleItems.isEmpty() || totalItems < 2) {
+                return@snapshotFlow 0
             }
+
+            val lastVisible = visibleItems.lastOrNull()
+            val firstVisible = visibleItems.firstOrNull()
+
+            val targetIndex = when {
+                lastVisible != null && lastVisible.index > 1 -> {
+                    (lastVisible.index - 2).coerceIn(0, pageCount - 1)
+                }
+                firstVisible != null && firstVisible.index > 0 -> {
+                    (firstVisible.index - 1).coerceIn(0, pageCount - 1)
+                }
+                else -> 0
+            }
+
+            targetIndex
+        }
+        .distinctUntilChanged()
+        .collect { pageIndex ->
+            sliderPage = pageIndex
+            onPagePositionChanged(pageIndex)
+        }
     }
 
     Box(
@@ -495,7 +517,6 @@ fun ZoomableReaderPage(
     var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val pageKey = remember(providerId, chapterPath, page.id) { "$providerId:$chapterPath:${page.id}" }
     LaunchedEffect(scale > 1f) {
-        Log.d(READER_GESTURE_TAG, "zoom-state page=$pageKey zoomed=${scale > 1f} scale=$scale")
         onZoomStateChanged(scale > 1f)
     }
 
