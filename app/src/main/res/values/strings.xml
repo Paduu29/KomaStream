@@ -7,6 +7,14 @@
     <string name="catalog">Catalog</string>
     <string name="settings">Settings</string>
     <string name="settings_tab">Settings</string>
+    <string name="myanimelist">MyAnimeList</string>
+    <string name="myanimelist_description">Connect your MyAnimeList account to keep your reading list in sync.</string>
+    <string name="mal_connect">Connect</string>
+    <string name="mal_sync_now">Sync now</string>
+    <string name="mal_disconnect">Disconnect</string>
+    <string name="mal_connected">Connected</string>
+    <string name="mal_disconnected">Disconnected</string>
+    <string name="mal_not_configured">MyAnimeList is not configured in this build.</string>
     <string name="manga">Manga</string>
     <string name="reader">Reader</string>
     <string name="back">Back</string>

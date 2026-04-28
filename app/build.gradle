@@ -15,6 +15,7 @@ def asBuildConfigString = { String value ->
 
 def ciVersionCode = envOrNull("VERSION_CODE")?.toInteger()
 def ciVersionName = envOrNull("VERSION_NAME")
+def malClientId = envOrNull("MAL_CLIENT_ID")
 def githubReleaseRepo = envOrNull("GITHUB_RELEASE_REPO") ?: envOrNull("GITHUB_REPOSITORY") ?: "Paduu29/KomaStream"
 def githubReleaseAssetPattern = envOrNull("GITHUB_RELEASE_ASSET_PATTERN") ?: '.*\\.apk$'
 def githubReleaseToken = envOrNull("GITHUB_RELEASE_TOKEN")
@@ -36,6 +37,7 @@ android {
         targetSdk 36
         versionCode ciVersionCode ?: 25
         versionName ciVersionName ?: "2.13"
+        buildConfigField "String", "MAL_CLIENT_ID", asBuildConfigString(malClientId)
         buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
         buildConfigField "String", "GITHUB_RELEASE_ASSET_PATTERN", asBuildConfigString(githubReleaseAssetPattern)
         buildConfigField "String", "GITHUB_RELEASE_TOKEN", asBuildConfigString(githubReleaseToken)

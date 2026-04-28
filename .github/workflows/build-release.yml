@@ -51,6 +51,7 @@ jobs:
         env:
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/komastream.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}

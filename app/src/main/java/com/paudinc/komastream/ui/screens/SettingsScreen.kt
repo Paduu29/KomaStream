@@ -7,6 +7,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.data.model.AppLanguage
+import com.paudinc.komastream.ui.viewmodel.MyAnimeListUiState
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.utils.AppStrings
@@ -31,12 +35,16 @@ fun SettingsScreen(
     useDarkTheme: Boolean,
     autoJumpToUnread: Boolean,
     mangaBallAdultContentEnabled: Boolean,
+    malUiState: MyAnimeListUiState,
     versionName: String,
     updateState: AppUpdateUiState,
     onLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onAutoJumpToUnreadChange: (Boolean) -> Unit,
     onMangaBallAdultContentChange: (Boolean) -> Unit,
+    onMalConnect: () -> Unit,
+    onMalSync: () -> Unit,
+    onMalDisconnect: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -51,6 +59,64 @@ fun SettingsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            ElevatedCard(
+                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.myAnimeList, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(strings.myAnimeListDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (malUiState.isConnected) {
+                        Text(
+                            "${strings.malConnected}${if (malUiState.username.isNotBlank()) ": ${malUiState.username}" else ""}",
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else if (malUiState.isConfigured) {
+                        Text(strings.malDisconnected, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text(strings.malNotConfigured, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = onMalConnect,
+                            enabled = malUiState.isConfigured && !malUiState.isConnected,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.Link, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(strings.malConnect)
+                        }
+                        Button(
+                            onClick = onMalSync,
+                            enabled = malUiState.isConnected && !malUiState.isSyncing,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(strings.malSyncNow)
+                        }
+                        OutlinedButton(
+                            onClick = onMalDisconnect,
+                            enabled = malUiState.isConfigured,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.LinkOff, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(strings.malDisconnect)
+                        }
+                    }
+                    if (malUiState.isSyncing) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    if (malUiState.errorMessage.isNotBlank()) {
+                        Text(malUiState.errorMessage, color = MaterialTheme.colorScheme.error)
+                    } else if (malUiState.lastMessage.isNotBlank()) {
+                        Text(malUiState.lastMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
         item {
             ElevatedCard(
                 modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),

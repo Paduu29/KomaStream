@@ -93,6 +93,7 @@ fun KomaStream() {
     val homeController = viewModel.homeController
     val updateController = viewModel.updateController
     val backupController = viewModel.backupController
+    val malSyncController = viewModel.malSyncController
 
     val libraryUiState = libraryController.uiState
     val libraryState = libraryUiState.state
@@ -100,6 +101,8 @@ fun KomaStream() {
     val readerUiState = readerController.uiState
     val homeUiState = homeController.uiState
     val backupOperationState by backupController.operationState.collectAsState()
+    val malUiState = malSyncController.uiState
+    val malCallbackUri by AppDeepLinkStore.malCallbackUri.collectAsState()
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri?.let { viewModel.exportBackup(it) }
@@ -114,6 +117,15 @@ fun KomaStream() {
         is AppUpdateUiState.Downloading -> state.release
         is AppUpdateUiState.Downloaded -> state.release
         else -> null
+    }
+
+    LaunchedEffect(malCallbackUri) {
+        if (viewModel.handleMalCallback(malCallbackUri)) {
+            AppDeepLinkStore.clearMalCallback()
+            activity?.intent?.let { currentIntent ->
+                activity.intent = Intent(currentIntent).apply { data = null }
+            }
+        }
     }
     val openReleasePage: () -> Unit = {
         val release = currentRelease
@@ -365,7 +377,7 @@ fun KomaStream() {
                                             )
                                         },
                                         onOpenManga = { id, path -> viewModel.openDetail(id, path) },
-                                        onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                        onOpenChapter = { id, path -> viewModel.openReader(id, path, resumeProgress = true) },
                                         onRemoveFromContinueReading = { viewModel.removeReading(it) },
                                         onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
                                     )
@@ -418,12 +430,21 @@ fun KomaStream() {
                                         useDarkTheme = libraryState.useDarkTheme,
                                         autoJumpToUnread = libraryState.autoJumpToUnread,
                                         mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
+                                        malUiState = malUiState,
                                         versionName = BuildConfig.VERSION_NAME,
                                         updateState = updateController.updateState,
                                         onLanguageChange = { viewModel.changeLanguage(it) },
                                         onThemeChange = { viewModel.changeTheme(it) },
                                         onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
                                         onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
+                                        onMalConnect = {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.beginMalConnect()))
+                                                    .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+                                            )
+                                        },
+                                        onMalSync = { viewModel.syncMalLibrary() },
+                                        onMalDisconnect = { viewModel.disconnectMal() },
                                         onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
                                         onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
                                         onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
@@ -446,9 +467,9 @@ fun KomaStream() {
                                         downloadProgress = libraryController.downloadProgress,
                                         isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
                                         onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
-                                        onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path) },
-                                        onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.chapters, read) },
-                                        onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.chapters, value, read) },
+                                        onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path, detail) },
+                                        onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, read) },
+                                        onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, value, read) },
                                         onToggleChapterDownload = { path, isDownloaded ->
                                             if (isDownloaded) viewModel.removeDownloadedChapter(detail.providerId, path)
                                             else viewModel.downloadChapter(detail.providerId, path)
@@ -511,12 +532,21 @@ fun KomaStream() {
                                 useDarkTheme = libraryState.useDarkTheme,
                                 autoJumpToUnread = libraryState.autoJumpToUnread,
                                 mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
+                                malUiState = malUiState,
                                 versionName = BuildConfig.VERSION_NAME,
                                 updateState = updateController.updateState,
                                 onLanguageChange = { viewModel.changeLanguage(it) },
                                 onThemeChange = { viewModel.changeTheme(it) },
                                 onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
                                 onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
+                                onMalConnect = {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.beginMalConnect()))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+                                    )
+                                },
+                                onMalSync = { viewModel.syncMalLibrary() },
+                                onMalDisconnect = { viewModel.disconnectMal() },
                                 onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
                                 onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
                                 onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },

@@ -115,6 +115,7 @@ fun ReaderScreen(
         if (reader.pages.isEmpty()) 0 else initialPageIndex.coerceIn(0, reader.pages.lastIndex)
     }
     var sliderPage by remember(reader.chapterPath) { mutableIntStateOf(restoredPageIndex) }
+    var hasEmittedPagePosition by remember(reader.chapterPath) { mutableStateOf(false) }
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
@@ -155,6 +156,10 @@ fun ReaderScreen(
         }
         .distinctUntilChanged()
         .collect { pageIndex ->
+            if (!hasEmittedPagePosition) {
+                hasEmittedPagePosition = true
+                return@collect
+            }
             sliderPage = pageIndex
             onPagePositionChanged(pageIndex)
         }
