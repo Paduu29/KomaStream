@@ -39,3 +39,13 @@ data class ReaderUiState(
     val currentPageIndex: Int = 0,
     val isChapterLoading: Boolean = false,
 )
+
+data class MyAnimeListUiState(
+    val isConfigured: Boolean = false,
+    val isConnected: Boolean = false,
+    val clientId: String = "",
+    val username: String = "",
+    val isSyncing: Boolean = false,
+    val lastMessage: String = "",
+    val errorMessage: String = "",
+)

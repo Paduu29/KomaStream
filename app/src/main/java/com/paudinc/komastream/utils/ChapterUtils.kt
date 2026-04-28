@@ -15,14 +15,11 @@ fun buildChapterPath(detailPath: String, chapter: MangaChapter): String {
 }
 
 fun parseChapterInput(value: String): Double? {
-    val normalized = value
-        .trim()
-        .replace(",", ".")
-        .replace(Regex("(?<=\\d)-(?=\\d)"), ".")
-    return Regex("\\d+(?:\\.\\d+)?")
-        .find(normalized)
+    val token = Regex("\\d[\\d.,-]*")
+        .find(value.trim())
         ?.value
-        ?.toDoubleOrNull()
+        ?: return null
+    return normalizeChapterNumberToken(token)?.toDoubleOrNull()
 }
 
 fun resolveTargetUnreadChapterPath(
@@ -31,7 +28,6 @@ fun resolveTargetUnreadChapterPath(
     chapters: List<MangaChapter>,
     readChapters: Set<String>,
     lastOpenedChapterPath: String,
-    isFavorite: Boolean,
     autoJumpToUnread: Boolean,
 ): String? {
     if (!autoJumpToUnread) return null
@@ -44,7 +40,7 @@ fun resolveTargetUnreadChapterPath(
     val hasReadProgress = lastOpenedChapterPath.isNotBlank() || chapterEntries.any { (path, _, _) ->
         canonicalChapterKey(providerId, path) in canonicalReadKeys
     }
-    if (!isFavorite && !hasReadProgress) return null
+    if (!hasReadProgress) return null
 
     val unreadEntries = chapterEntries.filter { (path, _, _) ->
         canonicalChapterKey(providerId, path) !in canonicalReadKeys
@@ -67,6 +63,51 @@ fun resolveTargetUnreadChapterPath(
     }
 
     return unreadEntries.minByOrNull { (_, _, value) -> value }?.first
+}
+
+fun resolveProgressChapterPath(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    readChapters: Set<String>,
+): String? {
+    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    val chapterEntries = chapters.map { chapter ->
+        Triple(buildChapterPath(detailPath, chapter), chapter, chapterValue(chapter))
+    }
+    val readEntries = chapterEntries.filter { (path, _, _) ->
+        canonicalChapterKey(providerId, path) in canonicalReadKeys
+    }
+    if (readEntries.isEmpty()) return null
+
+    val lastReadValue = readEntries.maxOf { it.third }
+    chapterEntries
+        .filter { (path, _, value) ->
+            value > lastReadValue && canonicalChapterKey(providerId, path) !in canonicalReadKeys
+        }
+        .minByOrNull { it.third }
+        ?.first
+        ?.let { return it }
+
+    return readEntries.maxByOrNull { it.third }?.first
+}
+
+fun resolveReadThroughChapterPaths(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    currentChapterPath: String,
+): List<String> {
+    val currentValue = chapters.firstOrNull { chapter ->
+        canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) ==
+            canonicalChapterKey(providerId, currentChapterPath)
+    }?.let(::chapterValue)
+        ?: return listOf(currentChapterPath).filter { it.isNotBlank() }
+
+    return chapters.mapNotNull { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        if (chapterValue(chapter) <= currentValue) path else null
+    }.distinct()
 }
 
 fun sameChapterPath(providerId: String, left: String, right: String): Boolean {
@@ -119,4 +160,37 @@ fun formatDateEu(input: String): String {
 
 private fun isUuid(value: String): Boolean {
     return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
+}
+
+private fun normalizeChapterNumberToken(value: String): String? {
+    if (value.isBlank()) return null
+    val normalizedHyphen = value.replace(Regex("(?<=\\d)-(?=\\d)"), ".")
+    val separators = normalizedHyphen.filter { it == ',' || it == '.' }
+    if (separators.isEmpty()) {
+        return normalizedHyphen.filter { it.isDigit() }
+    }
+
+    if (separators.length > 1) {
+        val lastSeparatorIndex = normalizedHyphen.lastIndexOfAny(charArrayOf(',', '.'))
+        if (lastSeparatorIndex < 0) return normalizedHyphen.filter { it.isDigit() }
+        val integerPart = normalizedHyphen.substring(0, lastSeparatorIndex).filter { it.isDigit() }
+        val fractionalPart = normalizedHyphen.substring(lastSeparatorIndex + 1).filter { it.isDigit() }
+        return if (fractionalPart.isBlank()) integerPart else "$integerPart.$fractionalPart"
+    }
+
+    val separator = separators.first()
+    val parts = normalizedHyphen.split(separator)
+    if (parts.size != 2) {
+        return normalizedHyphen.filter { it.isDigit() }
+    }
+
+    val left = parts[0].filter { it.isDigit() }
+    val right = parts[1].filter { it.isDigit() }
+    if (left.isBlank()) return right
+    if (right.isBlank()) return left
+
+    return when {
+        right.length == 3 -> left + right
+        else -> "$left.$right"
+    }
 }

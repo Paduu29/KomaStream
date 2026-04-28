@@ -7,8 +7,8 @@ import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.content.ContextCompat
+import com.paudinc.komastream.utils.AppDeepLinkStore
 
 class MainActivity : AppCompatActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -18,11 +18,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (savedInstanceState == null) {
-            recreate()
-            return
-        }
-
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -31,8 +26,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContent {
-            val configuration = LocalConfiguration.current
             KomaStream()
         }
+
+        AppDeepLinkStore.postMalCallback(intent?.data)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        AppDeepLinkStore.postMalCallback(intent.data)
     }
 }

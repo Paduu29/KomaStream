@@ -77,6 +77,7 @@ class LibraryStore(context: Context) {
             coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl.orEmpty() },
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath.orEmpty() },
+            malMangaId = manga.malMangaId ?: existingReading?.malMangaId,
         )
         current.removeAll { sameStoredManga(it, mergedReading) }
         current.add(0, mergedReading)
@@ -92,6 +93,7 @@ class LibraryStore(context: Context) {
                     detailPath = preferCanonicalDetailPath(saved, mergedReading),
                     lastChapterTitle = mergedReading.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedReading.lastChapterPath.ifBlank { saved.lastChapterPath },
+                    malMangaId = mergedReading.malMangaId ?: saved.malMangaId,
                 )
             } else {
                 saved
@@ -113,6 +115,10 @@ class LibraryStore(context: Context) {
         )
             .filterNot { sameStoredManga(it, target) }
         prefs.edit().putString("reading", jsonCodec.serializeSavedMangaList(current)).apply()
+    }
+
+    fun replaceReading(items: List<SavedManga>) {
+        prefs.edit().putString("reading", jsonCodec.serializeSavedMangaList(items.take(20))).apply()
     }
 
     fun isFavorite(providerId: String, detailPath: String): Boolean {
@@ -147,6 +153,17 @@ class LibraryStore(context: Context) {
         return jsonCodec.parseRawReadChapters(
             prefs.getString("readChapters", "[]").orEmpty()
         ).any { sameStoredChapter(providerId, it, chapterPath) }
+    }
+
+    fun readAllReadChapters(): Set<String> {
+        return jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty())
+    }
+
+    fun readChaptersForProvider(providerId: String): Set<String> {
+        return jsonCodec.parseReadChapters(
+            value = prefs.getString("readChapters", "[]").orEmpty(),
+            providerId = providerId,
+        )
     }
 
     fun setChaptersRead(providerId: String, chapterPaths: Collection<String>, read: Boolean) {

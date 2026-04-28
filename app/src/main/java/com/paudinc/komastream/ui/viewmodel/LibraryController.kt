@@ -19,6 +19,7 @@ import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.LibraryActionInteractor
+import com.paudinc.komastream.ui.viewmodel.MalSyncController
 import com.paudinc.komastream.ui.navigation.LibraryTab
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.DownloadChapterWorker
@@ -26,6 +27,8 @@ import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.chapterValue
+import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
+import com.paudinc.komastream.utils.resolveProgressChapterPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
@@ -40,6 +43,7 @@ class LibraryController(
     private val workManager: WorkManager,
     private val strings: AppStrings,
     private val libraryActionInteractor: LibraryActionInteractor,
+    private val malSyncController: MalSyncController? = null,
 ) {
     var uiState by mutableStateOf(
         LibraryUiState(
@@ -150,18 +154,57 @@ class LibraryController(
         uiState = uiState.copy(selectedTab = tab)
     }
 
-    fun toggleChapterRead(providerId: String, path: String) {
-        libraryStore.toggleChapterRead(providerId, path)
+    fun toggleChapterRead(providerId: String, path: String, detail: com.paudinc.komastream.data.model.MangaDetail? = null) {
+        val wasRead = libraryStore.isChapterRead(providerId, path)
+        if (wasRead) {
+            libraryStore.setChaptersRead(providerId, listOf(path), false)
+        } else {
+            val pathsToMark = detail?.takeIf { it.providerId == providerId }?.let {
+                resolveReadThroughChapterPaths(
+                    providerId = providerId,
+                    detailPath = it.detailPath,
+                    chapters = it.chapters,
+                    currentChapterPath = path,
+                )
+            } ?: listOf(path)
+            libraryStore.setChaptersRead(providerId, pathsToMark, true)
+        }
         refreshState()
         Toast.makeText(context, strings.updatedReadStatus, Toast.LENGTH_SHORT).show()
     }
 
-    fun setAllChaptersRead(providerId: String, detailPath: String, chapters: List<MangaChapter>, read: Boolean) {
+    fun setAllChaptersRead(
+        providerId: String,
+        detailPath: String,
+        mangaTitle: String,
+        coverUrl: String,
+        chapters: List<MangaChapter>,
+        read: Boolean,
+    ) {
         uiState = uiState.copy(isBulkUpdatingChapters = true)
         scope.launch {
             withContext(Dispatchers.Default) {
                 libraryStore.setChaptersRead(providerId, chapters.map { buildChapterPath(detailPath, it) }, read)
             }
+            if (malSyncController != null) {
+                withContext(Dispatchers.IO) {
+                    malSyncController.pushBulkReadProgress(
+                        providerId = providerId,
+                        detailPath = detailPath,
+                        title = mangaTitle,
+                        coverUrl = coverUrl,
+                        chapters = chapters,
+                        read = read,
+                    )
+                }
+            }
+            updateProgressSnapshot(
+                providerId = providerId,
+                detailPath = detailPath,
+                mangaTitle = mangaTitle,
+                coverUrl = coverUrl,
+                chapters = chapters,
+            )
             refreshState()
             uiState = uiState.copy(isBulkUpdatingChapters = false)
             Toast.makeText(
@@ -172,7 +215,15 @@ class LibraryController(
         }
     }
 
-    fun setUntilChapterRead(providerId: String, detailPath: String, chapters: List<MangaChapter>, targetValue: Double, read: Boolean) {
+    fun setUntilChapterRead(
+        providerId: String,
+        detailPath: String,
+        mangaTitle: String,
+        coverUrl: String,
+        chapters: List<MangaChapter>,
+        targetValue: Double,
+        read: Boolean,
+    ) {
         uiState = uiState.copy(isBulkUpdatingChapters = true)
         scope.launch {
             val paths = withContext(Dispatchers.Default) {
@@ -181,6 +232,26 @@ class LibraryController(
             withContext(Dispatchers.Default) {
                 libraryStore.setChaptersRead(providerId, paths, read)
             }
+            if (malSyncController != null) {
+                val syncedChapters = chapters.filter { chapterValue(it) <= targetValue }
+                withContext(Dispatchers.IO) {
+                    malSyncController.pushBulkReadProgress(
+                        providerId = providerId,
+                        detailPath = detailPath,
+                        title = mangaTitle,
+                        coverUrl = coverUrl,
+                        chapters = syncedChapters,
+                        read = read,
+                    )
+                }
+            }
+            updateProgressSnapshot(
+                providerId = providerId,
+                detailPath = detailPath,
+                mangaTitle = mangaTitle,
+                coverUrl = coverUrl,
+                chapters = chapters,
+            )
             refreshState()
             uiState = uiState.copy(isBulkUpdatingChapters = false)
             Toast.makeText(context, strings.markedUntilChapter(targetValue, read), Toast.LENGTH_SHORT).show()
@@ -189,12 +260,14 @@ class LibraryController(
 
     fun removeReading(manga: SavedManga) {
         libraryStore.removeReading(manga.providerId, manga.detailPath)
+        malSyncController?.pushReadingEntry(manga, isRemoved = true)
         refreshState()
         Toast.makeText(context, strings.removedFromContinueReading, Toast.LENGTH_SHORT).show()
     }
 
     fun addToReading(manga: SavedManga) {
         libraryStore.upsertReading(manga)
+        malSyncController?.pushReadingEntry(manga)
         refreshState()
         Toast.makeText(context, strings.addedToContinueReading, Toast.LENGTH_SHORT).show()
     }
@@ -218,6 +291,30 @@ class LibraryController(
     fun changeMangaBallAdultContent(enabled: Boolean) {
         libraryStore.setMangaBallAdultContentEnabled(enabled)
         refreshState()
+    }
+
+    fun updateProgressSnapshot(
+        providerId: String,
+        detailPath: String,
+        mangaTitle: String,
+        coverUrl: String,
+        chapters: List<MangaChapter>,
+    ) {
+        val readChapters = libraryStore.read(filterBySelectedProvider = true).readChapters
+        val progressChapterPath = resolveProgressChapterPath(providerId, detailPath, chapters, readChapters) ?: return
+        val progressChapter = chapters.firstOrNull {
+            buildChapterPath(detailPath, it) == progressChapterPath
+        } ?: return
+        libraryStore.upsertReading(
+            SavedManga(
+                providerId = providerId,
+                title = mangaTitle,
+                detailPath = detailPath,
+                coverUrl = coverUrl,
+                lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
+                lastChapterPath = progressChapterPath,
+            )
+        )
     }
 
     fun selectProvider(providerId: String) {

@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.MangaChapter
+import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.BackupFileInteractor
 import com.paudinc.komastream.data.repository.CatalogStateInteractor
@@ -27,6 +28,9 @@ import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
+import com.paudinc.komastream.utils.buildChapterPath
+import com.paudinc.komastream.utils.canonicalChapterKey
+import com.paudinc.komastream.utils.canonicalChapterKeys
 import java.io.File
 
 class KomaViewModel(
@@ -56,6 +60,13 @@ class KomaViewModel(
 
     val homeController = HomeController(viewModelScope)
     val catalogController = CatalogController(viewModelScope, catalogStateInteractor)
+    val malSyncController = MalSyncController(
+        context = context,
+        scope = viewModelScope,
+        providerRegistry = providerRegistry,
+        libraryStore = libraryStore,
+        strings = strings,
+    )
     val libraryController = LibraryController(
         context = context,
         scope = viewModelScope,
@@ -64,6 +75,7 @@ class KomaViewModel(
         workManager = workManager,
         strings = strings,
         libraryActionInteractor = libraryActionInteractor,
+        malSyncController = malSyncController,
     )
     val readerController = ReaderController(
         scope = viewModelScope,
@@ -151,10 +163,11 @@ val currentProvider
         )
     }
 
-    fun openReader(providerId: String, path: String, replace: Boolean = false) {
+    fun openReader(providerId: String, path: String, replace: Boolean = false, resumeProgress: Boolean = false) {
         readerController.openReader(
             providerId = providerId,
             path = path,
+            resumeProgress = resumeProgress,
             replace = replace,
             navigationController = navigationController,
             libraryState = libraryController.currentState(),
@@ -174,7 +187,12 @@ val currentProvider
     }
 
     fun toggleFavorite(manga: SavedManga) {
+        val previousState = libraryController.currentState()
+        val wasFavorite = previousState.favorites.any {
+            it.providerId == manga.providerId && it.detailPath == manga.detailPath
+        }
         libraryController.toggleFavorite(manga)
+        syncMalFavoriteState(manga, isFavorite = !wasFavorite)
     }
 
     fun selectLibraryTab(tab: LibraryTab) {
@@ -205,16 +223,42 @@ val currentProvider
         catalogController.clearFilters()
     }
 
-    fun toggleChapterRead(providerId: String, path: String) {
-        libraryController.toggleChapterRead(providerId, path)
+    fun toggleChapterRead(providerId: String, path: String, detail: MangaDetail? = null) {
+        libraryController.toggleChapterRead(providerId, path, detail)
+        detail?.let {
+            libraryController.updateProgressSnapshot(
+                providerId = providerId,
+                detailPath = it.detailPath,
+                mangaTitle = it.title,
+                coverUrl = it.coverUrl,
+                chapters = it.chapters,
+            )
+            libraryController.refreshState()
+        }
+        syncMalChapterReadState(providerId)
     }
 
-    fun setAllChaptersRead(providerId: String, detailPath: String, chapters: List<MangaChapter>, read: Boolean) {
-        libraryController.setAllChaptersRead(providerId, detailPath, chapters, read)
+    fun setAllChaptersRead(
+        providerId: String,
+        detailPath: String,
+        mangaTitle: String,
+        coverUrl: String,
+        chapters: List<MangaChapter>,
+        read: Boolean,
+    ) {
+        libraryController.setAllChaptersRead(providerId, detailPath, mangaTitle, coverUrl, chapters, read)
     }
 
-    fun setUntilChapterRead(providerId: String, detailPath: String, chapters: List<MangaChapter>, targetValue: Double, read: Boolean) {
-        libraryController.setUntilChapterRead(providerId, detailPath, chapters, targetValue, read)
+    fun setUntilChapterRead(
+        providerId: String,
+        detailPath: String,
+        mangaTitle: String,
+        coverUrl: String,
+        chapters: List<MangaChapter>,
+        targetValue: Double,
+        read: Boolean,
+    ) {
+        libraryController.setUntilChapterRead(providerId, detailPath, mangaTitle, coverUrl, chapters, targetValue, read)
     }
 
     fun removeReading(manga: SavedManga) {
@@ -223,6 +267,20 @@ val currentProvider
 
     fun addToReading(manga: SavedManga) {
         libraryController.addToReading(manga)
+    }
+
+    fun beginMalConnect(): String =
+        malSyncController.beginConnect()
+
+    fun handleMalCallback(uri: Uri?): Boolean =
+        malSyncController.handleAuthorizationCallback(uri)
+
+    fun syncMalLibrary() {
+        malSyncController.syncLocalLibraryToRemote(currentProvider.id)
+    }
+
+    fun disconnectMal() {
+        malSyncController.disconnect()
     }
 
     fun changeLanguage(language: AppLanguage) {
@@ -298,11 +356,63 @@ val currentProvider
     fun openAdjacentChapter(providerId: String, currentPath: String, targetPath: String, markCurrentRead: Boolean) {
         readerController.updateChapterReadState(providerId, currentPath, markCurrentRead)
         libraryController.refreshState()
-        openReader(providerId, targetPath, replace = true)
+        openReader(providerId, targetPath, replace = true, resumeProgress = false)
     }
 
     private fun updateLoadingState(isLoading: Boolean) {
         loading = isLoading
+    }
+
+    private fun syncMalFavoriteState(manga: SavedManga, isFavorite: Boolean) {
+        if (!malSyncController.uiState.isConnected) return
+        val state = libraryController.currentState()
+        val detail = readerController.uiState.selectedDetail?.takeIf {
+            it.providerId == manga.providerId && it.detailPath == manga.detailPath
+        }
+        val readCount = detail?.let { countReadChapters(it.providerId, it.detailPath, it.chapters, state.readChapters) } ?: 0
+        val target = manga.copy(
+            title = manga.title.ifBlank { detail?.title.orEmpty() },
+            coverUrl = manga.coverUrl.ifBlank { detail?.coverUrl.orEmpty() },
+        )
+        when {
+            isFavorite && readCount > 0 -> malSyncController.pushReadProgress(target, readCount)
+            isFavorite -> malSyncController.pushFavoriteEntry(target)
+            readCount > 0 -> malSyncController.pushReadProgress(target, readCount)
+            else -> malSyncController.pushFavoriteEntry(target, isRemoved = true)
+        }
+    }
+
+    private fun syncMalChapterReadState(providerId: String) {
+        if (!malSyncController.uiState.isConnected) return
+        val detail = readerController.uiState.selectedDetail?.takeIf { it.providerId == providerId } ?: return
+        val state = libraryController.currentState()
+        val readCount = countReadChapters(providerId, detail.detailPath, detail.chapters, state.readChapters)
+        val target = SavedManga(
+            providerId = providerId,
+            title = detail.title,
+            detailPath = detail.detailPath,
+            coverUrl = detail.coverUrl,
+        )
+        val isFavorite = state.favorites.any {
+            it.providerId == providerId && it.detailPath == detail.detailPath
+        }
+        when {
+            readCount > 0 -> malSyncController.pushReadProgress(target, readCount)
+            isFavorite -> malSyncController.pushFavoriteEntry(target)
+            else -> malSyncController.pushFavoriteEntry(target, isRemoved = true)
+        }
+    }
+
+    private fun countReadChapters(
+        providerId: String,
+        detailPath: String,
+        chapters: List<MangaChapter>,
+        readChapters: Set<String>,
+    ): Int {
+        val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+        return chapters.count { chapter ->
+            canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) in canonicalReadKeys
+        }
     }
 
     var loading by mutableStateOf(false)

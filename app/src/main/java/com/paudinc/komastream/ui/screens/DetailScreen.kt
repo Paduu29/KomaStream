@@ -86,7 +86,6 @@ fun DetailScreen(
         detail.chapters,
         readChapters,
         lastOpenedChapterPath,
-        isFavorite,
         autoJumpToUnread,
     ) {
         resolveTargetUnreadChapterPath(
@@ -95,7 +94,6 @@ fun DetailScreen(
             chapters = detail.chapters,
             readChapters = readChapters,
             lastOpenedChapterPath = lastOpenedChapterPath,
-            isFavorite = isFavorite,
             autoJumpToUnread = autoJumpToUnread,
         )
     }

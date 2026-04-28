@@ -42,6 +42,7 @@ class LibraryJsonCodec(
                         coverUrl = coverUrl,
                         lastChapterTitle = item.optString("lastChapterTitle"),
                         lastChapterPath = rawLastChapterPath.ifBlank { rawChapterPath },
+                        malMangaId = item.optLongOrNull("malMangaId"),
                     )
                 )
             }
@@ -60,6 +61,7 @@ class LibraryJsonCodec(
                     .put("coverUrl", item.coverUrl)
                     .put("lastChapterTitle", item.lastChapterTitle)
                     .put("lastChapterPath", item.lastChapterPath)
+                    .put("malMangaId", item.malMangaId ?: JSONObject.NULL)
             )
         }
         return json.toString()
@@ -213,5 +215,14 @@ class LibraryJsonCodec(
 
     private companion object {
         val mangaUuidRegex = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    }
+}
+
+private fun JSONObject.optLongOrNull(name: String): Long? {
+    if (!has(name) || isNull(name)) return null
+    return when (val value = opt(name)) {
+        is Number -> value.toLong()
+        is String -> value.toLongOrNull()
+        else -> null
     }
 }

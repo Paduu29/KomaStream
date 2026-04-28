@@ -6,10 +6,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
+import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.ReaderActionInteractor
 import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.ProviderRegistry
+import com.paudinc.komastream.utils.buildChapterPath
+import com.paudinc.komastream.utils.resolveProgressChapterPath
+import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,6 +54,7 @@ class ReaderController(
     fun openReader(
         providerId: String,
         path: String,
+        resumeProgress: Boolean,
         replace: Boolean,
         navigationController: NavigationController,
         libraryState: LibraryState,
@@ -78,7 +83,11 @@ class ReaderController(
                         currentDetailPath = currentManga?.detailPath.orEmpty(),
                     )
                     val resolvedData = data.copy(mangaDetailPath = resolvedDetailPath)
-                    val initialPageIndex = libraryStore.getChapterProgress(providerId, path)
+                    val initialPageIndex = if (resumeProgress) {
+                        libraryStore.getChapterProgress(providerId, path)
+                    } else {
+                        0
+                    }
                     uiState = uiState.copy(
                         readerData = resolvedData,
                         initialPageIndex = initialPageIndex,
@@ -126,8 +135,46 @@ class ReaderController(
             ?.size
             ?: 0
         if (totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
-            libraryStore.markChapterRead(providerId, path)
+            val detail = uiState.selectedDetail?.takeIf {
+                it.providerId == providerId && it.detailPath == uiState.readerData?.mangaDetailPath
+            }
+            val chaptersToMark = detail?.let {
+                resolveReadThroughChapterPaths(
+                    providerId = providerId,
+                    detailPath = it.detailPath,
+                    chapters = it.chapters,
+                    currentChapterPath = path,
+                )
+            } ?: listOf(path)
+            libraryStore.setChaptersRead(providerId, chaptersToMark, true)
+            detail?.let { syncReadingSnapshot(providerId, it) }
             onChapterMarkedRead()
         }
+    }
+
+    private fun syncReadingSnapshot(
+        providerId: String,
+        detail: com.paudinc.komastream.data.model.MangaDetail,
+    ) {
+        val readChapters = libraryStore.readChaptersForProvider(providerId)
+        val progressPath = resolveProgressChapterPath(
+            providerId = providerId,
+            detailPath = detail.detailPath,
+            chapters = detail.chapters,
+            readChapters = readChapters,
+        ) ?: return
+        val progressChapter = detail.chapters.firstOrNull { chapter ->
+            buildChapterPath(detail.detailPath, chapter) == progressPath
+        } ?: return
+        libraryStore.upsertReading(
+            SavedManga(
+                providerId = providerId,
+                title = detail.title,
+                detailPath = detail.detailPath,
+                coverUrl = detail.coverUrl,
+                lastChapterTitle = progressChapter.chapterLabel,
+                lastChapterPath = progressPath,
+            )
+        )
     }
 }
