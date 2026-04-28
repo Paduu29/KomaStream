@@ -117,20 +117,57 @@ Contributions are welcome if they stay within the project scope and legal constr
 - Test changes before opening a pull request
 - Do not add or promote unauthorized or infringing content sources
 
-## Privacy
+## Privacy Policy
 
-KomaStream does not require user accounts and does not operate its own backend. App data is stored locally on the device, and network traffic goes directly from the device to the selected third-party service.
+KomaStream does not collect, store, or share any personal user data.
 
-## Legal and Usage
+### Data Collection
+- The app does not require account registration.
+- No personal information (such as name, email, or location) is collected.
+- Reading progress and favorites are stored locally on the user’s device.
 
-KomaStream is open-source client software. It is intended to be used only with content sources that the user is legally allowed to access.
+### Third-Party Services
+KomaStream aggregates publicly available manga content from third-party sources. The app does not host any content itself.
 
-- No copyrighted manga content is included in this repository
-- The project does not redistribute third-party content
-- All trademarks and copyrights belong to their respective owners
-- Nothing in this repository should be interpreted as legal advice or authorization to access protected content unlawfully
+Users should be aware that third-party sources may have their own privacy policies and terms.
 
-Users are responsible for complying with applicable laws, local regulations, and the terms of service of any third-party service they choose to use.
+### Data Usage
+All data used by the app is strictly for providing core functionality such as:
+- Tracking reading progress
+- Managing favorites
+- Improving navigation experience
+
+### Security
+Since no personal data is collected or transmitted, there is minimal risk related to user privacy.
+
+### Changes
+This privacy policy may be updated in the future. Any changes will be reflected in this document.
+
+## Terms of Use
+
+By using KomaStream, you agree to the following terms:
+
+### Usage
+KomaStream is provided for personal, non-commercial use only.
+
+### Content
+- KomaStream does not host any manga content.
+- All content is sourced from third-party providers.
+- Users are responsible for ensuring that accessing such content is legal in their region.
+
+### Responsibility
+- The developer is not responsible for the content provided by third-party sources.
+- The app is provided "as is" without warranties of any kind.
+
+### Restrictions
+Users agree not to:
+- Use the app for unlawful purposes
+
+### Availability
+The app may be updated, modified, or discontinued at any time without notice.
+
+### Changes to Terms
+These terms may be updated at any time. Continued use of the app implies acceptance of the updated terms.
 
 ## License
 
