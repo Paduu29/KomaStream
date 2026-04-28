@@ -33,7 +33,7 @@ android {
     defaultConfig {
         applicationId "com.paudinc.komastream"
         minSdk 24
-        targetSdk 34
+        targetSdk 36
         versionCode ciVersionCode ?: 24
         versionName ciVersionName ?: "2.12"
         buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
@@ -81,23 +81,23 @@ android {
 }
 
 dependencies {
-    implementation platform("androidx.compose:compose-bom:2026.03.00")
+    implementation platform("androidx.compose:compose-bom:2026.04.01")
 
-    implementation "androidx.core:core-ktx:1.12.0"
+    implementation "androidx.core:core-ktx:1.18.0"
     implementation "androidx.activity:activity-compose:1.13.0"
-    implementation "androidx.appcompat:appcompat:1.7.0"
-    implementation "androidx.work:work-runtime-ktx:2.10.0"
+    implementation "androidx.appcompat:appcompat:1.7.1"
+    implementation "androidx.work:work-runtime-ktx:2.11.2"
     implementation "androidx.compose.ui:ui"
     implementation "androidx.compose.foundation:foundation"
     implementation "androidx.compose.material3:material3"
     implementation "androidx.compose.material:material-icons-extended"
     implementation "androidx.compose.ui:ui-tooling-preview"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:2.10.0"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
-    implementation "io.coil-kt:coil-compose:2.5.0"
-    implementation "com.squareup.okhttp3:okhttp:4.12.0"
-    implementation "com.squareup.okhttp3:okhttp-urlconnection:4.12.0"
-    implementation "org.jsoup:jsoup:1.17.2"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+    implementation "io.coil-kt:coil-compose:2.7.0"
+    implementation "com.squareup.okhttp3:okhttp:5.3.2"
+    implementation "com.squareup.okhttp3:okhttp-urlconnection:5.3.2"
+    implementation "org.jsoup:jsoup:1.22.2"
 
     debugImplementation "androidx.compose.ui:ui-tooling"
 }

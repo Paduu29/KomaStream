@@ -56,9 +56,8 @@ fun DetailScreen(
 ) {
     var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
-    var hasAutoPositionedChapterList by rememberSaveable(detail.providerId, detail.detailPath, chapterQuery) { mutableStateOf(false) }
-    var suppressAutoPositioning by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
-    val favoriteStateAtEntry = rememberSaveable(detail.providerId, detail.detailPath) { isFavorite }
+    var hasAutoPositionedChapterList by remember(detail.providerId, detail.detailPath, autoJumpToUnread) { mutableStateOf(false) }
+    var suppressAutoPositioning by remember(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val canonicalReadChapterKeys = remember(detail.providerId, readChapters) {
@@ -87,7 +86,7 @@ fun DetailScreen(
         detail.chapters,
         readChapters,
         lastOpenedChapterPath,
-        favoriteStateAtEntry,
+        isFavorite,
         autoJumpToUnread,
     ) {
         resolveTargetUnreadChapterPath(
@@ -96,7 +95,7 @@ fun DetailScreen(
             chapters = detail.chapters,
             readChapters = readChapters,
             lastOpenedChapterPath = lastOpenedChapterPath,
-            isFavorite = favoriteStateAtEntry,
+            isFavorite = isFavorite,
             autoJumpToUnread = autoJumpToUnread,
         )
     }
@@ -107,6 +106,7 @@ fun DetailScreen(
                 .takeIf { it >= 0 }
         }
     }
+
     val lastUnreadIndex = remember(filteredChapters, canonicalReadChapterKeys, detail.detailPath, detail.providerId) {
         filteredChapters.indexOfLast { chapter ->
             val path = buildChapterPath(detail.detailPath, chapter)
@@ -126,14 +126,21 @@ fun DetailScreen(
     }
     var sourceMenuExpanded by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
 
-    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex) {
+    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex, autoJumpToUnread) {
         if (chapterQuery.isNotBlank()) return@LaunchedEffect
-        if (suppressAutoPositioning) return@LaunchedEffect
+        if (suppressAutoPositioning) {
+            suppressAutoPositioning = false
+            return@LaunchedEffect
+        }
         if (hasAutoPositionedChapterList) return@LaunchedEffect
-        val targetIndex = targetUnreadIndex ?: return@LaunchedEffect
-        val chapterStartIndex = 2
-        listState.scrollToItem((targetIndex + chapterStartIndex).coerceAtLeast(0))
-        hasAutoPositionedChapterList = true
+        if (autoJumpToUnread && targetUnreadIndex != null) {
+            val chapterStartIndex = 1
+            listState.scrollToItem((targetUnreadIndex + chapterStartIndex).coerceAtLeast(0))
+            hasAutoPositionedChapterList = true
+        } else if (!autoJumpToUnread) {
+            listState.scrollToItem(0)
+            hasAutoPositionedChapterList = true
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -638,7 +645,7 @@ fun DetailScreen(
                     suppressAutoPositioning = true
                     hasAutoPositionedChapterList = true
                     scope.launch {
-                        listState.animateScrollToItem(index = 0, scrollOffset = 0)
+                        listState.scrollToItem(index = 0, scrollOffset = 0)
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -651,10 +658,10 @@ fun DetailScreen(
                     suppressAutoPositioning = true
                     hasAutoPositionedChapterList = true
                     scope.launch {
-                        val chapterStartIndex = 2
+                        val chapterStartIndex = 1
                         val targetIndex = lastUnreadIndex?.let { chapterStartIndex + it }
                             ?: (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                        listState.animateScrollToItem(targetIndex)
+                        listState.scrollToItem(targetIndex)
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
