@@ -66,6 +66,7 @@ class KomaViewModel(
         providerRegistry = providerRegistry,
         libraryStore = libraryStore,
         strings = strings,
+        onLocalLibraryChanged = ::refreshLibraryUi,
     )
     val libraryController = LibraryController(
         context = context,
@@ -103,13 +104,11 @@ val currentProvider
         get() = providerRegistry.get(libraryController.uiState.state.selectedProviderId)
 
     init {
-        android.util.Log.d("KomaViewModel", "init: starting, providerId=${libraryController.uiState.state.selectedProviderId}")
         libraryController.refreshOfflineDownloads()
         libraryController.startDownloadProgressTracking()
         updateController.checkForUpdates(openDialogOnUpdate = true)
         val providerId = libraryController.uiState.state.selectedProviderId
         if (providerId.isNotBlank()) {
-            android.util.Log.d("KomaViewModel", "init: calling refreshHome")
             refreshHome()
         }
     }
@@ -361,6 +360,10 @@ val currentProvider
 
     private fun updateLoadingState(isLoading: Boolean) {
         loading = isLoading
+    }
+
+    private fun refreshLibraryUi() {
+        libraryController.refreshState()
     }
 
     private fun syncMalFavoriteState(manga: SavedManga, isFavorite: Boolean) {

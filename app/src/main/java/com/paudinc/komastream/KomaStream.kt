@@ -7,7 +7,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -103,6 +107,7 @@ fun KomaStream() {
     val backupOperationState by backupController.operationState.collectAsState()
     val malUiState = malSyncController.uiState
     val malCallbackUri by AppDeepLinkStore.malCallbackUri.collectAsState()
+    val isMalSyncBlocking = malUiState.isSyncing
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri?.let { viewModel.exportBackup(it) }
@@ -161,7 +166,8 @@ fun KomaStream() {
         typography = komaTypography(),
     ) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            Scaffold(
+            Box(modifier = Modifier.fillMaxSize()) {
+                Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = {
@@ -329,11 +335,11 @@ fun KomaStream() {
                         )
                     }
                 }
-            ) { padding ->
-                Box(modifier = Modifier.padding(padding)) {
-                    val homeUiState = homeController.uiState
-                    saveableStateHolder.SaveableStateProvider(screen.saveableKey()) {
-                        when (screen) {
+                ) { padding ->
+                    Box(modifier = Modifier.padding(padding)) {
+                        val homeUiState = homeController.uiState
+                        saveableStateHolder.SaveableStateProvider(screen.saveableKey()) {
+                            when (screen) {
                             is Screen.Root -> {
                                 when (screen.tab) {
 
@@ -566,8 +572,78 @@ fun KomaStream() {
                         }
                     }
 
-                    if (viewModel.loading && screen !is Screen.Reader) {
-                        LoadingPlaceholder()
+                        if (viewModel.loading && screen !is Screen.Reader) {
+                            LoadingPlaceholder()
+                        }
+                    }
+                }
+
+                if (isMalSyncBlocking) {
+                    val interactionSource = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.72f))
+                            .clickable(
+                                interactionSource = interactionSource,
+                                indication = null,
+                                onClick = {},
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 6.dp,
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    if (malUiState.syncItemsTotal > 0) {
+                                        CircularProgressIndicator(
+                                            progress = {
+                                                (malUiState.syncItemsProcessed.toFloat() / malUiState.syncItemsTotal.toFloat())
+                                                    .coerceIn(0f, 1f)
+                                            },
+                                        )
+                                    } else {
+                                        CircularProgressIndicator()
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            text = strings.malSyncInProgress,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        if (malUiState.syncItemsTotal > 0) {
+                                            Text(
+                                                text = buildMalSyncOverlayDetail(
+                                                    processed = malUiState.syncItemsProcessed,
+                                                    total = malUiState.syncItemsTotal,
+                                                    etaSeconds = malUiState.syncEtaSeconds,
+                                                ),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
+                                if (malUiState.syncItemsTotal > 0) {
+                                    LinearProgressIndicator(
+                                        progress = {
+                                            (malUiState.syncItemsProcessed.toFloat() / malUiState.syncItemsTotal.toFloat())
+                                                .coerceIn(0f, 1f)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -592,6 +668,7 @@ fun KomaStream() {
     )
 
     BackHandler {
+        if (isMalSyncBlocking) return@BackHandler
         if (screen is Screen.Root) {
             if (screen.tab != RootTab.Home) {
                 lastRootBackPressAt = 0L
@@ -702,4 +779,23 @@ private fun buildReaderTopBarTitle(
         chapterLabel.trim(),
         "$currentPage/$safeTotalPages",
     ).filter { it.isNotBlank() }.joinToString(" ")
+}
+
+private fun buildMalSyncOverlayDetail(
+    processed: Int,
+    total: Int,
+    etaSeconds: Int?,
+): String {
+    val progress = "${processed.coerceAtLeast(0)}/${total.coerceAtLeast(0)}"
+    val eta = etaSeconds?.takeIf { it > 0 }?.let(::formatEtaLabel)
+    return if (eta != null) "$progress  $eta" else progress
+}
+
+private fun formatEtaLabel(totalSeconds: Int): String {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return when {
+        minutes > 0 -> "~${minutes}m ${seconds}s"
+        else -> "~${seconds}s"
+    }
 }

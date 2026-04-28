@@ -11,6 +11,7 @@
     <string name="myanimelist_description">Connect your MyAnimeList account to keep your reading list in sync.</string>
     <string name="mal_connect">Connect</string>
     <string name="mal_sync_now">Sync now</string>
+    <string name="mal_sync_in_progress">Sync in progress...</string>
     <string name="mal_disconnect">Disconnect</string>
     <string name="mal_connected">Connected</string>
     <string name="mal_disconnected">Disconnected</string>

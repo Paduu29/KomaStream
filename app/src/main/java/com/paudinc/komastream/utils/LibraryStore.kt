@@ -56,6 +56,47 @@ class LibraryStore(context: Context) {
         prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
     }
 
+    fun upsertFavorite(manga: SavedManga) {
+        val current = jsonCodec.parseSavedMangaList(
+            prefs.getString("favorites", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        ).toMutableList()
+        val existingFavorite = current.firstOrNull { sameStoredManga(it, manga) }
+        val mergedFavorite = manga.copy(
+            title = manga.title.ifBlank { existingFavorite?.title.orEmpty() },
+            coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl.orEmpty() },
+            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle.orEmpty() },
+            lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath.orEmpty() },
+            malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId,
+        )
+        current.removeAll { sameStoredManga(it, mergedFavorite) }
+        current.add(0, mergedFavorite)
+
+        val reading = jsonCodec.parseSavedMangaList(
+            prefs.getString("reading", "[]").orEmpty(),
+            fallbackProviderId = defaultProviderId,
+        ).map { saved ->
+            if (sameStoredManga(saved, mergedFavorite)) {
+                saved.copy(
+                    title = saved.title.ifBlank { mergedFavorite.title },
+                    coverUrl = saved.coverUrl.ifBlank { mergedFavorite.coverUrl },
+                    detailPath = preferCanonicalDetailPath(saved, mergedFavorite),
+                    lastChapterTitle = mergedFavorite.lastChapterTitle.ifBlank { saved.lastChapterTitle },
+                    lastChapterPath = mergedFavorite.lastChapterPath.ifBlank { saved.lastChapterPath },
+                    malMangaId = mergedFavorite.malMangaId ?: saved.malMangaId,
+                )
+            } else {
+                saved
+            }
+        }
+        val (canonicalFavorites, canonicalReading) = canonicalizeSavedEntries(current, reading)
+
+        prefs.edit()
+            .putString("favorites", jsonCodec.serializeSavedMangaList(canonicalFavorites))
+            .putString("reading", jsonCodec.serializeSavedMangaList(canonicalReading.take(20)))
+            .apply()
+    }
+
     fun removeFavorite(providerId: String, detailPath: String) {
         val target = SavedManga(providerId, "", detailPath, "")
         val current = jsonCodec.parseSavedMangaList(

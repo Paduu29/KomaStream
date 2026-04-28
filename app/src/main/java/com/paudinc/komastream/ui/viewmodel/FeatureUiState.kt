@@ -46,6 +46,9 @@ data class MyAnimeListUiState(
     val clientId: String = "",
     val username: String = "",
     val isSyncing: Boolean = false,
+    val syncItemsProcessed: Int = 0,
+    val syncItemsTotal: Int = 0,
+    val syncEtaSeconds: Int? = null,
     val lastMessage: String = "",
     val errorMessage: String = "",
 )

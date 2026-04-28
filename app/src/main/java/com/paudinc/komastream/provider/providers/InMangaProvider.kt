@@ -155,7 +155,6 @@ class InMangaProvider : MangaProvider {
     }
 
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
-        android.util.Log.d("InMangaProvider", "fetchMangaDetail: path=$detailPath")
         ensureSession()
         val normalizedInputPath = detailPath.normalizePath()
         val resolvedDetailPath = if (looksLikeChapterPath(normalizedInputPath)) {
@@ -163,9 +162,7 @@ class InMangaProvider : MangaProvider {
         } else {
             normalizedInputPath
         }
-        android.util.Log.d("InMangaProvider", "fetchMangaDetail: resolvedDetailPath=$resolvedDetailPath")
         val document = getDocument(resolvedDetailPath, referer = "/")
-        android.util.Log.d("InMangaProvider", "fetchMangaDetail: doc title=${document.selectFirst("h1")?.text()}, hasIdentification=${document.selectFirst("#Identification") != null}")
         val identification = document.selectFirst("#Identification")?.`val`().orEmpty()
         val currentPath = resolvedDetailPath
         val mangaDetailPathBase = currentPath.substringBeforeLast("/")
@@ -207,7 +204,6 @@ class InMangaProvider : MangaProvider {
             .ifBlank { extractMangaDetailPathFromChapterScript(chapterDocument) }
             .ifBlank { extractMangaDetailPathFromChapterPage(chapterDocument) }
             .ifBlank { extractMangaDetailPathFromChapterControls(controls) }
-        android.util.Log.d("InMangaProvider", "mangaDetailPath from controls: $mangaDetailPath")
         if (!mangaDetailPath.contains(mangaUuidRegex)) {
             val mangaUuid = controls.html().let { html -> mangaUuidRegex.find(html)?.value }
                 ?: chapterDocument.html().let { html -> mangaUuidRegex.find(html)?.value }
@@ -219,17 +215,9 @@ class InMangaProvider : MangaProvider {
                 mangaDetailPath = "${mangaDetailPath.trimEnd('/')}/$mangaUuid"
             }
         }
-        android.util.Log.d("InMangaProvider", "mangaDetailPath final: $mangaDetailPath")
         val chapterOptions = extractSelectOptions(controls, "ChapList")
         val currentChapterId = normalizedChapterPath.substringAfterLast('/')
         val chapterNumberFromPath = normalizedChapterPath.substringBeforeLast('/').substringAfterLast('/')
-        android.util.Log.d("InMangaProvider", "normalizedChapterPath: $normalizedChapterPath")
-        android.util.Log.d("InMangaProvider", "currentChapterId: $currentChapterId, chapterId: $chapterId")
-        android.util.Log.d("InMangaProvider", "chapterNumberFromPath: $chapterNumberFromPath")
-        android.util.Log.d("InMangaProvider", "chapterOptions count: ${chapterOptions.size}")
-        chapterOptions.forEachIndexed { i, opt ->
-            android.util.Log.d("InMangaProvider", "  option[$i]: text='${opt.text()}', value='${opt.attr("value")}', selected=${opt.hasAttr("selected")}")
-        }
         val selectedOption = chapterOptions.firstOrNull { option ->
             option.attr("value") == currentChapterId.lowercase() ||
                 option.attr("value").lowercase() == currentChapterId.lowercase() ||
@@ -240,17 +228,14 @@ class InMangaProvider : MangaProvider {
             val pathNum = parseChapterNumber(chapterNumberFromPath)
             optNum != null && pathNum != null && optNum == pathNum
         }
-        android.util.Log.d("InMangaProvider", "selectedOption: ${selectedOption?.text()}")
         val currentChapterValue = selectedOption?.let { option ->
             parseChapterNumber(option.text())
         }
-        android.util.Log.d("InMangaProvider", "currentChapterValue: $currentChapterValue")
         val chapterEntries = chapterOptions.mapNotNull { option ->
             parseChapterNumber(option.text())?.let { value ->
                 Triple(value, option, option.attr("value"))
             }
         }.sortedBy { it.first }
-        android.util.Log.d("InMangaProvider", "chapterEntries: ${chapterEntries.map { "${it.first}:${it.third}" }}")
         val previousChapterPath = currentChapterValue?.let { currentValue ->
             chapterEntries.filter { (value, _, _) -> value < currentValue }.maxByOrNull { (value, _, _) -> value }
                 ?.let { (_, option, _) -> buildChapterPath(mangaDetailPath, option.text(), option.attr("value")) }
@@ -259,7 +244,6 @@ class InMangaProvider : MangaProvider {
             chapterEntries.filter { (value, _, _) -> value > currentValue }.minByOrNull { (value, _, _) -> value }
                 ?.let { (_, option, _) -> buildChapterPath(mangaDetailPath, option.text(), option.attr("value")) }
         }
-        android.util.Log.d("InMangaProvider", "nextChapterPath: $nextChapterPath")
         val pages = extractSelectOptions(controls, "PageList").map { option ->
             val pageId = option.attr("value")
             val pageNumber = option.text()
