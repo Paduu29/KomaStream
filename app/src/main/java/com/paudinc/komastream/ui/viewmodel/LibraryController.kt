@@ -302,7 +302,7 @@ class LibraryController(
         coverUrl: String,
         chapters: List<MangaChapter>,
     ) {
-        val readChapters = libraryStore.read(filterBySelectedProvider = true).readChapters
+        val readChapters = libraryStore.readChaptersForProvider(providerId)
         val progressChapterPath = resolveProgressChapterPath(providerId, detailPath, chapters, readChapters) ?: return
         val progressChapter = chapters.firstOrNull {
             buildChapterPath(detailPath, it) == progressChapterPath

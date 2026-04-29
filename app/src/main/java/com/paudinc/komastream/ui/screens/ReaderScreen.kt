@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -114,6 +115,11 @@ fun ReaderScreen(
     val restoredPageIndex = remember(reader.chapterPath, initialPageIndex, reader.pages.size) {
         if (reader.pages.isEmpty()) 0 else initialPageIndex.coerceIn(0, reader.pages.lastIndex)
     }
+    val latestOnPagePositionChanged by rememberUpdatedState(onPagePositionChanged)
+    val latestOnOpenChapter by rememberUpdatedState(onOpenChapter)
+    val currentChapterPath by rememberUpdatedState(reader.chapterPath)
+    val previousChapterPath by rememberUpdatedState(reader.previousChapterPath)
+    val nextChapterPath by rememberUpdatedState(reader.nextChapterPath)
     var sliderPage by remember(reader.chapterPath) { mutableIntStateOf(restoredPageIndex) }
     var hasEmittedPagePosition by remember(reader.chapterPath) { mutableStateOf(false) }
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
@@ -122,6 +128,13 @@ fun ReaderScreen(
 
     LaunchedEffect(zoomedPageKey) {
         Log.d(READER_GESTURE_TAG, "zoomedPageKey=$zoomedPageKey chapter=${reader.chapterPath}")
+    }
+
+    LaunchedEffect(reader.chapterPath, reader.previousChapterPath, reader.nextChapterPath) {
+        Log.d(
+            READER_GESTURE_TAG,
+            "readerChapterChanged current=${reader.chapterPath} previous=${reader.previousChapterPath} next=${reader.nextChapterPath}"
+        )
     }
 
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
@@ -161,7 +174,7 @@ fun ReaderScreen(
                 return@collect
             }
             sliderPage = pageIndex
-            onPagePositionChanged(pageIndex)
+            latestOnPagePositionChanged(pageIndex)
         }
     }
 
@@ -193,8 +206,8 @@ fun ReaderScreen(
                             dragThresholdPx = HORIZONTAL_DRAG_THRESHOLD_DP,
                             density = LocalDensity.current.density,
                             isZoomed = zoomedPageKey != null,
-                            onSwipeLeft = { reader.nextChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
-                            onSwipeRight = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
+                            onSwipeLeft = { nextChapterPath?.let { latestOnOpenChapter(currentChapterPath, it, true) } },
+                            onSwipeRight = { previousChapterPath?.let { latestOnOpenChapter(currentChapterPath, it, true) } },
                         ),
                     state = listState,
                     userScrollEnabled = zoomedPageKey == null,

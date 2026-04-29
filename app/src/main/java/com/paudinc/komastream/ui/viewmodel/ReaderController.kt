@@ -28,6 +28,10 @@ class ReaderController(
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
 ) {
+    companion object {
+        private const val TAG = "KomaReaderFlow"
+    }
+
     var uiState by mutableStateOf(ReaderUiState())
         private set
 
@@ -157,7 +161,15 @@ class ReaderController(
     }
 
     fun updateChapterReadState(providerId: String, chapterPath: String, read: Boolean) {
+        Log.d(
+            TAG,
+            "updateChapterReadState provider=$providerId chapterPath=$chapterPath read=$read before=${libraryStore.isChapterRead(providerId, chapterPath)}"
+        )
         libraryStore.setChaptersRead(providerId, listOf(chapterPath), read)
+        Log.d(
+            TAG,
+            "updateChapterReadState provider=$providerId chapterPath=$chapterPath read=$read after=${libraryStore.isChapterRead(providerId, chapterPath)}"
+        )
     }
 
     fun updatePageProgress(
@@ -173,6 +185,10 @@ class ReaderController(
             ?.pages
             ?.size
             ?: 0
+        Log.d(
+            TAG,
+            "updatePageProgress provider=$providerId path=$path index=$index totalPages=$totalPages isRead=${libraryStore.isChapterRead(providerId, path)} activeChapter=${uiState.readerData?.chapterPath}"
+        )
         if (totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
             val detail = uiState.selectedDetail?.takeIf {
                 it.providerId == providerId && it.detailPath == uiState.readerData?.mangaDetailPath
@@ -185,6 +201,10 @@ class ReaderController(
                     currentChapterPath = path,
                 )
             } ?: listOf(path)
+            Log.d(
+                TAG,
+                "autoMarkRead provider=$providerId path=$path chaptersToMark=${chaptersToMark.joinToString()}"
+            )
             libraryStore.setChaptersRead(providerId, chaptersToMark, true)
             detail?.let { syncReadingSnapshot(providerId, it) }
             onChapterMarkedRead()

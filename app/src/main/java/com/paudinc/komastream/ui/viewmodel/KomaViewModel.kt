@@ -354,7 +354,16 @@ val currentProvider
     }
 
     fun openAdjacentChapter(providerId: String, currentPath: String, targetPath: String, markCurrentRead: Boolean) {
-        readerController.updateChapterReadState(providerId, currentPath, markCurrentRead)
+        val activeChapterPath = readerController.uiState.readerData
+            ?.takeIf { it.providerId == providerId }
+            ?.chapterPath
+            ?.takeIf { it.isNotBlank() }
+            ?: currentPath
+        Log.d(
+            "KomaReaderFlow",
+            "openAdjacentChapter provider=$providerId currentPath=$currentPath activeChapterPath=$activeChapterPath targetPath=$targetPath markCurrentRead=$markCurrentRead"
+        )
+        readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
         libraryController.refreshState()
         openReader(providerId, targetPath, replace = true, resumeProgress = false)
     }
@@ -373,7 +382,8 @@ val currentProvider
         val detail = readerController.uiState.selectedDetail?.takeIf {
             it.providerId == manga.providerId && it.detailPath == manga.detailPath
         }
-        val readCount = detail?.let { countReadChapters(it.providerId, it.detailPath, it.chapters, state.readChapters) } ?: 0
+        val providerReadChapters = libraryStore.readChaptersForProvider(manga.providerId)
+        val readCount = detail?.let { countReadChapters(it.providerId, it.detailPath, it.chapters, providerReadChapters) } ?: 0
         val target = manga.copy(
             title = manga.title.ifBlank { detail?.title.orEmpty() },
             coverUrl = manga.coverUrl.ifBlank { detail?.coverUrl.orEmpty() },
@@ -389,14 +399,15 @@ val currentProvider
     private fun syncMalChapterReadState(providerId: String) {
         if (!malSyncController.uiState.isConnected) return
         val detail = readerController.uiState.selectedDetail?.takeIf { it.providerId == providerId } ?: return
-        val state = libraryController.currentState()
-        val readCount = countReadChapters(providerId, detail.detailPath, detail.chapters, state.readChapters)
+        val providerReadChapters = libraryStore.readChaptersForProvider(providerId)
+        val readCount = countReadChapters(providerId, detail.detailPath, detail.chapters, providerReadChapters)
         val target = SavedManga(
             providerId = providerId,
             title = detail.title,
             detailPath = detail.detailPath,
             coverUrl = detail.coverUrl,
         )
+        val state = libraryController.currentState()
         val isFavorite = state.favorites.any {
             it.providerId == providerId && it.detailPath == detail.detailPath
         }

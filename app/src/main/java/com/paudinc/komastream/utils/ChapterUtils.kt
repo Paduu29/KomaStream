@@ -128,10 +128,17 @@ fun canonicalChapterKey(providerId: String, chapterPath: String): String {
     val normalized = canonicalizeChapterPath(chapterPath)
     return when (providerId) {
         "inmanga-es" -> {
-            val parts = normalized.split("/").filter { it.isNotBlank() }
+            val parts = normalized
+                .split("/")
+                .filter { it.isNotBlank() }
+                .map { it.lowercase() }
             when {
                 parts.size >= 6 && isUuid(parts[3]) -> listOf(parts[0], parts[1], parts[2], parts[4], parts[5]).joinToString("/")
                 else -> normalized
+                    .split("/")
+                    .filter { it.isNotBlank() }
+                    .map { it.lowercase() }
+                    .joinToString("/")
             }
         }
         else -> normalized
