@@ -77,15 +77,18 @@ jobs:
             --header "x-apikey: ${{ secrets.VT_API_KEY }}" \
             --form file=@"$FILE_PATH")
           if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
-            echo "VirusTotal API error:"
+            echo "VirusTotal upload unavailable:"
             echo "$RESPONSE"
-            exit 1
+            echo "analysis_id=" >> "$GITHUB_OUTPUT"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
 
           ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.data.id')
 
           echo "analysis_id=$ANALYSIS_ID" >> "$GITHUB_OUTPUT"
+          echo "available=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -99,6 +102,12 @@ jobs:
         run: |
           ANALYSIS_ID="${{ steps.virustotal.outputs.analysis_id }}"
 
+          if [ -z "$ANALYSIS_ID" ]; then
+            echo "VirusTotal scan unavailable; continuing without results."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "Waiting for VirusTotal analysis..."
           
           COMPLETED=false
@@ -109,9 +118,10 @@ jobs:
               --header "x-apikey: ${{ secrets.VT_API_KEY }}")
           
             if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
-              echo "VirusTotal API error:"
+              echo "VirusTotal analysis unavailable:"
               echo "$RESPONSE"
-              exit 1
+              echo "available=false" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
             
             STATUS=$(echo "$RESPONSE" | jq -r '.data.attributes.status')
@@ -125,17 +135,19 @@ jobs:
             sleep 10
           done
           if [ "$COMPLETED" != "true" ]; then
-            echo "VirusTotal analysis timed out"
-            exit 1
+            echo "VirusTotal analysis timed out; continuing without results."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           
           RESPONSE=$(curl --silent --request GET \
             --url "https://www.virustotal.com/api/v3/analyses/$ANALYSIS_ID" \
             --header "x-apikey: ${{ secrets.VT_API_KEY }}")
           if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
-            echo "VirusTotal API error:"
+            echo "VirusTotal analysis unavailable:"
             echo "$RESPONSE"
-            exit 1
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           MALICIOUS=$(echo "$RESPONSE" | jq -r '.data.attributes.stats.malicious')
           SUSPICIOUS=$(echo "$RESPONSE" | jq -r '.data.attributes.stats.suspicious')
@@ -151,6 +163,7 @@ jobs:
           echo "suspicious=$SUSPICIOUS" >> "$GITHUB_OUTPUT"
           echo "harmless=$HARMLESS" >> "$GITHUB_OUTPUT"
           echo "undetected=$UNDETECTED" >> "$GITHUB_OUTPUT"
+          echo "available=true" >> "$GITHUB_OUTPUT"
       - name: Prepare release notes from tagged commit message
         shell: bash
         run: |
@@ -163,11 +176,15 @@ jobs:
           fi
 
           printf -- '## Security\n\n' >> release-notes.txt
-          printf -- '- VirusTotal scan: %s\n' "${{ steps.vtresult.outputs.vt_url }}" >> release-notes.txt
-          printf -- '- Malicious: %s\n' "${{ steps.vtresult.outputs.malicious }}" >> release-notes.txt
-          printf -- '- Suspicious: %s\n' "${{ steps.vtresult.outputs.suspicious }}" >> release-notes.txt
-          printf -- '- Harmless: %s\n' "${{ steps.vtresult.outputs.harmless }}" >> release-notes.txt
-          printf -- '- Undetected: %s\n' "${{ steps.vtresult.outputs.undetected }}" >> release-notes.txt
+          if [ -n "${{ steps.vtresult.outputs.vt_url }}" ]; then
+            printf -- '- VirusTotal scan: %s\n' "${{ steps.vtresult.outputs.vt_url }}" >> release-notes.txt
+            printf -- '- Malicious: %s\n' "${{ steps.vtresult.outputs.malicious }}" >> release-notes.txt
+            printf -- '- Suspicious: %s\n' "${{ steps.vtresult.outputs.suspicious }}" >> release-notes.txt
+            printf -- '- Harmless: %s\n' "${{ steps.vtresult.outputs.harmless }}" >> release-notes.txt
+            printf -- '- Undetected: %s\n' "${{ steps.vtresult.outputs.undetected }}" >> release-notes.txt
+          else
+            printf -- '- VirusTotal scan: unavailable\n' >> release-notes.txt
+          fi
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

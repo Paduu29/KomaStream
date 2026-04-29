@@ -9,6 +9,7 @@
     <string name="settings_tab">Settings</string>
     <string name="myanimelist">MyAnimeList</string>
     <string name="myanimelist_description">Connect your MyAnimeList account to keep your reading list in sync.</string>
+    <string name="myanimelist_disclaimer">This MyAnimeList integration is still in testing. Use it with caution. You are responsible for any data loss, sync issues, or other unintended effects that may result.</string>
     <string name="mal_connect">Connect</string>
     <string name="mal_sync_now">Sync now</string>
     <string name="mal_sync_in_progress">Sync in progress...</string>

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -17,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.data.model.AppLanguage
@@ -67,6 +69,29 @@ fun SettingsScreen(
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(strings.myAnimeList, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(strings.myAnimeListDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                shape = RoundedCornerShape(12.dp),
+                            )
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            strings.myAnimeListDisclaimer,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (malUiState.isConnected) {
                         Text(
                             "${strings.malConnected}${if (malUiState.username.isNotBlank()) ": ${malUiState.username}" else ""}",
