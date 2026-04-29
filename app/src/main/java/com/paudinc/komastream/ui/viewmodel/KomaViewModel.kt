@@ -359,10 +359,6 @@ val currentProvider
             ?.chapterPath
             ?.takeIf { it.isNotBlank() }
             ?: currentPath
-        Log.d(
-            "KomaReaderFlow",
-            "openAdjacentChapter provider=$providerId currentPath=$currentPath activeChapterPath=$activeChapterPath targetPath=$targetPath markCurrentRead=$markCurrentRead"
-        )
         readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
         libraryController.refreshState()
         openReader(providerId, targetPath, replace = true, resumeProgress = false)

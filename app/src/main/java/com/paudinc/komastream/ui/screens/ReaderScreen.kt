@@ -130,13 +130,6 @@ fun ReaderScreen(
         Log.d(READER_GESTURE_TAG, "zoomedPageKey=$zoomedPageKey chapter=${reader.chapterPath}")
     }
 
-    LaunchedEffect(reader.chapterPath, reader.previousChapterPath, reader.nextChapterPath) {
-        Log.d(
-            READER_GESTURE_TAG,
-            "readerChapterChanged current=${reader.chapterPath} previous=${reader.previousChapterPath} next=${reader.nextChapterPath}"
-        )
-    }
-
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
         listState.scrollToItem((restoredPageIndex + 1).coerceAtMost(reader.pages.size))
     }

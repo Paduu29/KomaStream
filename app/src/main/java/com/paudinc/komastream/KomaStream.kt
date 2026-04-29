@@ -3,7 +3,6 @@ package com.paudinc.komastream
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -471,21 +470,6 @@ fun KomaStream() {
                             is Screen.Detail -> {
                                 readerUiState.selectedDetail?.let { detail ->
                                         val detailReadChapters = libraryStore.readChaptersForProvider(detail.providerId)
-                                        LaunchedEffect(detail.providerId, detail.detailPath, detailReadChapters) {
-                                            val readKeys = canonicalChapterKeys(
-                                                detail.providerId,
-                                                detailReadChapters,
-                                            )
-                                            val chapterStates = detail.chapters.joinToString(" | ") { chapter ->
-                                                val chapterPath = buildChapterPath(detail.detailPath, chapter)
-                                                val canonicalPath = canonicalChapterKey(detail.providerId, chapterPath)
-                                                "${chapter.chapterLabel.ifBlank { chapter.chapterNumberUrl }} -> path=$chapterPath canonical=$canonicalPath read=${canonicalPath in readKeys}"
-                                            }
-                                            Log.d(
-                                                "KomaReaderFlow",
-                                                "detailReadState provider=${detail.providerId} detailPath=${detail.detailPath} readSet=${detailReadChapters.joinToString()} chapters=$chapterStates"
-                                            )
-                                        }
                                         val detailReading = allProvidersLibraryState.reading.firstOrNull {
                                             it.providerId == detail.providerId && it.detailPath == detail.detailPath
                                         }
