@@ -48,6 +48,7 @@ class LibraryController(
     var uiState by mutableStateOf(
         LibraryUiState(
             state = libraryStore.read(),
+            allProvidersState = libraryStore.read(filterBySelectedProvider = false),
             downloadedChapterPaths = offlineStore.getDownloadedChapterPaths(),
         )
     )
@@ -60,7 +61,8 @@ class LibraryController(
 
     fun refreshState(filterBySelectedProvider: Boolean = true) {
         uiState = uiState.copy(
-            state = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider)
+            state = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider),
+            allProvidersState = libraryStore.read(filterBySelectedProvider = false),
         )
     }
 

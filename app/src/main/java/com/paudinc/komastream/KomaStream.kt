@@ -101,6 +101,7 @@ fun KomaStream() {
 
     val libraryUiState = libraryController.uiState
     val libraryState = libraryUiState.state
+    val allProvidersLibraryState = libraryUiState.allProvidersState
     val catalogUiState = catalogController.uiState
     val readerUiState = readerController.uiState
     val homeUiState = homeController.uiState
@@ -374,9 +375,12 @@ fun KomaStream() {
                                     },
                                 )
                                     RootTab.Library -> LibraryScreen(
-                                        libraryState = libraryState,
+                                        libraryState = allProvidersLibraryState,
                                         strings = strings,
                                         selectedTab = LibraryTab.ContinueReading,
+                                        providerNameForId = { providerId ->
+                                            runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
+                                        },
                                         onSelectTab = {
                                             viewModel.replaceRoot(
                                                 if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
@@ -416,9 +420,12 @@ fun KomaStream() {
                                     },
                                 )
                                     RootTab.Favorites -> LibraryScreen(
-                                        libraryState = libraryState,
+                                        libraryState = allProvidersLibraryState,
                                         strings = strings,
                                         selectedTab = LibraryTab.Favorites,
+                                        providerNameForId = { providerId ->
+                                            runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
+                                        },
                                         onSelectTab = {
                                             viewModel.replaceRoot(
                                                 if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites

@@ -453,7 +453,7 @@ fun FavoriteMangaCard(
     }
 }
 
-private fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {
+fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {
     val chapterNumber = parseChapterInput(lastChapterTitle)
         ?: parseChapterInput(lastChapterPath.substringBeforeLast("/").substringAfterLast("/"))
     return when {
