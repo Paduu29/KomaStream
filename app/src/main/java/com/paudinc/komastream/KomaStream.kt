@@ -469,13 +469,18 @@ fun KomaStream() {
                             }
                             is Screen.Detail -> {
                                 readerUiState.selectedDetail?.let { detail ->
+                                    val detailReading = libraryUiState.state.reading.firstOrNull {
+                                        it.providerId == detail.providerId && it.detailPath == detail.detailPath
+                                    }
                                     DetailScreen(
                                         strings = strings,
                                         detail = detail,
-                                        isFavorite = libraryStore.isFavorite(detail.providerId, detail.detailPath),
+                                        isFavorite = libraryUiState.state.favorites.any {
+                                            it.providerId == detail.providerId && it.detailPath == detail.detailPath
+                                        },
                                         autoJumpToUnread = libraryState.autoJumpToUnread,
-                                        readChapters = libraryStore.readChaptersForProvider(detail.providerId),
-                                        lastOpenedChapterPath = libraryStore.read().reading.find { it.providerId == detail.providerId && it.detailPath == detail.detailPath }?.lastChapterPath ?: "",
+                                        readChapters = libraryUiState.state.readChapters,
+                                        lastOpenedChapterPath = detailReading?.lastChapterPath ?: "",
                                         isChapterDownloaded = { path -> offlineStore.isChapterDownloaded(detail.providerId, path) },
                                         downloadProgress = libraryController.downloadProgress,
                                         isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
