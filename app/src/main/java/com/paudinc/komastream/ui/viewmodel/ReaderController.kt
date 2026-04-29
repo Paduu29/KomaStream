@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
+import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.ReaderActionInteractor
 import com.paudinc.komastream.ui.navigation.Screen
@@ -39,10 +40,26 @@ class ReaderController(
     ) {
         scope.launch {
             onLoadingChange(true)
+            val cachedDetail = withContext(Dispatchers.IO) {
+                libraryStore.getCachedMangaDetail(providerId, path)
+            }
+            if (cachedDetail != null) {
+                uiState = uiState.copy(selectedDetail = cachedDetail)
+                navigationController.pushScreen(Screen.Detail(providerId, path))
+                onLoadingChange(false)
+                launch {
+                    refreshDetailCache(providerId, path, cachedDetail)
+                }
+                return@launch
+            }
+
             val provider = providerRegistry.get(providerId)
             runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
-                .onSuccess {
-                    uiState = uiState.copy(selectedDetail = it)
+                .onSuccess { detail ->
+                    withContext(Dispatchers.IO) {
+                        libraryStore.cacheMangaDetail(detail)
+                    }
+                    uiState = uiState.copy(selectedDetail = detail)
                     navigationController.pushScreen(Screen.Detail(providerId, path))
                 }
                 .onFailure {
@@ -51,6 +68,26 @@ class ReaderController(
                 }
                 .also { onLoadingChange(false) }
         }
+    }
+
+    private suspend fun refreshDetailCache(
+        providerId: String,
+        path: String,
+        cachedDetail: MangaDetail,
+    ) {
+        val provider = providerRegistry.get(providerId)
+        runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
+            .onSuccess { detail ->
+                val changed = withContext(Dispatchers.IO) {
+                    libraryStore.cacheMangaDetail(detail)
+                }
+                if (changed || uiState.selectedDetail == null || uiState.selectedDetail?.detailPath == cachedDetail.detailPath) {
+                    uiState = uiState.copy(selectedDetail = detail)
+                }
+            }
+            .onFailure {
+                Log.d("KomaStream", "Could not refresh cached manga detail", it)
+            }
     }
 
     fun openReader(

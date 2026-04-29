@@ -1,67 +1,74 @@
 package com.paudinc.komastream.utils
 
 import android.content.Context
+import com.paudinc.komastream.data.local.AppSettingsEntity
+import com.paudinc.komastream.data.local.ChapterPageCountEntity
+import com.paudinc.komastream.data.local.ChapterProgressEntity
+import com.paudinc.komastream.data.local.FavoriteMangaEntity
+import com.paudinc.komastream.data.local.MangaDetailCacheEntity
+import com.paudinc.komastream.data.local.LibraryDatabase
+import com.paudinc.komastream.data.local.ReadChapterEntity
+import com.paudinc.komastream.data.local.ReadingMangaEntity
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.LibraryState
+import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.LibraryBackupPayloadCodec
 import com.paudinc.komastream.data.repository.LibraryJsonCodec
+import com.paudinc.komastream.data.repository.MangaDetailCacheCodec
+import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
 
 class LibraryStore(context: Context) {
-    private val prefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
+    private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
+    private val database = LibraryDatabase.getInstance(context)
+    private val dao = database.libraryDao()
     private val defaultProviderId = createDefaultProviderRegistry().defaultProvider().id
     private val jsonCodec = LibraryJsonCodec(defaultProviderId = defaultProviderId)
     private val backupPayloadCodec = LibraryBackupPayloadCodec()
+    private val mangaDetailCacheCodec = MangaDetailCacheCodec()
+    private val initLock = Any()
+
+    @Volatile
+    private var initialized = false
 
     fun read(filterBySelectedProvider: Boolean = true): LibraryState {
-        migrateLegacyAutoReadEntriesIfNeeded()
-        val selectedProviderId = selectedProviderId()
-        val parsedFavorites = jsonCodec.parseSavedMangaList(
-            value = prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        )
-        val parsedReading = jsonCodec.parseSavedMangaList(
-            value = prefs.getString("reading", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        )
+        ensureInitialized()
+        val settings = readSettings()
+        val parsedFavorites = dao.readFavorites().map { it.toSavedManga() }
+        val parsedReading = dao.readReading().map { it.toSavedManga() }
         val (allFavorites, allReading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
+        val selectedProviderId = settings.selectedProviderId
         return LibraryState(
             favorites = if (filterBySelectedProvider) allFavorites.filter { it.providerId == selectedProviderId } else allFavorites,
             reading = if (filterBySelectedProvider) allReading.filter { it.providerId == selectedProviderId } else allReading,
-            readChapters = jsonCodec.parseReadChapters(
-                value = prefs.getString("readChapters", "[]").orEmpty(),
-                providerId = selectedProviderId,
-            ),
-            useDarkTheme = prefs.getBoolean("useDarkTheme", false),
-            autoJumpToUnread = prefs.getBoolean("autoJumpToUnread", true),
-            mangaBallAdultContentEnabled = prefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
+            readChapters = dao.readChaptersForProvider(selectedProviderId).map { it.chapterPath }.toSet(),
+            useDarkTheme = settings.useDarkTheme,
+            autoJumpToUnread = settings.autoJumpToUnread,
+            mangaBallAdultContentEnabled = settings.mangaBallAdultContentEnabled,
             selectedProviderId = selectedProviderId,
-            appLanguage = if (prefs.contains("appLanguage")) {
-                AppLanguage.fromStored(prefs.getString("appLanguage", AppLanguage.EN.name))
-            } else {
-                AppLanguage.EN
-            },
+            appLanguage = AppLanguage.fromStored(settings.appLanguage),
         )
     }
 
     fun toggleFavorite(manga: SavedManga) {
-        val current = jsonCodec.parseSavedMangaList(
-            prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        ).toMutableList()
-        val existing = current.any { sameStoredManga(it, manga) }
-        current.removeAll { sameStoredManga(it, manga) }
-        if (!existing) current.add(0, manga)
-        prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
+        ensureInitialized()
+        val current = dao.readFavorites()
+        val existing = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+        if (existing != null) {
+            dao.deleteFavorite(existing.providerId, existing.detailPath)
+            return
+        }
+        dao.upsertFavorite(
+            manga.toFavoriteEntity(orderIndex = nextOrderIndex(current.map { it.orderIndex }))
+        )
     }
 
     fun upsertFavorite(manga: SavedManga) {
-        val current = jsonCodec.parseSavedMangaList(
-            prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        ).toMutableList()
-        val existingFavorite = current.firstOrNull { sameStoredManga(it, manga) }
+        ensureInitialized()
+        val current = dao.readFavorites()
+        val existingFavorite = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
         val mergedFavorite = manga.copy(
             title = manga.title.ifBlank { existingFavorite?.title.orEmpty() },
             coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl.orEmpty() },
@@ -69,50 +76,38 @@ class LibraryStore(context: Context) {
             lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath.orEmpty() },
             malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId,
         )
-        current.removeAll { sameStoredManga(it, mergedFavorite) }
-        current.add(0, mergedFavorite)
+        dao.upsertFavorite(
+            mergedFavorite.toFavoriteEntity(
+                orderIndex = nextOrderIndex(current.map { it.orderIndex })
+            )
+        )
 
-        val reading = jsonCodec.parseSavedMangaList(
-            prefs.getString("reading", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        ).map { saved ->
-            if (sameStoredManga(saved, mergedFavorite)) {
-                saved.copy(
+        val reading = dao.readReading().map { saved ->
+            if (sameStoredManga(saved.toSavedManga(), mergedFavorite)) {
+                saved.toSavedManga().copy(
                     title = saved.title.ifBlank { mergedFavorite.title },
                     coverUrl = saved.coverUrl.ifBlank { mergedFavorite.coverUrl },
-                    detailPath = preferCanonicalDetailPath(saved, mergedFavorite),
+                    detailPath = preferCanonicalDetailPath(saved.toSavedManga(), mergedFavorite),
                     lastChapterTitle = mergedFavorite.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedFavorite.lastChapterPath.ifBlank { saved.lastChapterPath },
                     malMangaId = mergedFavorite.malMangaId ?: saved.malMangaId,
-                )
+                ).toReadingEntity(orderIndex = saved.orderIndex)
             } else {
                 saved
             }
         }
-        val (canonicalFavorites, canonicalReading) = canonicalizeSavedEntries(current, reading)
-
-        prefs.edit()
-            .putString("favorites", jsonCodec.serializeSavedMangaList(canonicalFavorites))
-            .putString("reading", jsonCodec.serializeSavedMangaList(canonicalReading.take(20)))
-            .apply()
+        replaceReadingEntities(reading)
     }
 
     fun removeFavorite(providerId: String, detailPath: String) {
-        val target = SavedManga(providerId, "", detailPath, "")
-        val current = jsonCodec.parseSavedMangaList(
-            prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        )
-            .filterNot { sameStoredManga(it, target) }
-        prefs.edit().putString("favorites", jsonCodec.serializeSavedMangaList(current)).apply()
+        ensureInitialized()
+        dao.deleteFavorite(providerId, detailPath)
     }
 
     fun upsertReading(manga: SavedManga) {
-        val current = jsonCodec.parseSavedMangaList(
-            prefs.getString("reading", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        ).toMutableList()
-        val existingReading = current.firstOrNull { sameStoredManga(it, manga) }
+        ensureInitialized()
+        val current = dao.readReading()
+        val existingReading = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
         val mergedReading = manga.copy(
             title = manga.title.ifBlank { existingReading?.title.orEmpty() },
             coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl.orEmpty() },
@@ -120,152 +115,174 @@ class LibraryStore(context: Context) {
             lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath.orEmpty() },
             malMangaId = manga.malMangaId ?: existingReading?.malMangaId,
         )
-        current.removeAll { sameStoredManga(it, mergedReading) }
-        current.add(0, mergedReading)
+        dao.upsertReading(
+            mergedReading.toReadingEntity(
+                orderIndex = nextOrderIndex(current.map { it.orderIndex })
+            )
+        )
 
-        val favorites = jsonCodec.parseSavedMangaList(
-            prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        ).map { saved ->
-            if (sameStoredManga(saved, mergedReading)) {
-                saved.copy(
+        val favorites = dao.readFavorites().map { saved ->
+            if (sameStoredManga(saved.toSavedManga(), mergedReading)) {
+                saved.toSavedManga().copy(
                     title = saved.title.ifBlank { mergedReading.title },
                     coverUrl = saved.coverUrl.ifBlank { mergedReading.coverUrl },
-                    detailPath = preferCanonicalDetailPath(saved, mergedReading),
+                    detailPath = preferCanonicalDetailPath(saved.toSavedManga(), mergedReading),
                     lastChapterTitle = mergedReading.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedReading.lastChapterPath.ifBlank { saved.lastChapterPath },
                     malMangaId = mergedReading.malMangaId ?: saved.malMangaId,
-                )
+                ).toFavoriteEntity(orderIndex = saved.orderIndex)
             } else {
                 saved
             }
         }
-        val (canonicalFavorites, canonicalReading) = canonicalizeSavedEntries(favorites, current)
-
-        prefs.edit()
-            .putString("reading", jsonCodec.serializeSavedMangaList(canonicalReading.take(20)))
-            .putString("favorites", jsonCodec.serializeSavedMangaList(canonicalFavorites))
-            .apply()
+        replaceFavoriteEntities(favorites)
     }
 
     fun removeReading(providerId: String, detailPath: String) {
-        val target = SavedManga(providerId, "", detailPath, "")
-        val current = jsonCodec.parseSavedMangaList(
-            prefs.getString("reading", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        )
-            .filterNot { sameStoredManga(it, target) }
-        prefs.edit().putString("reading", jsonCodec.serializeSavedMangaList(current)).apply()
+        ensureInitialized()
+        dao.deleteReading(providerId, detailPath)
     }
 
     fun replaceReading(items: List<SavedManga>) {
-        prefs.edit().putString("reading", jsonCodec.serializeSavedMangaList(items.take(20))).apply()
+        ensureInitialized()
+        replaceReadingEntities(
+            items.mapIndexed { index, item ->
+                item.toReadingEntity(orderIndex = (items.size - index).toLong())
+            }
+        )
     }
 
     fun isFavorite(providerId: String, detailPath: String): Boolean {
+        ensureInitialized()
         val target = SavedManga(providerId, "", detailPath, "")
-        return jsonCodec.parseSavedMangaList(
-            prefs.getString("favorites", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        )
-            .any { sameStoredManga(it, target) }
+        return dao.readFavorites().any { sameStoredManga(it.toSavedManga(), target) }
     }
 
     fun markChapterRead(providerId: String, chapterPath: String) {
-        if (chapterPath.isBlank()) return
-        val qualifiedPath = jsonCodec.qualify(providerId, chapterPath)
-        val current = jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
-        current.removeAll { sameStoredChapter(providerId, it, chapterPath) }
-        current.add(0, qualifiedPath)
-        prefs.edit().putString("readChapters", jsonCodec.serializeReadChapters(current.take(3000))).apply()
+        setChaptersRead(providerId, listOf(chapterPath), true)
     }
 
     fun toggleChapterRead(providerId: String, chapterPath: String) {
-        if (chapterPath.isBlank()) return
-        val qualifiedPath = jsonCodec.qualify(providerId, chapterPath)
-        val current = jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
-        if (current.removeAll { sameStoredChapter(providerId, it, chapterPath) }.not()) {
-            current.add(0, qualifiedPath)
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        val current = dao.readChapters().map { it.toQualifiedPath() }.toMutableSet()
+        val targetQualified = qualifyProviderValue(providerId, canonicalPath)
+        if (!current.removeIf { sameStoredChapter(providerId, it, canonicalPath) }) {
+            current.add(targetQualified)
         }
-        prefs.edit().putString("readChapters", jsonCodec.serializeReadChapters(current.take(3000))).apply()
+        replaceReadChapterEntries(current.toList())
     }
 
     fun isChapterRead(providerId: String, chapterPath: String): Boolean {
-        return jsonCodec.parseRawReadChapters(
-            prefs.getString("readChapters", "[]").orEmpty()
-        ).any { sameStoredChapter(providerId, it, chapterPath) }
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        return dao.readChaptersForProvider(providerId).any { canonicalPath == it.chapterPath }
     }
 
     fun readAllReadChapters(): Set<String> {
-        return jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty())
+        ensureInitialized()
+        return dao.readChapters().map { it.toQualifiedPath() }.toSet()
     }
 
     fun readChaptersForProvider(providerId: String): Set<String> {
-        return jsonCodec.parseReadChapters(
-            value = prefs.getString("readChapters", "[]").orEmpty(),
-            providerId = providerId,
+        ensureInitialized()
+        return dao.readChaptersForProvider(providerId).map { it.chapterPath }.toSet()
+    }
+
+    fun cacheMangaDetail(detail: MangaDetail): Boolean {
+        ensureInitialized()
+        val detailKey = mangaKey(detail.providerId, detail.detailPath)
+        val existing = dao.readMangaDetailCache(detail.providerId, detailKey)
+            ?: dao.readMangaDetailCacheByPath(detail.providerId, detail.detailPath)
+        val storedDetail = existing?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
+        if (storedDetail != null && mangaDetailCacheCodec.sameChapterSignature(storedDetail, detail)) {
+            return false
+        }
+        val canonicalDetailPath = when {
+            existing?.detailPath.isNullOrBlank() -> detail.detailPath
+            detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> detail.detailPath
+            else -> existing.detailPath
+        }
+        dao.upsertMangaDetailCache(
+            MangaDetailCacheEntity(
+                providerId = detail.providerId,
+                detailKey = detailKey,
+                detailPath = canonicalDetailPath,
+                detailJson = mangaDetailCacheCodec.serialize(detail.copy(detailPath = canonicalDetailPath)),
+                chapterCount = detail.chapters.size,
+                updatedAt = System.currentTimeMillis(),
+            )
         )
+        return true
+    }
+
+    fun getCachedMangaDetail(providerId: String, detailPath: String): MangaDetail? {
+        ensureInitialized()
+        val detailKey = mangaKey(providerId, detailPath)
+        val cached = dao.readMangaDetailCache(providerId, detailKey)
+            ?: dao.readMangaDetailCacheByPath(providerId, detailPath)
+        return cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
     }
 
     fun setChaptersRead(providerId: String, chapterPaths: Collection<String>, read: Boolean) {
-        val normalized = chapterPaths.filter { it.isNotBlank() }
+        ensureInitialized()
+        val normalized = chapterPaths.filter { it.isNotBlank() }.map { canonicalChapterKey(providerId, it) }.distinct()
         if (normalized.isEmpty()) return
-        val normalizedQualified = normalized.map { jsonCodec.qualify(providerId, it) }
-        val current = jsonCodec.parseRawReadChapters(prefs.getString("readChapters", "[]").orEmpty()).toMutableList()
+        val current = dao.readChapters().map { it.toQualifiedPath() }.toMutableList()
         if (read) {
             normalized.forEachIndexed { index, chapterPath ->
                 current.removeAll { sameStoredChapter(providerId, it, chapterPath) }
-                current.add(0, normalizedQualified[index])
+                current.add(0, qualifyProviderValue(providerId, chapterPath))
             }
         } else {
             current.removeAll { stored ->
                 normalized.any { chapterPath -> sameStoredChapter(providerId, stored, chapterPath) }
             }
         }
-        prefs.edit().putString("readChapters", jsonCodec.serializeReadChapters(current.take(3000))).apply()
+        replaceReadChapterEntries(current)
     }
 
     fun setDarkTheme(enabled: Boolean) {
-        prefs.edit().putBoolean("useDarkTheme", enabled).apply()
+        updateSettings { it.copy(useDarkTheme = enabled) }
     }
 
     fun setAutoJumpToUnread(enabled: Boolean) {
-        prefs.edit().putBoolean("autoJumpToUnread", enabled).apply()
+        updateSettings { it.copy(autoJumpToUnread = enabled) }
     }
 
     fun setMangaBallAdultContentEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_MANGABALL_ADULT_CONTENT, enabled).apply()
+        updateSettings { it.copy(mangaBallAdultContentEnabled = enabled) }
     }
 
-    fun isMangaBallAdultContentEnabled(): Boolean =
-        prefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false)
+    fun isMangaBallAdultContentEnabled(): Boolean = readSettings().mangaBallAdultContentEnabled
 
     fun setAppLanguage(language: AppLanguage) {
-        prefs.edit().putString("appLanguage", language.name).apply()
+        updateSettings { it.copy(appLanguage = language.name) }
     }
 
-    fun selectedProviderId(): String =
-        prefs.getString("selectedProviderId", "") ?: ""
+    fun selectedProviderId(): String = readSettings().selectedProviderId
 
     fun setSelectedProviderId(providerId: String) {
-        prefs.edit().putString("selectedProviderId", providerId).apply()
+        updateSettings { it.copy(selectedProviderId = providerId) }
     }
 
-    fun hasSeenProviderPicker(): Boolean =
-        prefs.getBoolean("hasSeenProviderPicker", false)
+    fun hasSeenProviderPicker(): Boolean = readSettings().hasSeenProviderPicker
 
     fun setHasSeenProviderPicker(seen: Boolean) {
-        prefs.edit().putBoolean("hasSeenProviderPicker", seen).apply()
+        updateSettings { it.copy(hasSeenProviderPicker = seen) }
     }
 
     fun exportBackup(): String {
+        ensureInitialized()
         return backupPayloadCodec.exportPayload(
-            favorites = prefs.getString("favorites", "[]").orEmpty(),
-            reading = prefs.getString("reading", "[]").orEmpty(),
-            readChapters = prefs.getString("readChapters", "[]").orEmpty(),
-            readProgress = prefs.getString("readProgress", "{}").orEmpty(),
-            chapterPageCounts = prefs.getString("chapterPageCounts", "{}").orEmpty(),
+            favorites = jsonCodec.serializeSavedMangaList(dao.readFavorites().map { it.toSavedManga() }),
+            reading = jsonCodec.serializeSavedMangaList(dao.readReading().map { it.toSavedManga() }),
+            readChapters = serializeQualifiedChapterPaths(dao.readChapters().map { it.toQualifiedPath() }),
+            readProgress = serializeProgressMap(dao.readChapterProgress()),
+            chapterPageCounts = serializePageCountMap(dao.readChapterPageCounts()),
             selectedProviderId = selectedProviderId(),
+            settings = serializeSettings(readSettings()),
+            mangaDetailCache = serializeMangaDetailCache(dao.readMangaDetailCaches()),
         )
     }
 
@@ -273,41 +290,389 @@ class LibraryStore(context: Context) {
         payload: String,
         selectedProviderIdFallback: String = selectedProviderId(),
     ) {
+        ensureInitialized()
         val importedPayload = backupPayloadCodec.importPayload(payload, selectedProviderIdFallback)
-        prefs.edit()
-            .putString("favorites", importedPayload.favorites)
-            .putString("reading", importedPayload.reading)
-            .putString("readChapters", importedPayload.readChapters)
-            .putString("readProgress", importedPayload.readProgress)
-            .putString("chapterPageCounts", importedPayload.chapterPageCounts)
-            .putString("selectedProviderId", importedPayload.selectedProviderId)
-            .apply()
+        replaceFromImportedPayload(importedPayload)
+        val importedSettings = importedPayload.settings?.let(::JSONObject)
+        updateSettings {
+            it.copy(
+                selectedProviderId = importedPayload.selectedProviderId,
+                useDarkTheme = importedSettings?.optBoolean("useDarkTheme", it.useDarkTheme) ?: it.useDarkTheme,
+                autoJumpToUnread = importedSettings?.optBoolean("autoJumpToUnread", it.autoJumpToUnread) ?: it.autoJumpToUnread,
+                mangaBallAdultContentEnabled = importedSettings?.optBoolean("mangaBallAdultContentEnabled", it.mangaBallAdultContentEnabled) ?: it.mangaBallAdultContentEnabled,
+                appLanguage = importedSettings?.optString("appLanguage").orEmpty().ifBlank { it.appLanguage },
+                hasSeenProviderPicker = importedSettings?.optBoolean("hasSeenProviderPicker", it.hasSeenProviderPicker) ?: it.hasSeenProviderPicker,
+                legacyPrefsMigrated = true,
+            )
+        }
     }
 
     fun saveChapterProgress(providerId: String, chapterPath: String, pageIndex: Int) {
-        if (chapterPath.isBlank()) return
-        val json = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
-        json.put(jsonCodec.qualify(providerId, chapterPath), pageIndex.coerceAtLeast(0))
-        prefs.edit().putString("readProgress", json.toString()).apply()
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return
+        dao.upsertChapterProgress(
+            ChapterProgressEntity(
+                providerId = providerId,
+                chapterPath = canonicalPath,
+                pageIndex = pageIndex.coerceAtLeast(0),
+            )
+        )
     }
 
     fun getChapterProgress(providerId: String, chapterPath: String): Int {
-        if (chapterPath.isBlank()) return 0
-        val json = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
-        return json.optInt(jsonCodec.qualify(providerId, chapterPath), 0).coerceAtLeast(0)
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return 0
+        return dao.readChapterProgress(providerId, canonicalPath)?.pageIndex?.coerceAtLeast(0) ?: 0
     }
 
     fun saveChapterPageCount(providerId: String, chapterPath: String, pageCount: Int) {
-        if (chapterPath.isBlank() || pageCount <= 0) return
-        val json = JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty())
-        json.put(jsonCodec.qualify(providerId, chapterPath), pageCount)
-        prefs.edit().putString("chapterPageCounts", json.toString()).apply()
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank() || pageCount <= 0) return
+        dao.upsertChapterPageCount(
+            ChapterPageCountEntity(
+                providerId = providerId,
+                chapterPath = canonicalPath,
+                pageCount = pageCount,
+            )
+        )
     }
 
     fun getChapterPageCount(providerId: String, chapterPath: String): Int {
-        if (chapterPath.isBlank()) return 0
-        val json = JSONObject(prefs.getString("chapterPageCounts", "{}").orEmpty())
-        return json.optInt(jsonCodec.qualify(providerId, chapterPath), 0).coerceAtLeast(0)
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return 0
+        return dao.readChapterPageCount(providerId, canonicalPath)?.pageCount?.coerceAtLeast(0) ?: 0
+    }
+
+    private fun ensureInitialized() {
+        if (initialized) return
+        synchronized(initLock) {
+            if (initialized) return
+            val settings = dao.readSettings()
+            if (settings == null) {
+                if (legacyPrefs.getAll().isNotEmpty()) {
+                    migrateFromLegacyPrefs()
+                } else {
+                    dao.upsertSettings(defaultSettings(legacyPrefsMigrated = true))
+                }
+            } else if (!settings.legacyPrefsMigrated) {
+                if (legacyPrefs.getAll().isNotEmpty()) {
+                    migrateFromLegacyPrefs()
+                } else {
+                    dao.upsertSettings(settings.copy(legacyPrefsMigrated = true))
+                }
+            }
+            initialized = true
+        }
+    }
+
+    private fun migrateFromLegacyPrefs() {
+        val settingsJson = JSONObject()
+            .put("selectedProviderId", legacyPrefs.getString("selectedProviderId", "").orEmpty())
+            .put("useDarkTheme", legacyPrefs.getBoolean("useDarkTheme", false))
+            .put("autoJumpToUnread", legacyPrefs.getBoolean("autoJumpToUnread", true))
+            .put("mangaBallAdultContentEnabled", legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false))
+            .put("appLanguage", legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty())
+            .put("hasSeenProviderPicker", legacyPrefs.getBoolean("hasSeenProviderPicker", false))
+        val payload = backupPayloadCodec.exportPayload(
+            favorites = legacyPrefs.getString("favorites", "[]").orEmpty(),
+            reading = legacyPrefs.getString("reading", "[]").orEmpty(),
+            readChapters = legacyPrefs.getString("readChapters", "[]").orEmpty(),
+            readProgress = legacyPrefs.getString("readProgress", "{}").orEmpty(),
+            chapterPageCounts = legacyPrefs.getString("chapterPageCounts", "{}").orEmpty(),
+            selectedProviderId = legacyPrefs.getString("selectedProviderId", "").orEmpty(),
+            settings = settingsJson.toString(),
+            mangaDetailCache = "[]",
+        )
+        replaceFromImportedPayload(backupPayloadCodec.importPayload(payload, defaultProviderId))
+        dao.upsertSettings(
+            defaultSettings(
+                selectedProviderId = legacyPrefs.getString("selectedProviderId", "").orEmpty(),
+                useDarkTheme = legacyPrefs.getBoolean("useDarkTheme", false),
+                autoJumpToUnread = legacyPrefs.getBoolean("autoJumpToUnread", true),
+                mangaBallAdultContentEnabled = legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
+                appLanguage = legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty(),
+                hasSeenProviderPicker = legacyPrefs.getBoolean("hasSeenProviderPicker", false),
+                legacyPrefsMigrated = true,
+            )
+        )
+    }
+
+    private fun replaceFromImportedPayload(importedPayload: com.paudinc.komastream.data.repository.ImportedLibraryPayload) {
+        dao.clearFavorites()
+        dao.clearReading()
+        dao.clearReadChapters()
+        dao.clearChapterProgress()
+        dao.clearChapterPageCounts()
+        dao.clearMangaDetailCache()
+
+        val parsedFavorites = jsonCodec.parseSavedMangaList(
+            value = importedPayload.favorites,
+            fallbackProviderId = defaultProviderId,
+        )
+        val parsedReading = jsonCodec.parseSavedMangaList(
+            value = importedPayload.reading,
+            fallbackProviderId = defaultProviderId,
+        )
+        val (favorites, reading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
+
+        favorites.mapIndexed { index, manga ->
+            manga.toFavoriteEntity(orderIndex = (favorites.size - index).toLong())
+        }.forEach(dao::upsertFavorite)
+        reading.mapIndexed { index, manga ->
+            manga.toReadingEntity(orderIndex = (reading.size - index).toLong())
+        }.forEach(dao::upsertReading)
+
+        importQualifiedChapterPaths(importedPayload.readChapters)
+        importProgressMap(importedPayload.readProgress)
+        importPageCountMap(importedPayload.chapterPageCounts)
+        importMangaDetailCache(importedPayload.mangaDetailCache)
+    }
+
+    private fun importMangaDetailCache(serializedValue: String) {
+        val json = JSONArray(serializedValue)
+        for (index in 0 until json.length()) {
+            val item = json.optJSONObject(index) ?: continue
+            val providerId = item.optString("providerId").orEmpty()
+            val detailKey = item.optString("detailKey").orEmpty()
+            val detailPath = item.optString("detailPath").orEmpty()
+            val detailJson = item.optString("detailJson").orEmpty()
+            if (providerId.isBlank() || detailKey.isBlank() || detailJson.isBlank()) continue
+            dao.upsertMangaDetailCache(
+                MangaDetailCacheEntity(
+                    providerId = providerId,
+                    detailKey = detailKey,
+                    detailPath = detailPath,
+                    detailJson = detailJson,
+                    chapterCount = item.optInt("chapterCount", 0),
+                    updatedAt = item.optLong("updatedAt", System.currentTimeMillis()),
+                )
+            )
+        }
+    }
+
+    private fun importQualifiedChapterPaths(serializedValue: String) {
+        val json = JSONArray(serializedValue)
+        val entries = buildList(json.length()) {
+            for (index in 0 until json.length()) {
+                val raw = json.optString(index).trim()
+                if (raw.isNotBlank()) add(raw)
+            }
+        }
+        entries.forEachIndexed { index, qualified ->
+            val providerId = qualified.substringBefore("::", missingDelimiterValue = defaultProviderId)
+            val chapterPath = qualified.substringAfter("::", missingDelimiterValue = qualified)
+            dao.upsertReadChapter(
+                ReadChapterEntity(
+                    providerId = providerId,
+                    chapterPath = canonicalChapterKey(providerId, chapterPath),
+                    readOrder = (entries.size - index).toLong(),
+                )
+            )
+        }
+    }
+
+    private fun importProgressMap(serializedValue: String) {
+        val json = JSONObject(serializedValue)
+        json.keys().forEach { key ->
+            val providerId = key.substringBefore("::", missingDelimiterValue = defaultProviderId)
+            val chapterPath = key.substringAfter("::", missingDelimiterValue = key)
+            val pageIndex = json.optInt(key, 0)
+            dao.upsertChapterProgress(
+                ChapterProgressEntity(
+                    providerId = providerId,
+                    chapterPath = canonicalChapterKey(providerId, chapterPath),
+                    pageIndex = pageIndex.coerceAtLeast(0),
+                )
+            )
+        }
+    }
+
+    private fun importPageCountMap(serializedValue: String) {
+        val json = JSONObject(serializedValue)
+        json.keys().forEach { key ->
+            val providerId = key.substringBefore("::", missingDelimiterValue = defaultProviderId)
+            val chapterPath = key.substringAfter("::", missingDelimiterValue = key)
+            val pageCount = json.optInt(key, 0)
+            if (pageCount > 0) {
+                dao.upsertChapterPageCount(
+                    ChapterPageCountEntity(
+                        providerId = providerId,
+                        chapterPath = canonicalChapterKey(providerId, chapterPath),
+                        pageCount = pageCount,
+                    )
+                )
+            }
+        }
+    }
+
+    private fun replaceFavoriteEntities(items: List<FavoriteMangaEntity>) {
+        dao.clearFavorites()
+        items.forEach { dao.upsertFavorite(it) }
+    }
+
+    private fun replaceReadingEntities(items: List<ReadingMangaEntity>) {
+        dao.clearReading()
+        items.forEach { dao.upsertReading(it) }
+    }
+
+    private fun replaceReadChapterEntries(qualifiedPaths: List<String>) {
+        dao.clearReadChapters()
+        qualifiedPaths.mapIndexed { index, qualified ->
+            val providerId = qualified.substringBefore("::", missingDelimiterValue = defaultProviderId)
+            val chapterPath = qualified.substringAfter("::", missingDelimiterValue = qualified)
+            ReadChapterEntity(
+                providerId = providerId,
+                chapterPath = canonicalChapterKey(providerId, chapterPath),
+                readOrder = (qualifiedPaths.size - index).toLong(),
+            )
+        }.forEach(dao::upsertReadChapter)
+    }
+
+    private fun updateSettings(transform: (AppSettingsEntity) -> AppSettingsEntity) {
+        ensureInitialized()
+        val current = readSettings()
+        dao.upsertSettings(transform(current))
+    }
+
+    private fun readSettings(): AppSettingsEntity {
+        val settings = dao.readSettings()
+        return settings ?: defaultSettings(legacyPrefsMigrated = false)
+    }
+
+    private fun defaultSettings(
+        selectedProviderId: String = "",
+        useDarkTheme: Boolean = false,
+        autoJumpToUnread: Boolean = true,
+        mangaBallAdultContentEnabled: Boolean = false,
+        appLanguage: String = AppLanguage.EN.name,
+        hasSeenProviderPicker: Boolean = false,
+        legacyPrefsMigrated: Boolean = false,
+    ): AppSettingsEntity {
+        return AppSettingsEntity(
+            id = 0,
+            selectedProviderId = selectedProviderId,
+            useDarkTheme = useDarkTheme,
+            autoJumpToUnread = autoJumpToUnread,
+            mangaBallAdultContentEnabled = mangaBallAdultContentEnabled,
+            appLanguage = appLanguage,
+            hasSeenProviderPicker = hasSeenProviderPicker,
+            legacyPrefsMigrated = legacyPrefsMigrated,
+        )
+    }
+
+    private fun serializeQualifiedChapterPaths(items: List<String>): String {
+        val json = JSONArray()
+        items.forEach { json.put(it) }
+        return json.toString()
+    }
+
+    private fun serializeProgressMap(items: List<ChapterProgressEntity>): String {
+        val json = JSONObject()
+        items.forEach { item ->
+            json.put(qualifyProviderValue(item.providerId, item.chapterPath), item.pageIndex.coerceAtLeast(0))
+        }
+        return json.toString()
+    }
+
+    private fun serializePageCountMap(items: List<ChapterPageCountEntity>): String {
+        val json = JSONObject()
+        items.forEach { item ->
+            json.put(qualifyProviderValue(item.providerId, item.chapterPath), item.pageCount.coerceAtLeast(0))
+        }
+        return json.toString()
+    }
+
+    private fun serializeSettings(settings: AppSettingsEntity): String {
+        return JSONObject()
+            .put("selectedProviderId", settings.selectedProviderId)
+            .put("useDarkTheme", settings.useDarkTheme)
+            .put("autoJumpToUnread", settings.autoJumpToUnread)
+            .put("mangaBallAdultContentEnabled", settings.mangaBallAdultContentEnabled)
+            .put("appLanguage", settings.appLanguage)
+            .put("hasSeenProviderPicker", settings.hasSeenProviderPicker)
+            .toString()
+    }
+
+    private fun serializeMangaDetailCache(items: List<MangaDetailCacheEntity>): String {
+        return JSONArray().apply {
+            items.forEach { item ->
+                put(
+                    JSONObject()
+                        .put("providerId", item.providerId)
+                        .put("detailKey", item.detailKey)
+                        .put("detailPath", item.detailPath)
+                        .put("detailJson", item.detailJson)
+                        .put("chapterCount", item.chapterCount)
+                        .put("updatedAt", item.updatedAt)
+                )
+            }
+        }.toString()
+    }
+
+    private fun nextOrderIndex(orderIndexes: List<Long>): Long {
+        val max = orderIndexes.maxOrNull() ?: 0L
+        return max + 1L
+    }
+
+    private fun SavedManga.toFavoriteEntity(orderIndex: Long): FavoriteMangaEntity {
+        return FavoriteMangaEntity(
+            providerId = providerId,
+            detailPath = detailPath,
+            title = title,
+            coverUrl = coverUrl,
+            lastChapterTitle = lastChapterTitle,
+            lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
+            malMangaId = malMangaId,
+            orderIndex = orderIndex,
+        )
+    }
+
+    private fun SavedManga.toReadingEntity(orderIndex: Long): ReadingMangaEntity {
+        return ReadingMangaEntity(
+            providerId = providerId,
+            detailPath = detailPath,
+            title = title,
+            coverUrl = coverUrl,
+            lastChapterTitle = lastChapterTitle,
+            lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
+            malMangaId = malMangaId,
+            orderIndex = orderIndex,
+        )
+    }
+
+    private fun FavoriteMangaEntity.toSavedManga(): SavedManga {
+        return SavedManga(
+            providerId = providerId,
+            title = title,
+            detailPath = detailPath,
+            coverUrl = coverUrl,
+            lastChapterTitle = lastChapterTitle,
+            lastChapterPath = lastChapterPath,
+            malMangaId = malMangaId,
+        )
+    }
+
+    private fun ReadingMangaEntity.toSavedManga(): SavedManga {
+        return SavedManga(
+            providerId = providerId,
+            title = title,
+            detailPath = detailPath,
+            coverUrl = coverUrl,
+            lastChapterTitle = lastChapterTitle,
+            lastChapterPath = lastChapterPath,
+            malMangaId = malMangaId,
+        )
+    }
+
+    private fun ReadChapterEntity.toQualifiedPath(): String = qualifyProviderValue(providerId, chapterPath)
+
+    private fun sameStoredManga(left: SavedManga, right: SavedManga): Boolean {
+        return left.providerId == right.providerId &&
+            mangaKey(left.providerId, left.detailPath) == mangaKey(right.providerId, right.detailPath)
     }
 
     private fun canonicalizeSavedEntries(
@@ -331,11 +696,6 @@ class LibraryStore(context: Context) {
         }
 
         return normalize(favorites) to normalize(reading)
-    }
-
-    private fun sameStoredManga(left: SavedManga, right: SavedManga): Boolean {
-        return left.providerId == right.providerId &&
-            mangaKey(left.providerId, left.detailPath) == mangaKey(right.providerId, right.detailPath)
     }
 
     private fun preferCanonicalDetailPath(left: SavedManga, right: SavedManga): String {
@@ -376,7 +736,7 @@ class LibraryStore(context: Context) {
     }
 
     private fun canonicalChapterKey(providerId: String, chapterPath: String): String {
-        val normalized = chapterPath.trim('/')
+        val normalized = canonicalizeChapterPath(chapterPath)
         return when (providerId) {
             "inmanga-es" -> {
                 val parts = normalized.split("/").filter { it.isNotBlank() }
@@ -393,40 +753,27 @@ class LibraryStore(context: Context) {
         return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
     }
 
-    private fun migrateLegacyAutoReadEntriesIfNeeded() {
-        if (prefs.getBoolean(KEY_LEGACY_AUTO_READ_MIGRATION_DONE, false)) return
+    private fun canonicalizeChapterPath(chapterPath: String): String {
+        val normalized = chapterPath
+            .substringBefore("?")
+            .substringBefore("#")
+            .trim('/')
+        if (normalized.isBlank()) return ""
 
-        val reading = jsonCodec.parseSavedMangaList(
-            prefs.getString("reading", "[]").orEmpty(),
-            fallbackProviderId = defaultProviderId,
-        )
-        val readChapters = jsonCodec.parseRawReadChapters(
-            prefs.getString("readChapters", "[]").orEmpty()
-        ).toMutableList()
-        val readProgress = JSONObject(prefs.getString("readProgress", "{}").orEmpty())
-
-        var changed = false
-        reading.forEach { saved ->
-            val chapterPath = saved.lastChapterPath.takeIf { it.isNotBlank() } ?: return@forEach
-            val progress = readProgress.optInt(jsonCodec.qualify(saved.providerId, chapterPath), 0)
-            if (progress > 0) return@forEach
-
-            val removed = readChapters.removeAll { storedQualifiedPath ->
-                sameStoredChapter(saved.providerId, storedQualifiedPath, chapterPath)
-            }
-            if (removed) changed = true
+        val parts = normalized.split("/").filter { it.isNotBlank() }.toMutableList()
+        if (parts.size >= 2) {
+            val chapterIndex = parts.lastIndex - 1
+            normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
         }
+        return parts.joinToString("/")
+    }
 
-        prefs.edit().apply {
-            if (changed) {
-                putString("readChapters", jsonCodec.serializeReadChapters(readChapters))
-            }
-            putBoolean(KEY_LEGACY_AUTO_READ_MIGRATION_DONE, true)
-        }.apply()
+    private fun normalizeChapterPathToken(value: String): String? {
+        val parsed = parseChapterInput(value) ?: return null
+        return BigDecimal(parsed.toString()).stripTrailingZeros().toPlainString()
     }
 
     private companion object {
         private const val KEY_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
-        private const val KEY_LEGACY_AUTO_READ_MIGRATION_DONE = "legacyAutoReadMigrationDone"
     }
 }

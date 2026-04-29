@@ -1,6 +1,7 @@
 package com.paudinc.komastream.utils
 
 import com.paudinc.komastream.data.model.MangaChapter
+import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -124,7 +125,7 @@ fun canonicalChapterKeys(providerId: String, chapterPaths: Iterable<String>): Se
 }
 
 fun canonicalChapterKey(providerId: String, chapterPath: String): String {
-    val normalized = chapterPath.trim('/')
+    val normalized = canonicalizeChapterPath(chapterPath)
     return when (providerId) {
         "inmanga-es" -> {
             val parts = normalized.split("/").filter { it.isNotBlank() }
@@ -193,4 +194,24 @@ private fun normalizeChapterNumberToken(value: String): String? {
         right.length == 3 -> left + right
         else -> "$left.$right"
     }
+}
+
+private fun canonicalizeChapterPath(chapterPath: String): String {
+    val normalized = chapterPath
+        .substringBefore("?")
+        .substringBefore("#")
+        .trim('/')
+    if (normalized.isBlank()) return ""
+
+    val parts = normalized.split("/").filter { it.isNotBlank() }.toMutableList()
+    if (parts.size >= 2) {
+        val chapterIndex = parts.lastIndex - 1
+        normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
+    }
+    return parts.joinToString("/")
+}
+
+private fun normalizeChapterPathToken(value: String): String? {
+    val parsed = parseChapterInput(value) ?: return null
+    return BigDecimal(parsed.toString()).stripTrailingZeros().toPlainString()
 }

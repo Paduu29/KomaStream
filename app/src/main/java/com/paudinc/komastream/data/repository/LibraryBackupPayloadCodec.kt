@@ -11,6 +11,8 @@ class LibraryBackupPayloadCodec {
         readProgress: String,
         chapterPageCounts: String,
         selectedProviderId: String,
+        settings: String,
+        mangaDetailCache: String,
     ): String {
         return JSONObject()
             .put("favorites", JSONArray(favorites))
@@ -19,6 +21,8 @@ class LibraryBackupPayloadCodec {
             .put("readProgress", JSONObject(readProgress))
             .put("chapterPageCounts", JSONObject(chapterPageCounts))
             .put("selectedProviderId", selectedProviderId)
+            .put("settings", JSONObject(settings))
+            .put("mangaDetailCache", JSONArray(mangaDetailCache))
             .toString()
     }
 
@@ -33,7 +37,9 @@ class LibraryBackupPayloadCodec {
             readChapters = json.optJSONArray("readChapters")?.toString() ?: "[]",
             readProgress = json.optJSONObject("readProgress")?.toString() ?: "{}",
             chapterPageCounts = json.optJSONObject("chapterPageCounts")?.toString() ?: "{}",
-            selectedProviderId = selectedProviderIdFallback,
+            selectedProviderId = json.optString("selectedProviderId").ifBlank { selectedProviderIdFallback },
+            settings = json.optJSONObject("settings")?.toString(),
+            mangaDetailCache = json.optJSONArray("mangaDetailCache")?.toString() ?: "[]",
         )
     }
 }
@@ -45,4 +51,6 @@ data class ImportedLibraryPayload(
     val readProgress: String,
     val chapterPageCounts: String,
     val selectedProviderId: String,
+    val settings: String? = null,
+    val mangaDetailCache: String = "[]",
 )

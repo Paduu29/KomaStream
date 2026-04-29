@@ -474,7 +474,7 @@ fun KomaStream() {
                                         detail = detail,
                                         isFavorite = libraryStore.isFavorite(detail.providerId, detail.detailPath),
                                         autoJumpToUnread = libraryState.autoJumpToUnread,
-                                        readChapters = libraryState.readChapters,
+                                        readChapters = libraryStore.readChaptersForProvider(detail.providerId),
                                         lastOpenedChapterPath = libraryStore.read().reading.find { it.providerId == detail.providerId && it.detailPath == detail.detailPath }?.lastChapterPath ?: "",
                                         isChapterDownloaded = { path -> offlineStore.isChapterDownloaded(detail.providerId, path) },
                                         downloadProgress = libraryController.downloadProgress,
@@ -509,7 +509,10 @@ fun KomaStream() {
                                             }
                                             else viewModel.downloadChapter(data.providerId, data.chapterPath)
                                         },
-                                        isRead = canonicalChapterKey(data.providerId, data.chapterPath) in canonicalChapterKeys(data.providerId, libraryState.readChapters),
+                                        isRead = canonicalChapterKey(data.providerId, data.chapterPath) in canonicalChapterKeys(
+                                            data.providerId,
+                                            libraryStore.readChaptersForProvider(data.providerId),
+                                        ),
                                         onToggleRead = { viewModel.toggleChapterRead(data.providerId, data.chapterPath) },
                                         onOpenChapter = { currentPath, targetPath, markCurrentRead ->
                                             viewModel.openAdjacentChapter(data.providerId, currentPath, targetPath, markCurrentRead)
