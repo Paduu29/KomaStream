@@ -9,6 +9,7 @@ import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.ReaderActionInteractor
 import com.paudinc.komastream.ui.navigation.Screen
+import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
@@ -24,6 +25,7 @@ class ReaderController(
     private val providerRegistry: ProviderRegistry,
     private val libraryStore: LibraryStore,
     private val readerActionInteractor: ReaderActionInteractor,
+    private val strings: AppStrings,
 ) {
     var uiState by mutableStateOf(ReaderUiState())
         private set
@@ -172,7 +174,7 @@ class ReaderController(
                 title = detail.title,
                 detailPath = detail.detailPath,
                 coverUrl = detail.coverUrl,
-                lastChapterTitle = progressChapter.chapterLabel,
+                lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
                 lastChapterPath = progressPath,
             )
         )

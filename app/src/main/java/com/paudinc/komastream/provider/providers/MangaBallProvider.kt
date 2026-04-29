@@ -610,7 +610,7 @@ class MangaBallProvider(
                 providerId = id,
                 mangaTitle = mangaTitle,
                 chapterLabel = chapterLabel,
-                chapterNumberUrl = chapterPath.trim('/').substringAfterLast('/'),
+                chapterNumberUrl = chapterLabel,
                 chapterId = chapterPath.trim('/').substringAfterLast('/'),
                 mangaPath = mangaPath,
                 chapterPath = chapterPath,
@@ -626,7 +626,8 @@ class MangaBallProvider(
     ): List<MangaChapter> = buildList {
         for (index in 0 until chapters.length()) {
             val chapter = chapters.optJSONObject(index) ?: continue
-            val number = chapter.optString("number")
+            val chapterNumber = chapter.optDouble("number_float", Double.NaN)
+            val chapterNumberLabel = chapter.optString("number")
             val translations = chapter.optJSONArray("translations") ?: continue
             val visibleTranslations = buildList {
                 for (translationIndex in 0 until translations.length()) {
@@ -647,12 +648,12 @@ class MangaBallProvider(
                 )
                 val label = translation.optString("name")
                     .trim()
-                    .ifBlank { number }
+                    .ifBlank { chapterNumberLabel.ifBlank { formatChapterNumber(chapterNumber) } }
                 add(
                     MangaChapter(
                         id = translation.optString("id"),
                         chapterLabel = label,
-                        chapterNumberUrl = translation.optString("id"),
+                        chapterNumberUrl = if (chapterNumber.isFinite()) formatChapterNumber(chapterNumber) else label,
                         path = path,
                         pagesCount = translation.optInt("pages", 0),
                         registrationDate = translation.optString("date"),
@@ -736,6 +737,11 @@ class MangaBallProvider(
         if (label.isNotBlank()) return label
         if (code.isBlank()) return ""
         return if (code.length <= 3) code.uppercase() else code.replaceFirstChar { it.uppercase() }
+    }
+
+    private fun formatChapterNumber(value: Double): String {
+        val whole = value.toLong()
+        return if (value == whole.toDouble()) whole.toString() else value.toString().trimEnd('0').trimEnd('.')
     }
 
     private fun extractMangaDetailPath(document: Document, html: String, titleId: String): String {

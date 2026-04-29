@@ -83,6 +83,7 @@ class KomaViewModel(
         providerRegistry = providerRegistry,
         libraryStore = libraryStore,
         readerActionInteractor = readerActionInteractor,
+        strings = strings,
     )
     val backupController = BackupController(
         scope = viewModelScope,

@@ -39,6 +39,7 @@ import com.paudinc.komastream.data.model.BackupOperationType
 import com.paudinc.komastream.data.model.BackupOperationUiState
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.utils.AppStrings
+import com.paudinc.komastream.utils.parseChapterInput
 
 @Composable
 fun MangaCoverCard(
@@ -309,7 +310,7 @@ fun ContinueReadingCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${strings.latestProgress}: ${manga.lastChapterTitle.ifBlank { strings.noChapterSavedYet }}",
+                        "${strings.latestProgress}: ${manga.localizedLastChapterTitle(strings)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
@@ -418,20 +419,21 @@ fun FavoriteMangaCard(
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    manga.title,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (manga.lastChapterTitle.isNotBlank()) {
+                ) {
                     Text(
-                        manga.lastChapterTitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
+                        manga.title,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    val localizedLastChapterTitle = manga.localizedLastChapterTitle(strings)
+                    if (localizedLastChapterTitle.isNotBlank()) {
+                        Text(
+                            localizedLastChapterTitle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -448,6 +450,16 @@ fun FavoriteMangaCard(
                 )
             }
         }
+    }
+}
+
+private fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {
+    val chapterNumber = parseChapterInput(lastChapterTitle)
+        ?: parseChapterInput(lastChapterPath.substringBeforeLast("/").substringAfterLast("/"))
+    return when {
+        chapterNumber != null -> strings.chapterNumberPrefix.format(chapterNumber)
+        lastChapterTitle.isNotBlank() -> lastChapterTitle
+        else -> strings.noChapterSavedYet
     }
 }
 
