@@ -57,7 +57,14 @@ class MyAnimeListSessionStore(context: Context) {
     }
 
     fun clear() {
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove(KEY_ACCESS_TOKEN)
+            .remove(KEY_REFRESH_TOKEN)
+            .remove(KEY_ACCESS_TOKEN_EXPIRES_AT_MS)
+            .remove(KEY_USERNAME)
+            .remove(KEY_PENDING_STATE)
+            .remove(KEY_CODE_VERIFIER)
+            .apply()
     }
 
     companion object {

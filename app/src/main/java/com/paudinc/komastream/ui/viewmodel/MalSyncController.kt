@@ -170,6 +170,7 @@ class MalSyncController(
                     val mangaIdCache = mutableMapOf<String, Long?>()
                     val currentProviderState = libraryStore.read(filterBySelectedProvider = false)
                     val preSyncState = currentProviderState
+                    val preSyncReadChapters = libraryStore.readChaptersForProvider(providerId)
                     val isCurrentProviderLibraryEmpty =
                         currentProviderState.reading.none { it.providerId == providerId } &&
                             currentProviderState.favorites.none { it.providerId == providerId }
@@ -210,6 +211,7 @@ class MalSyncController(
                             isReading = entry.isReading,
                             remoteEntry = remoteEntriesById[mangaId],
                             detailCache = detailCache,
+                            readChapters = preSyncReadChapters,
                         )
                         updateProgress()
                     }
@@ -306,6 +308,7 @@ class MalSyncController(
         isReading: Boolean,
         remoteEntry: MalUserMangaEntry?,
         detailCache: MutableMap<String, MangaDetail?>,
+        readChapters: Set<String>,
     ) {
         if (!isReading) {
             val remoteStatus = remoteEntry?.listStatus?.status.orEmpty()
@@ -318,7 +321,7 @@ class MalSyncController(
             coverUrl = manga.coverUrl.ifBlank { detail.coverUrl },
         )
         val localReadCount = if (isReading) {
-            resolveReadCountFromProgress(target, detail, libraryStore.readChaptersForProvider(target.providerId))
+            resolveReadCountFromProgress(target, detail, readChapters)
         } else {
             0
         }
