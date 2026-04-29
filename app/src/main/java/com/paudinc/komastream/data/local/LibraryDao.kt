@@ -40,14 +40,26 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertReadChapter(entity: ReadChapterEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertReadChapters(entities: List<ReadChapterEntity>)
+
     @Query("DELETE FROM read_chapters WHERE provider_id = :providerId AND chapter_path = :chapterPath")
     fun deleteReadChapter(providerId: String, chapterPath: String)
+
+    @Query("DELETE FROM read_chapters WHERE provider_id = :providerId AND chapter_path IN (:chapterPaths)")
+    fun deleteReadChapters(providerId: String, chapterPaths: List<String>)
 
     @Query("DELETE FROM read_chapters WHERE provider_id = :providerId")
     fun deleteReadChaptersForProvider(providerId: String)
 
     @Query("DELETE FROM read_chapters")
     fun clearReadChapters()
+
+    @Query("SELECT EXISTS(SELECT 1 FROM read_chapters WHERE provider_id = :providerId AND chapter_path = :chapterPath LIMIT 1)")
+    fun hasReadChapter(providerId: String, chapterPath: String): Boolean
+
+    @Query("SELECT MAX(read_order) FROM read_chapters WHERE provider_id = :providerId")
+    fun readMaxReadOrderForProvider(providerId: String): Long?
 
     @Query("SELECT * FROM chapter_progress")
     fun readChapterProgress(): List<ChapterProgressEntity>

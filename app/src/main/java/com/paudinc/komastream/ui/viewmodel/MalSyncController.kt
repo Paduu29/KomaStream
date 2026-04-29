@@ -25,7 +25,10 @@ import com.paudinc.komastream.utils.generateMalCodeChallenge
 import com.paudinc.komastream.utils.generateMalCodeVerifier
 import com.paudinc.komastream.utils.generateMalState
 import com.paudinc.komastream.utils.malRedirectUri
+import com.paudinc.komastream.utils.normalizeMalChapterNumber
 import com.paudinc.komastream.utils.parseChapterInput
+import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
+import com.paudinc.komastream.utils.resolveMalReadCountForSelection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,7 +46,7 @@ class MalSyncController(
     private companion object {
         private const val MIN_ACCEPTABLE_MAL_SCORE = 250
         private const val SYNC_FROM_REMOTE_BASE_UNITS = 3
-        private const val SYNC_TO_REMOTE_BASE_UNITS = 4
+        private const val SYNC_TO_REMOTE_BASE_UNITS = 3
     }
 
     private val api = MyAnimeListApi()
@@ -187,36 +190,43 @@ class MalSyncController(
                     advanceSyncProgress(stageMessage = "Fetching your MyAnimeList library")
                     val remoteEntries = api.fetchUserMangaList(refreshed.accessToken, clientId)
                     advanceSyncProgress()
-                    addSyncTotal(remoteEntries.size)
                     val detailCache = mutableMapOf<String, MangaDetail?>()
                     val mangaIdCache = mutableMapOf<String, Long?>()
                     val currentProviderState = libraryStore.read(filterBySelectedProvider = false)
                     val preSyncState = currentProviderState
                     val preSyncReadChapters = libraryStore.readChaptersForProvider(providerId)
-                    val isCurrentProviderLibraryEmpty =
-                        currentProviderState.reading.none { it.providerId == providerId } &&
-                            currentProviderState.favorites.none { it.providerId == providerId }
-                    updateSyncStage("Matching MyAnimeList entries to local manga")
-                    mergeRemoteEntriesIntoLocal(
-                        remoteEntries = remoteEntries,
-                        providerIdFilter = providerId,
-                        addToFavorites = isCurrentProviderLibraryEmpty,
-                        detailCache = detailCache,
-                        onItemStarted = { entry ->
-                            updateSyncStage(buildSyncItemMessage("Matching", entry.manga.title))
-                        },
-                        onItemProcessed = { advanceSyncProgress() },
-                    )
                     val remoteEntriesById = remoteEntries.associateBy { it.manga.id }
                     val state = preSyncState
                     val entriesByKey = linkedMapOf<String, SyncEntry>()
 
-                    state.reading.filter { it.providerId == providerId }.forEach { manga ->
-                        entriesByKey[syncKey(manga)] = SyncEntry(manga = manga, isReading = true)
-                    }
-                    state.favorites.filter { it.providerId == providerId }.forEach { manga ->
-                        entriesByKey.putIfAbsent(syncKey(manga), SyncEntry(manga = manga, isReading = false))
-                    }
+                    state.reading
+                        .filter { it.providerId == providerId }
+                        .forEach { manga ->
+                            val normalized = manga.copy(
+                                detailPath = manga.detailPath.lowercase().trim()
+                            )
+                            entriesByKey[syncKey(normalized)] = SyncEntry(
+                                manga = normalized,
+                                isReading = true
+                            )
+                        }
+
+                    state.favorites
+                        .filter { it.providerId == providerId }
+                        .forEach { manga ->
+                            val normalized = manga.copy(
+                                detailPath = manga.detailPath.lowercase().trim()
+                            )
+                            val key = syncKey(normalized)
+
+                            val existing = entriesByKey[key]
+                            if (existing == null || !existing.isReading) {
+                                entriesByKey[key] = SyncEntry(
+                                    manga = normalized,
+                                    isReading = false
+                                )
+                            }
+                        }
                     addSyncTotal(entriesByKey.size)
                     advanceSyncProgress(stageMessage = "Preparing local library entries")
 
@@ -281,7 +291,7 @@ class MalSyncController(
         read: Boolean,
     ) {
         val manga = SavedManga(providerId, title, detailPath, coverUrl)
-        val count = if (read) chapters.size else 0
+        val count = if (read) resolveMalReadCountForSelection(chapters) else 0
         syncManga(manga, isRemoved = false, status = if (read) "reading" else "plan_to_read", numChaptersRead = count)
     }
 
@@ -304,14 +314,11 @@ class MalSyncController(
                     } else {
                         val remoteEntry = api.fetchUserMangaList(refreshed.accessToken, clientId)
                             .firstOrNull { it.manga.id == mangaId }
-                        val mergedReadCount = maxOf(
-                            numChaptersRead ?: 0,
-                            remoteEntry?.listStatus?.numChaptersRead ?: 0,
-                        )
+                        val localReadCount = numChaptersRead?.coerceAtLeast(0) ?: 0
                         val mergedStatus = mergeStatus(
                             localStatus = status,
-                            localReadCount = numChaptersRead ?: 0,
-                            mergedReadCount = mergedReadCount,
+                            localReadCount = localReadCount,
+                            mergedReadCount = localReadCount,
                             remoteStatus = remoteEntry?.listStatus?.status.orEmpty(),
                         )
                         api.updateMangaStatus(
@@ -319,7 +326,7 @@ class MalSyncController(
                             clientId = clientId,
                             mangaId = mangaId,
                             status = mergedStatus,
-                            numChaptersRead = mergedReadCount,
+                            numChaptersRead = localReadCount,
                         )
                     }
                 }
@@ -354,9 +361,10 @@ class MalSyncController(
         } else {
             0
         }
-        val readCount = maxOf(localReadCount, remoteEntry?.listStatus?.numChaptersRead ?: 0)
+        val readCount = localReadCount
+        val totalChapterCount = resolveMalReadCountForSelection(detail.chapters)
         val status = when {
-            isReading && detail.chapters.isNotEmpty() && readCount >= detail.chapters.size -> "completed"
+            isReading && totalChapterCount > 0 && readCount >= totalChapterCount -> "completed"
             isReading -> "reading"
             else -> "plan_to_read"
         }
@@ -369,56 +377,54 @@ class MalSyncController(
         )
     }
 
+
     private fun resolveReadCountFromProgress(
         manga: SavedManga,
-        detail: com.paudinc.komastream.data.model.MangaDetail,
+        detail: MangaDetail,
         readChapters: Set<String>,
     ): Int {
-        val explicitReadCount = countReadChapters(
+        manga.lastReadChapterNumber?.let { return it.coerceAtLeast(0) }
+        val explicitReadCount = resolveMalReadCountForReadChapters(
             providerId = manga.providerId,
             detailPath = manga.detailPath,
-            detail = detail,
+            chapters = detail.chapters,
             readChapters = readChapters,
         )
         if (explicitReadCount > 0) return explicitReadCount
 
         val progressPath = manga.lastChapterPath.trim()
-        if (progressPath.isBlank()) return 0
 
-        val progressChapter = detail.chapters.firstOrNull { chapter ->
-            canonicalChapterKey(manga.providerId, buildChapterPath(manga.detailPath, chapter)) ==
-                canonicalChapterKey(manga.providerId, progressPath)
-        }
+        val progressChapter = if (progressPath.isNotBlank()) {
+            detail.chapters.firstOrNull { chapter ->
+                canonicalChapterKey(manga.providerId, buildChapterPath(manga.detailPath, chapter)) ==
+                        canonicalChapterKey(manga.providerId, progressPath)
+            }
+        } else null
+
         val progressValue = progressChapter?.let(::chapterValue)
             ?: parseChapterInput(manga.lastChapterTitle)
-            ?: parseChapterInput(progressPath)
+        val normalized = progressValue
+            ?.let { normalizeMalChapterNumber(it) }
             ?: return 0
-        val completedPointedChapter = progressChapter != null && isCompletedChapterProgress(
-            providerId = manga.providerId,
-            chapterPath = progressPath,
-        )
 
-        val chaptersBeforePointed = detail.chapters.count { chapter ->
-            chapterValue(chapter) < progressValue
+        val completedPointedChapter = progressChapter != null &&
+                isCompletedChapterProgress(
+                    providerId = manga.providerId,
+                    chapterPath = progressPath,
+                )
+
+        if (completedPointedChapter) {
+            return normalized.coerceAtLeast(1)
         }
-        return if (completedPointedChapter) {
-            (chaptersBeforePointed + 1).coerceAtMost(detail.chapters.size)
+        return if (progressValue != null && isWholeChapterNumber(progressValue)) {
+            (normalized - 1).coerceAtLeast(1)
         } else {
-            chaptersBeforePointed
+            normalized.coerceAtLeast(1)
         }
     }
 
-    private fun countReadChapters(
-        providerId: String,
-        detailPath: String,
-        detail: com.paudinc.komastream.data.model.MangaDetail,
-        readChapters: Set<String>,
-    ): Int {
-        val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
-        return detail.chapters.count { chapter ->
-            canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) in canonicalReadKeys
-        }
-    }
+    private fun isWholeChapterNumber(value: Double): Boolean =
+        kotlin.math.abs(value - value.toInt().toDouble()) < 0.0001
 
     private fun mergeRemoteEntriesIntoLocal(
         remoteEntries: List<MalUserMangaEntry>,
@@ -463,6 +469,7 @@ class MalSyncController(
                             malMangaId = entry.manga.id,
                             lastChapterTitle = remoteChapterLabel,
                             lastChapterPath = "",
+                            lastReadChapterNumber = remoteChapterCount,
                         )
                     )
                 }
@@ -473,6 +480,7 @@ class MalSyncController(
                             malMangaId = entry.manga.id,
                             lastChapterTitle = remoteChapterLabel,
                             lastChapterPath = progressSnapshot?.lastChapterPath.orEmpty(),
+                            lastReadChapterNumber = remoteChapterCount,
                         )
                     )
                 }
@@ -757,7 +765,8 @@ class MalSyncController(
     private fun numberTokens(value: String): List<String> =
         Regex("\\d+").findAll(value).map { it.value }.toList()
 
-    private fun syncKey(manga: SavedManga): String = "${manga.providerId}::${manga.detailPath}"
+    private fun syncKey(manga: SavedManga): String =
+        "${manga.providerId}::${manga.detailPath.lowercase().trim()}"
 
     private data class SyncEntry(
         val manga: SavedManga,

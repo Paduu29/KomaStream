@@ -10,7 +10,7 @@ import androidx.room.Entity
 data class FavoriteMangaEntity(
     @ColumnInfo(name = "provider_id")
     val providerId: String,
-    @ColumnInfo(name = "detail_path")
+    @ColumnInfo(name = "detail_path", collate = ColumnInfo.NOCASE)
     val detailPath: String,
     val title: String,
     @ColumnInfo(name = "cover_url")
@@ -21,6 +21,8 @@ data class FavoriteMangaEntity(
     val lastChapterPath: String = "",
     @ColumnInfo(name = "mal_manga_id")
     val malMangaId: Long? = null,
+    @ColumnInfo(name = "last_read_chapter_number")
+    val lastReadChapterNumber: Int? = null,
     @ColumnInfo(name = "order_index")
     val orderIndex: Long = 0L,
 )
@@ -32,7 +34,7 @@ data class FavoriteMangaEntity(
 data class ReadingMangaEntity(
     @ColumnInfo(name = "provider_id")
     val providerId: String,
-    @ColumnInfo(name = "detail_path")
+    @ColumnInfo(name = "detail_path", collate = ColumnInfo.NOCASE)
     val detailPath: String,
     val title: String,
     @ColumnInfo(name = "cover_url")
@@ -43,6 +45,8 @@ data class ReadingMangaEntity(
     val lastChapterPath: String = "",
     @ColumnInfo(name = "mal_manga_id")
     val malMangaId: Long? = null,
+    @ColumnInfo(name = "last_read_chapter_number")
+    val lastReadChapterNumber: Int? = null,
     @ColumnInfo(name = "order_index")
     val orderIndex: Long = 0L,
 )
@@ -115,7 +119,7 @@ data class MangaDetailCacheEntity(
     val providerId: String,
     @ColumnInfo(name = "detail_key")
     val detailKey: String,
-    @ColumnInfo(name = "detail_path")
+    @ColumnInfo(name = "detail_path", collate = ColumnInfo.NOCASE)
     val detailPath: String,
     @ColumnInfo(name = "detail_json")
     val detailJson: String,

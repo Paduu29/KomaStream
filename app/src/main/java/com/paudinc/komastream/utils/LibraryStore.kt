@@ -75,6 +75,7 @@ class LibraryStore(context: Context) {
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath.orEmpty() },
             malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId,
+            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
         )
         dao.upsertFavorite(
             mergedFavorite.toFavoriteEntity(
@@ -91,6 +92,7 @@ class LibraryStore(context: Context) {
                     lastChapterTitle = mergedFavorite.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedFavorite.lastChapterPath.ifBlank { saved.lastChapterPath },
                     malMangaId = mergedFavorite.malMangaId ?: saved.malMangaId,
+                    lastReadChapterNumber = mergedFavorite.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                 ).toReadingEntity(orderIndex = saved.orderIndex)
             } else {
                 saved
@@ -114,6 +116,7 @@ class LibraryStore(context: Context) {
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath.orEmpty() },
             malMangaId = manga.malMangaId ?: existingReading?.malMangaId,
+            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
         )
         dao.upsertReading(
             mergedReading.toReadingEntity(
@@ -130,6 +133,7 @@ class LibraryStore(context: Context) {
                     lastChapterTitle = mergedReading.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedReading.lastChapterPath.ifBlank { saved.lastChapterPath },
                     malMangaId = mergedReading.malMangaId ?: saved.malMangaId,
+                    lastReadChapterNumber = mergedReading.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                 ).toFavoriteEntity(orderIndex = saved.orderIndex)
             } else {
                 saved
@@ -165,18 +169,26 @@ class LibraryStore(context: Context) {
     fun toggleChapterRead(providerId: String, chapterPath: String) {
         ensureInitialized()
         val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-        val current = dao.readChapters().map { it.toQualifiedPath() }.toMutableSet()
-        val targetQualified = qualifyProviderValue(providerId, canonicalPath)
-        if (!current.removeIf { sameStoredChapter(providerId, it, canonicalPath) }) {
-            current.add(targetQualified)
+        if (canonicalPath.isBlank()) return
+        if (dao.hasReadChapter(providerId, canonicalPath)) {
+            dao.deleteReadChapter(providerId, canonicalPath)
+        } else {
+            val nextReadOrder = (dao.readMaxReadOrderForProvider(providerId) ?: 0L) + 1L
+            dao.upsertReadChapter(
+                ReadChapterEntity(
+                    providerId = providerId,
+                    chapterPath = canonicalPath,
+                    readOrder = nextReadOrder,
+                )
+            )
         }
-        replaceReadChapterEntries(current.toList())
     }
 
     fun isChapterRead(providerId: String, chapterPath: String): Boolean {
         ensureInitialized()
         val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-        return dao.readChaptersForProvider(providerId).any { canonicalPath == it.chapterPath }
+        if (canonicalPath.isBlank()) return false
+        return dao.hasReadChapter(providerId, canonicalPath)
     }
 
     fun readAllReadChapters(): Set<String> {
@@ -228,18 +240,21 @@ class LibraryStore(context: Context) {
         ensureInitialized()
         val normalized = chapterPaths.filter { it.isNotBlank() }.map { canonicalChapterKey(providerId, it) }.distinct()
         if (normalized.isEmpty()) return
-        val current = dao.readChapters().map { it.toQualifiedPath() }.toMutableList()
         if (read) {
-            normalized.forEachIndexed { index, chapterPath ->
-                current.removeAll { sameStoredChapter(providerId, it, chapterPath) }
-                current.add(0, qualifyProviderValue(providerId, chapterPath))
-            }
+            dao.deleteReadChapters(providerId, normalized)
+            var nextReadOrder = (dao.readMaxReadOrderForProvider(providerId) ?: 0L) + 1L
+            dao.upsertReadChapters(
+                normalized.map { chapterPath ->
+                    ReadChapterEntity(
+                        providerId = providerId,
+                        chapterPath = chapterPath,
+                        readOrder = nextReadOrder++,
+                    )
+                }
+            )
         } else {
-            current.removeAll { stored ->
-                normalized.any { chapterPath -> sameStoredChapter(providerId, stored, chapterPath) }
-            }
+            dao.deleteReadChapters(providerId, normalized)
         }
-        replaceReadChapterEntries(current)
     }
 
     fun setDarkTheme(enabled: Boolean) {
@@ -627,6 +642,7 @@ class LibraryStore(context: Context) {
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
             malMangaId = malMangaId,
+            lastReadChapterNumber = lastReadChapterNumber,
             orderIndex = orderIndex,
         )
     }
@@ -640,6 +656,7 @@ class LibraryStore(context: Context) {
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
             malMangaId = malMangaId,
+            lastReadChapterNumber = lastReadChapterNumber,
             orderIndex = orderIndex,
         )
     }
@@ -653,6 +670,7 @@ class LibraryStore(context: Context) {
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = lastChapterPath,
             malMangaId = malMangaId,
+            lastReadChapterNumber = lastReadChapterNumber,
         )
     }
 
@@ -665,6 +683,7 @@ class LibraryStore(context: Context) {
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = lastChapterPath,
             malMangaId = malMangaId,
+            lastReadChapterNumber = lastReadChapterNumber,
         )
     }
 

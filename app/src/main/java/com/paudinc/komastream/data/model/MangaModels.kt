@@ -204,6 +204,7 @@ data class SavedManga(
     val lastChapterTitle: String = "",
     val lastChapterPath: String = "",
     val malMangaId: Long? = null,
+    val lastReadChapterNumber: Int? = null,
 )
 
 data class LibraryState(

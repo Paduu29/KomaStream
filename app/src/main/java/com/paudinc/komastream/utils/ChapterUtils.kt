@@ -151,6 +151,72 @@ fun chapterValue(chapter: MangaChapter): Double {
         ?: Double.MAX_VALUE
 }
 
+fun normalizeMalChapterNumber(value: Double): Int =
+    value.toInt().coerceAtLeast(0)
+
+fun resolveMalReadCountForSelection(chapters: List<MangaChapter>): Int {
+    val highestValue = chapters.asSequence()
+        .map(::chapterValue)
+        .filter { it.isFinite() && it != Double.MAX_VALUE }
+        .maxOrNull()
+        ?: return chapters.size
+    return normalizeMalChapterNumber(highestValue)
+}
+
+fun resolveMalReadCountForReadChapters(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    readChapters: Set<String>,
+): Int {
+    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    val normalizedReadNumbers = chapters.asSequence()
+        .filter { chapter ->
+            canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) in canonicalReadKeys
+        }
+        .map(::chapterValue)
+        .filter { it.isFinite() && it != Double.MAX_VALUE }
+        .filter { kotlin.math.abs(it - it.toInt().toDouble()) < 0.0001 }
+        .map(::normalizeMalChapterNumber)
+        .filter { it > 0 }
+        .toSet()
+    if (normalizedReadNumbers.isEmpty()) return 0
+
+    var contiguousCount = 0
+    while ((contiguousCount + 1) in normalizedReadNumbers) {
+        contiguousCount += 1
+    }
+    return contiguousCount
+}
+
+fun resolveMalReadCountFromProgressPointer(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    progressChapterPath: String,
+    readChapters: Set<String>,
+): Int? {
+    if (progressChapterPath.isBlank()) return null
+    val progressChapter = chapters.firstOrNull { chapter ->
+        canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) ==
+            canonicalChapterKey(providerId, progressChapterPath)
+    } ?: return null
+
+    val progressValue = chapterValue(progressChapter)
+    if (!progressValue.isFinite() || progressValue == Double.MAX_VALUE) return null
+
+    val pointedChapterIsRead = canonicalChapterKey(providerId, buildChapterPath(detailPath, progressChapter)) in
+        canonicalChapterKeys(providerId, readChapters)
+    val normalized = normalizeMalChapterNumber(progressValue)
+    val isWholeNumber = kotlin.math.abs(progressValue - progressValue.toInt().toDouble()) < 0.0001
+
+    return when {
+        pointedChapterIsRead -> normalized
+        isWholeNumber -> (normalized - 1).coerceAtLeast(0)
+        else -> normalized
+    }
+}
+
 fun defaultBackupFileName(): String {
     val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
     return "KomaStream-$timestamp.json"

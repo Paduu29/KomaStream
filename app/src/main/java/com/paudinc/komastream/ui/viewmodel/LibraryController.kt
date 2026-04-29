@@ -27,6 +27,8 @@ import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.chapterValue
+import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
+import com.paudinc.komastream.utils.resolveMalReadCountFromProgressPointer
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.resolveProgressChapterPath
 import kotlinx.coroutines.CoroutineScope
@@ -156,23 +158,35 @@ class LibraryController(
         uiState = uiState.copy(selectedTab = tab)
     }
 
-    fun toggleChapterRead(providerId: String, path: String, detail: com.paudinc.komastream.data.model.MangaDetail? = null) {
-        val wasRead = libraryStore.isChapterRead(providerId, path)
-        if (wasRead) {
-            libraryStore.setChaptersRead(providerId, listOf(path), false)
-        } else {
-            val pathsToMark = detail?.takeIf { it.providerId == providerId }?.let {
-                resolveReadThroughChapterPaths(
-                    providerId = providerId,
-                    detailPath = it.detailPath,
-                    chapters = it.chapters,
-                    currentChapterPath = path,
-                )
-            } ?: listOf(path)
-            libraryStore.setChaptersRead(providerId, pathsToMark, true)
+    fun toggleChapterRead(
+        providerId: String,
+        path: String,
+        detail: com.paudinc.komastream.data.model.MangaDetail? = null,
+        onCompleted: (() -> Unit)? = null,
+    ) {
+        uiState = uiState.copy(isBulkUpdatingChapters = true)
+        scope.launch {
+            withContext(Dispatchers.Default) {
+                val wasRead = libraryStore.isChapterRead(providerId, path)
+                if (wasRead) {
+                    libraryStore.setChaptersRead(providerId, listOf(path), false)
+                } else {
+                    val pathsToMark = detail?.takeIf { it.providerId == providerId }?.let {
+                        resolveReadThroughChapterPaths(
+                            providerId = providerId,
+                            detailPath = it.detailPath,
+                            chapters = it.chapters,
+                            currentChapterPath = path,
+                        )
+                    } ?: listOf(path)
+                    libraryStore.setChaptersRead(providerId, pathsToMark, true)
+                }
+            }
+            refreshState()
+            uiState = uiState.copy(isBulkUpdatingChapters = false)
+            onCompleted?.invoke()
+            Toast.makeText(context, strings.updatedReadStatus, Toast.LENGTH_SHORT).show()
         }
-        refreshState()
-        Toast.makeText(context, strings.updatedReadStatus, Toast.LENGTH_SHORT).show()
     }
 
     fun setAllChaptersRead(
@@ -307,6 +321,18 @@ class LibraryController(
         val progressChapter = chapters.firstOrNull {
             buildChapterPath(detailPath, it) == progressChapterPath
         } ?: return
+        val lastReadChapterNumber = resolveMalReadCountFromProgressPointer(
+            providerId = providerId,
+            detailPath = detailPath,
+            chapters = chapters,
+            progressChapterPath = progressChapterPath,
+            readChapters = readChapters,
+        ) ?: resolveMalReadCountForReadChapters(
+            providerId = providerId,
+            detailPath = detailPath,
+            chapters = chapters,
+            readChapters = readChapters,
+        )
         libraryStore.upsertReading(
             SavedManga(
                 providerId = providerId,
@@ -315,6 +341,7 @@ class LibraryController(
                 coverUrl = coverUrl,
                 lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
                 lastChapterPath = progressChapterPath,
+                lastReadChapterNumber = lastReadChapterNumber,
             )
         )
     }

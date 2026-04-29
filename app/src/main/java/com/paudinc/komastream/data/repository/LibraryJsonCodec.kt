@@ -43,6 +43,7 @@ class LibraryJsonCodec(
                         lastChapterTitle = item.optString("lastChapterTitle"),
                         lastChapterPath = rawLastChapterPath.ifBlank { rawChapterPath },
                         malMangaId = item.optLongOrNull("malMangaId"),
+                        lastReadChapterNumber = item.optIntOrNull("lastReadChapterNumber"),
                     )
                 )
             }
@@ -62,6 +63,7 @@ class LibraryJsonCodec(
                     .put("lastChapterTitle", item.lastChapterTitle)
                     .put("lastChapterPath", item.lastChapterPath)
                     .put("malMangaId", item.malMangaId ?: JSONObject.NULL)
+                    .put("lastReadChapterNumber", item.lastReadChapterNumber ?: JSONObject.NULL)
             )
         }
         return json.toString()
@@ -223,6 +225,15 @@ private fun JSONObject.optLongOrNull(name: String): Long? {
     return when (val value = opt(name)) {
         is Number -> value.toLong()
         is String -> value.toLongOrNull()
+        else -> null
+    }
+}
+
+private fun JSONObject.optIntOrNull(name: String): Int? {
+    if (!has(name) || isNull(name)) return null
+    return when (val value = opt(name)) {
+        is Number -> value.toInt()
+        is String -> value.toIntOrNull()
         else -> null
     }
 }

@@ -14,6 +14,8 @@ import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
+import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
+import com.paudinc.komastream.utils.resolveMalReadCountFromProgressPointer
 import com.paudinc.komastream.utils.resolveProgressChapterPath
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import kotlinx.coroutines.CoroutineScope
@@ -205,6 +207,18 @@ class ReaderController(
         val progressChapter = detail.chapters.firstOrNull { chapter ->
             buildChapterPath(detail.detailPath, chapter) == progressPath
         } ?: return
+        val lastReadChapterNumber = resolveMalReadCountFromProgressPointer(
+            providerId = providerId,
+            detailPath = detail.detailPath,
+            chapters = detail.chapters,
+            progressChapterPath = progressPath,
+            readChapters = readChapters,
+        ) ?: resolveMalReadCountForReadChapters(
+            providerId = providerId,
+            detailPath = detail.detailPath,
+            chapters = detail.chapters,
+            readChapters = readChapters,
+        )
         libraryStore.upsertReading(
             SavedManga(
                 providerId = providerId,
@@ -213,6 +227,7 @@ class ReaderController(
                 coverUrl = detail.coverUrl,
                 lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
                 lastChapterPath = progressPath,
+                lastReadChapterNumber = lastReadChapterNumber,
             )
         )
     }

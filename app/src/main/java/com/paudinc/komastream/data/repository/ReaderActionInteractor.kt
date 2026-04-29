@@ -49,6 +49,7 @@ class ReaderActionInteractor {
             coverUrl = currentManga?.coverUrl ?: "",
             lastChapterTitle = readerData.chapterTitle,
             lastChapterPath = readerData.chapterPath,
+            lastReadChapterNumber = currentManga?.lastReadChapterNumber,
         )
     }
 

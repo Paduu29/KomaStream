@@ -13,6 +13,7 @@ class LibraryActionInteractor {
         return manga.copy(
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existing?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existing?.lastChapterPath.orEmpty() },
+            lastReadChapterNumber = manga.lastReadChapterNumber ?: existing?.lastReadChapterNumber,
         )
     }
 }
