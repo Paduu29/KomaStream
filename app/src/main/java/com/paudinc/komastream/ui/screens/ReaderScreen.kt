@@ -194,7 +194,7 @@ fun ReaderScreen(
                             density = LocalDensity.current.density,
                             isZoomed = zoomedPageKey != null,
                             onSwipeLeft = { reader.nextChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
-                            onSwipeRight = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, false) } },
+                            onSwipeRight = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
                         ),
                     state = listState,
                     userScrollEnabled = zoomedPageKey == null,
@@ -379,7 +379,7 @@ fun ReaderScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             SmallReaderNavButton(
-                                onClick = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, false) } },
+                                onClick = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
                                 enabled = reader.previousChapterPath != null,
                                 icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                                 contentDescription = strings.previous,
@@ -485,7 +485,7 @@ fun ReaderChapterNavigationButtons(
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
-            onClick = { previousChapterPath?.let { onOpenChapter(currentChapterPath, it, false) } },
+            onClick = { previousChapterPath?.let { onOpenChapter(currentChapterPath, it, true) } },
             enabled = previousChapterPath != null,
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(16.dp),
