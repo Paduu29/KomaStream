@@ -25,6 +25,7 @@ import com.paudinc.komastream.utils.generateMalCodeChallenge
 import com.paudinc.komastream.utils.generateMalCodeVerifier
 import com.paudinc.komastream.utils.generateMalState
 import com.paudinc.komastream.utils.malRedirectUri
+import com.paudinc.komastream.utils.parseChapterInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,12 +42,15 @@ class MalSyncController(
 ) {
     private companion object {
         private const val MIN_ACCEPTABLE_MAL_SCORE = 250
+        private const val SYNC_FROM_REMOTE_BASE_UNITS = 3
+        private const val SYNC_TO_REMOTE_BASE_UNITS = 4
     }
 
     private val api = MyAnimeListApi()
     private val sessionStore = MyAnimeListSessionStore(context)
     private val linkStore = MyAnimeListLinkStore(context)
     private val clientId: String = BuildConfig.MAL_CLIENT_ID.trim()
+    private var syncStartedAtMs: Long = 0L
 
     var uiState by mutableStateOf(buildState())
         private set
@@ -131,20 +135,32 @@ class MalSyncController(
         }
         val preferredProviderId = libraryStore.read(filterBySelectedProvider = false).selectedProviderId
         scope.launch {
-            beginSync()
+            beginSync(
+                initialTotalUnits = SYNC_FROM_REMOTE_BASE_UNITS,
+                stageMessage = "Refreshing MyAnimeList session",
+            )
             runCatching {
                 withContext(Dispatchers.IO) {
                     val refreshed = refreshTokensIfNeeded(current)
+                    advanceSyncProgress(stageMessage = "Fetching your MyAnimeList library")
                     val list = api.fetchUserMangaList(refreshed.accessToken, clientId)
+                    advanceSyncProgress()
+                    addSyncTotal(list.size)
                     val detailCache = mutableMapOf<String, MangaDetail?>()
+                    updateSyncStage("Matching MyAnimeList entries to your library")
                     mergeRemoteEntriesIntoLocal(
                         remoteEntries = list,
                         providerIdFilter = preferredProviderId,
                         detailCache = detailCache,
-                        onItemProcessed = createProgressUpdater(totalItems = list.size),
+                        onItemStarted = { entry ->
+                            updateSyncStage(buildSyncItemMessage("Matching", entry.manga.title))
+                        },
+                        onItemProcessed = { advanceSyncProgress() },
                     )
                 }
             }.onSuccess {
+                updateSyncStage("Finalizing sync")
+                advanceSyncProgress()
                 onLocalLibraryChanged?.invoke()
                 updateMessage("Synced from MyAnimeList")
             }.onFailure { throwable ->
@@ -161,11 +177,17 @@ class MalSyncController(
             return
         }
         scope.launch {
-            beginSync()
+            beginSync(
+                initialTotalUnits = SYNC_TO_REMOTE_BASE_UNITS,
+                stageMessage = "Refreshing MyAnimeList session",
+            )
             runCatching {
                 withContext(Dispatchers.IO) {
                     val refreshed = refreshTokensIfNeeded(current)
+                    advanceSyncProgress(stageMessage = "Fetching your MyAnimeList library")
                     val remoteEntries = api.fetchUserMangaList(refreshed.accessToken, clientId)
+                    advanceSyncProgress()
+                    addSyncTotal(remoteEntries.size)
                     val detailCache = mutableMapOf<String, MangaDetail?>()
                     val mangaIdCache = mutableMapOf<String, Long?>()
                     val currentProviderState = libraryStore.read(filterBySelectedProvider = false)
@@ -174,12 +196,16 @@ class MalSyncController(
                     val isCurrentProviderLibraryEmpty =
                         currentProviderState.reading.none { it.providerId == providerId } &&
                             currentProviderState.favorites.none { it.providerId == providerId }
+                    updateSyncStage("Matching MyAnimeList entries to local manga")
                     mergeRemoteEntriesIntoLocal(
                         remoteEntries = remoteEntries,
                         providerIdFilter = providerId,
                         addToFavorites = isCurrentProviderLibraryEmpty,
                         detailCache = detailCache,
-                        onItemProcessed = null,
+                        onItemStarted = { entry ->
+                            updateSyncStage(buildSyncItemMessage("Matching", entry.manga.title))
+                        },
+                        onItemProcessed = { advanceSyncProgress() },
                     )
                     val remoteEntriesById = remoteEntries.associateBy { it.manga.id }
                     val state = preSyncState
@@ -191,16 +217,17 @@ class MalSyncController(
                     state.favorites.filter { it.providerId == providerId }.forEach { manga ->
                         entriesByKey.putIfAbsent(syncKey(manga), SyncEntry(manga = manga, isReading = false))
                     }
-                    val updateProgress = createProgressUpdater(totalItems = remoteEntries.size + entriesByKey.size)
-                    repeat(remoteEntries.size) { updateProgress() }
+                    addSyncTotal(entriesByKey.size)
+                    advanceSyncProgress(stageMessage = "Preparing local library entries")
 
                     entriesByKey.values.forEach { entry ->
+                        updateSyncStage(buildSyncItemMessage("Uploading", entry.manga.title))
                         val mangaId = resolveMangaIdCached(
                             accessToken = refreshed.accessToken,
                             manga = entry.manga,
                             cache = mangaIdCache,
                         ) ?: run {
-                            updateProgress()
+                            advanceSyncProgress()
                             return@forEach
                         }
                         syncMangaToRemote(
@@ -213,10 +240,12 @@ class MalSyncController(
                             detailCache = detailCache,
                             readChapters = preSyncReadChapters,
                         )
-                        updateProgress()
+                        advanceSyncProgress()
                     }
                 }
             }.onSuccess {
+                updateSyncStage("Finalizing sync")
+                advanceSyncProgress()
                 onLocalLibraryChanged?.invoke()
                 updateMessage("Synced local library to MyAnimeList")
             }.onFailure { throwable ->
@@ -356,14 +385,26 @@ class MalSyncController(
         val progressPath = manga.lastChapterPath.trim()
         if (progressPath.isBlank()) return 0
 
-        val progressValue = detail.chapters.firstOrNull { chapter ->
+        val progressChapter = detail.chapters.firstOrNull { chapter ->
             canonicalChapterKey(manga.providerId, buildChapterPath(manga.detailPath, chapter)) ==
                 canonicalChapterKey(manga.providerId, progressPath)
-        }?.let(::chapterValue)
+        }
+        val progressValue = progressChapter?.let(::chapterValue)
+            ?: parseChapterInput(manga.lastChapterTitle)
+            ?: parseChapterInput(progressPath)
             ?: return 0
+        val completedPointedChapter = progressChapter != null && isCompletedChapterProgress(
+            providerId = manga.providerId,
+            chapterPath = progressPath,
+        )
 
-        return detail.chapters.count { chapter ->
+        val chaptersBeforePointed = detail.chapters.count { chapter ->
             chapterValue(chapter) < progressValue
+        }
+        return if (completedPointedChapter) {
+            (chaptersBeforePointed + 1).coerceAtMost(detail.chapters.size)
+        } else {
+            chaptersBeforePointed
         }
     }
 
@@ -384,11 +425,13 @@ class MalSyncController(
         providerIdFilter: String? = null,
         addToFavorites: Boolean = false,
         detailCache: MutableMap<String, MangaDetail?>,
+        onItemStarted: ((MalUserMangaEntry) -> Unit)? = null,
         onItemProcessed: (() -> Unit)? = null,
     ) {
         val currentState = libraryStore.read(filterBySelectedProvider = false)
         remoteEntries.forEach { entry ->
             try {
+                onItemStarted?.invoke(entry)
                 val local = resolveLocalManga(
                     title = entry.manga.title,
                     alternativeTitles = entry.manga.alternativeTitles,
@@ -469,11 +512,16 @@ class MalSyncController(
         return resolved
     }
 
-    private fun beginSync() {
+    private fun beginSync(
+        initialTotalUnits: Int,
+        stageMessage: String,
+    ) {
+        syncStartedAtMs = System.currentTimeMillis()
         uiState = buildState().copy(
             isSyncing = true,
+            syncStageMessage = stageMessage,
             syncItemsProcessed = 0,
-            syncItemsTotal = 0,
+            syncItemsTotal = initialTotalUnits.coerceAtLeast(1),
             syncEtaSeconds = null,
             errorMessage = "",
             lastMessage = "",
@@ -481,31 +529,60 @@ class MalSyncController(
     }
 
     private fun finishSync() {
-        uiState = buildState().copy(isSyncing = false)
+        syncStartedAtMs = 0L
+        uiState = buildState().copy(isSyncing = false, syncStageMessage = "")
     }
 
-    private fun createProgressUpdater(totalItems: Int): () -> Unit {
-        val startedAtMs = System.currentTimeMillis()
-        var processed = 0
+    private fun addSyncTotal(delta: Int) {
+        if (delta <= 0) return
+        val total = (uiState.syncItemsTotal + delta).coerceAtLeast(1)
         uiState = uiState.copy(
-            syncItemsProcessed = 0,
-            syncItemsTotal = totalItems.coerceAtLeast(0),
-            syncEtaSeconds = null,
+            syncItemsTotal = total,
+            syncEtaSeconds = estimateRemainingSeconds(
+                startedAtMs = syncStartedAtMs,
+                processed = uiState.syncItemsProcessed,
+                total = total,
+            ),
         )
-        return {
-            processed += 1
-            val safeTotal = totalItems.coerceAtLeast(0)
-            val etaSeconds = estimateRemainingSeconds(
-                startedAtMs = startedAtMs,
+    }
+
+    private fun advanceSyncProgress(
+        units: Int = 1,
+        stageMessage: String? = null,
+    ) {
+        val total = uiState.syncItemsTotal.coerceAtLeast(1)
+        val processed = (uiState.syncItemsProcessed + units).coerceIn(0, total)
+        uiState = uiState.copy(
+            syncStageMessage = stageMessage ?: uiState.syncStageMessage,
+            syncItemsProcessed = processed,
+            syncItemsTotal = total,
+            syncEtaSeconds = estimateRemainingSeconds(
+                startedAtMs = syncStartedAtMs,
                 processed = processed,
-                total = safeTotal,
-            )
-            uiState = uiState.copy(
-                syncItemsProcessed = processed.coerceAtMost(safeTotal),
-                syncItemsTotal = safeTotal,
-                syncEtaSeconds = etaSeconds,
-            )
-        }
+                total = total,
+            ),
+        )
+    }
+
+    private fun updateSyncStage(message: String) {
+        uiState = uiState.copy(
+            syncStageMessage = message,
+        )
+    }
+
+    private fun buildSyncItemMessage(action: String, title: String): String {
+        val trimmedTitle = title.trim()
+        return if (trimmedTitle.isBlank()) action else "$action $trimmedTitle"
+    }
+
+    private fun isCompletedChapterProgress(
+        providerId: String,
+        chapterPath: String,
+    ): Boolean {
+        val pageCount = libraryStore.getChapterPageCount(providerId, chapterPath)
+        if (pageCount <= 0) return false
+        val pageIndex = libraryStore.getChapterProgress(providerId, chapterPath)
+        return pageIndex >= pageCount - 1
     }
 
     private fun estimateRemainingSeconds(

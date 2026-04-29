@@ -636,6 +636,13 @@ fun KomaStream() {
                                             style = MaterialTheme.typography.titleMedium,
                                             color = MaterialTheme.colorScheme.onSurface,
                                         )
+                                        if (malUiState.syncStageMessage.isNotBlank()) {
+                                            Text(
+                                                text = malUiState.syncStageMessage,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                         if (malUiState.syncItemsTotal > 0) {
                                             Text(
                                                 text = buildMalSyncOverlayDetail(
@@ -802,7 +809,10 @@ private fun buildMalSyncOverlayDetail(
     total: Int,
     etaSeconds: Int?,
 ): String {
-    val progress = "${processed.coerceAtLeast(0)}/${total.coerceAtLeast(0)}"
+    val safeProcessed = processed.coerceAtLeast(0)
+    val safeTotal = total.coerceAtLeast(0)
+    val percent = if (safeTotal > 0) ((safeProcessed.toFloat() / safeTotal.toFloat()) * 100f).toInt().coerceIn(0, 100) else 0
+    val progress = "$safeProcessed/$safeTotal  $percent%"
     val eta = etaSeconds?.takeIf { it > 0 }?.let(::formatEtaLabel)
     return if (eta != null) "$progress  $eta" else progress
 }

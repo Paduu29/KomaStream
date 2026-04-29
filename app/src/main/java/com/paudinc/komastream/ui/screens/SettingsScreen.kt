@@ -132,7 +132,33 @@ fun SettingsScreen(
                         }
                     }
                     if (malUiState.isSyncing) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        if (malUiState.syncItemsTotal > 0) {
+                            LinearProgressIndicator(
+                                progress = {
+                                    (malUiState.syncItemsProcessed.toFloat() / malUiState.syncItemsTotal.toFloat())
+                                        .coerceIn(0f, 1f)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        if (malUiState.syncStageMessage.isNotBlank()) {
+                            Text(
+                                malUiState.syncStageMessage,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (malUiState.syncItemsTotal > 0) {
+                            Text(
+                                buildMalSyncProgressDetail(
+                                    processed = malUiState.syncItemsProcessed,
+                                    total = malUiState.syncItemsTotal,
+                                    etaSeconds = malUiState.syncEtaSeconds,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     if (malUiState.errorMessage.isNotBlank()) {
                         Text(malUiState.errorMessage, color = MaterialTheme.colorScheme.error)
@@ -344,4 +370,23 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+private fun buildMalSyncProgressDetail(
+    processed: Int,
+    total: Int,
+    etaSeconds: Int?,
+): String {
+    val safeProcessed = processed.coerceAtLeast(0)
+    val safeTotal = total.coerceAtLeast(0)
+    val percent = if (safeTotal > 0) ((safeProcessed.toFloat() / safeTotal.toFloat()) * 100f).toInt().coerceIn(0, 100) else 0
+    val progress = "$safeProcessed/$safeTotal  $percent%"
+    val eta = etaSeconds?.takeIf { it > 0 }?.let(::formatMalEta)
+    return if (eta != null) "$progress  $eta" else progress
+}
+
+private fun formatMalEta(totalSeconds: Int): String {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return if (minutes > 0) "~${minutes}m ${seconds}s" else "~${seconds}s"
 }
