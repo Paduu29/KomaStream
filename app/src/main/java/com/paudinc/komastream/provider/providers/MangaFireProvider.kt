@@ -5,12 +5,14 @@ import android.content.Context
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.MangaFireWebViewResolver
+import com.paudinc.komastream.utils.chapterValue
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 import org.jsoup.nodes.Document
 
 class MangaFireProvider(
@@ -186,7 +188,7 @@ class MangaFireProvider(
         val mangaId = normalizedPath.substringAfterLast('.')
         val chaptersHtml = getJson("/ajax/manga/$mangaId/chapter/$languageCode")
         val chaptersHtmlResult = chaptersHtml.optString("result")
-        val chapters = parseChapterList(chaptersHtmlResult)
+        val chapters = parseChapterList(document, chaptersHtmlResult)
 
         return MangaDetail(
             providerId = id,
@@ -312,10 +314,22 @@ class MangaFireProvider(
             }
         }
 
-    private fun parseChapterList(html: String): List<MangaChapter> {
-        if (html.isBlank()) return emptyList()
-        val document = Jsoup.parseBodyFragment(html, baseUrl)
-        return document.select("li.item").mapNotNull { item ->
+    private fun parseChapterList(document: Document, html: String): List<MangaChapter> {
+        val fromDocument = parseChapterItems(
+            document.select("ul.content[data-name='chap'] li.item, li.item")
+        )
+        val fromAjax = html.takeIf { it.isNotBlank() }
+            ?.let { Jsoup.parseBodyFragment(it, baseUrl) }
+            ?.let { parseChapterItems(it.select("li.item")) }
+            .orEmpty()
+
+        return (fromDocument + fromAjax)
+            .distinctBy { it.path.ifBlank { "${it.chapterNumberUrl}:${it.chapterLabel}" } }
+            .sortedByDescending { chapterValue(it) }
+    }
+
+    private fun parseChapterItems(items: Iterable<Element>): List<MangaChapter> =
+        items.mapNotNull { item ->
             val link = item.selectFirst("a[href]") ?: return@mapNotNull null
             val path = normalizePath(link.attr("href"))
             val label = item.selectFirst("span")?.text()?.trim().orEmpty()
@@ -329,7 +343,6 @@ class MangaFireProvider(
                 registrationDate = item.select("span").getOrNull(1)?.text()?.trim().orEmpty(),
             )
         }
-    }
 
     private fun buildFilterPath(
         categoryIds: List<String>,

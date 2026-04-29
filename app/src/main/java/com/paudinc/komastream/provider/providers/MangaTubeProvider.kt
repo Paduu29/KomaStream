@@ -388,7 +388,7 @@ class MangaTubeProvider(
             providerId = id,
             mangaTitle = mangaTitle,
             chapterLabel = chapterLabel,
-            chapterNumberUrl = chapterId,
+            chapterNumberUrl = chapterLabel,
             chapterId = chapterId,
             mangaPath = mangaPath,
             chapterPath = chapterPath,
@@ -462,12 +462,17 @@ class MangaTubeProvider(
                     val chapter = chapters.optJSONObject(chapterIndex) ?: continue
                     val chapterPath = chapter.optString("readerURL").normalizePath()
                     if (chapterPath.isBlank()) continue
+                    val chapterLabel = buildChapterLabel(chapter, manga)
                     add(
                         ChapterSummary(
                             providerId = id,
                             mangaTitle = manga.optString("title"),
-                            chapterLabel = buildChapterLabel(chapter, manga),
-                            chapterNumberUrl = chapter.optString("id"),
+                            chapterLabel = chapterLabel,
+                            chapterNumberUrl = chapterNumberKey(
+                                number = chapter.optDouble("number", Double.NaN),
+                                subNumber = chapter.optDouble("subNumber", 0.0),
+                                fallback = chapterLabel,
+                            ),
                             chapterId = chapter.optString("id"),
                             mangaPath = manga.optString("url").normalizePath(),
                             chapterPath = chapterPath,
@@ -891,12 +896,17 @@ class MangaTubeProvider(
                 val chapter = chapters.optJSONObject(chapterIndex) ?: continue
                 val chapterPath = chapter.optString("readerURL").normalizePath()
                 if (chapterPath.isBlank()) continue
+                val chapterLabel = buildChapterLabel(chapter, manga)
                 add(
                     ChapterSummary(
                         providerId = id,
                         mangaTitle = manga.optString("title"),
-                        chapterLabel = buildChapterLabel(chapter, manga),
-                        chapterNumberUrl = chapter.opt("id")?.toString().orEmpty(),
+                        chapterLabel = chapterLabel,
+                        chapterNumberUrl = chapterNumberKey(
+                            number = chapter.optDouble("number", Double.NaN),
+                            subNumber = chapter.optDouble("subNumber", 0.0),
+                            fallback = chapterLabel,
+                        ),
                         chapterId = chapter.opt("id")?.toString().orEmpty(),
                         mangaPath = manga.optString("url").normalizePath(),
                         chapterPath = chapterPath,
@@ -1023,6 +1033,10 @@ class MangaTubeProvider(
         val base = if (number == whole.toDouble()) whole.toString() else number.toString()
         val sub = subNumber.toLong()
         return if (subNumber > 0.0) "$base.$sub" else base
+    }
+
+    private fun chapterNumberKey(number: Double, subNumber: Double, fallback: String): String {
+        return if (number.isFinite()) formatChapterNumber(number, subNumber) else fallback
     }
 
     private fun extractSlug(path: String): String =

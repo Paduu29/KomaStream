@@ -4,9 +4,28 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
+import java.util.Properties
+
 def envOrNull = { String name ->
     def value = System.getenv(name)
     return (value != null && !value.trim().isEmpty()) ? value : null
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { input ->
+        localProperties.load(input)
+    }
+}
+
+def propOrNull = { String name ->
+    def value = localProperties.getProperty(name)
+    return (value != null && !value.trim().isEmpty()) ? value : null
+}
+
+def envOrPropOrNull = { String name ->
+    return envOrNull(name) ?: propOrNull(name)
 }
 
 def asBuildConfigString = { String value ->
@@ -15,7 +34,7 @@ def asBuildConfigString = { String value ->
 
 def ciVersionCode = envOrNull("VERSION_CODE")?.toInteger()
 def ciVersionName = envOrNull("VERSION_NAME")
-def malClientId = envOrNull("MAL_CLIENT_ID")
+def malClientId = envOrPropOrNull("MAL_CLIENT_ID")
 def githubReleaseRepo = envOrNull("GITHUB_RELEASE_REPO") ?: envOrNull("GITHUB_REPOSITORY") ?: "Paduu29/KomaStream"
 def githubReleaseAssetPattern = envOrNull("GITHUB_RELEASE_ASSET_PATTERN") ?: '.*\\.apk$'
 def githubReleaseToken = envOrNull("GITHUB_RELEASE_TOKEN")
@@ -35,8 +54,8 @@ android {
         applicationId "com.paudinc.komastream"
         minSdk 24
         targetSdk 36
-        versionCode ciVersionCode ?: 29
-        versionName ciVersionName ?: "2.17"
+        versionCode ciVersionCode ?: 30
+        versionName ciVersionName ?: "2.18"
         buildConfigField "String", "MAL_CLIENT_ID", asBuildConfigString(malClientId)
         buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
         buildConfigField "String", "GITHUB_RELEASE_ASSET_PATTERN", asBuildConfigString(githubReleaseAssetPattern)

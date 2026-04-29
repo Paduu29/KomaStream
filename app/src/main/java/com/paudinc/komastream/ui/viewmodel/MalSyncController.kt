@@ -129,6 +129,7 @@ class MalSyncController(
             updateMessage("Connect to MyAnimeList first", error = true)
             return
         }
+        val preferredProviderId = libraryStore.read(filterBySelectedProvider = false).selectedProviderId
         scope.launch {
             beginSync()
             runCatching {
@@ -138,6 +139,7 @@ class MalSyncController(
                     val detailCache = mutableMapOf<String, MangaDetail?>()
                     mergeRemoteEntriesIntoLocal(
                         remoteEntries = list,
+                        providerIdFilter = preferredProviderId,
                         detailCache = detailCache,
                         onItemProcessed = createProgressUpdater(totalItems = list.size),
                     )
@@ -167,6 +169,7 @@ class MalSyncController(
                     val detailCache = mutableMapOf<String, MangaDetail?>()
                     val mangaIdCache = mutableMapOf<String, Long?>()
                     val currentProviderState = libraryStore.read(filterBySelectedProvider = false)
+                    val preSyncState = currentProviderState
                     val isCurrentProviderLibraryEmpty =
                         currentProviderState.reading.none { it.providerId == providerId } &&
                             currentProviderState.favorites.none { it.providerId == providerId }
@@ -178,7 +181,7 @@ class MalSyncController(
                         onItemProcessed = null,
                     )
                     val remoteEntriesById = remoteEntries.associateBy { it.manga.id }
-                    val state = libraryStore.read(filterBySelectedProvider = false)
+                    val state = preSyncState
                     val entriesByKey = linkedMapOf<String, SyncEntry>()
 
                     state.reading.filter { it.providerId == providerId }.forEach { manga ->
@@ -393,7 +396,6 @@ class MalSyncController(
                 linkStore.setMangaId(local.providerId, local.detailPath, entry.manga.id)
 
                 val detail = fetchDetailCached(local, detailCache)
-
                 val progressSnapshot = detail?.let {
                     buildRemoteProgressSnapshot(
                         detailPath = local.detailPath,
@@ -401,20 +403,9 @@ class MalSyncController(
                         remoteReadCount = entry.listStatus.numChaptersRead,
                     )
                 }
-
-                val existingReading = currentState.reading.firstOrNull {
-                    it.providerId == local.providerId && it.detailPath == local.detailPath
-                }
-                val localReadCount = if (detail != null) {
-                    resolveReadCountFromProgress(
-                        manga = existingReading ?: local,
-                        detail = detail,
-                        readChapters = libraryStore.readChaptersForProvider(local.providerId),
-                    )
-                } else {
-                    0
-                }
-                val shouldAdvanceLocalProgress = entry.listStatus.numChaptersRead >= localReadCount
+                val remoteChapterCount = entry.listStatus.numChaptersRead.coerceAtLeast(0)
+                val remoteChapterLabel = remoteChapterCount.takeIf { it > 0 }?.toString()
+                    ?: progressSnapshot?.lastChapterTitle.orEmpty()
 
                 if (progressSnapshot != null && progressSnapshot.readPaths.isNotEmpty()) {
                     libraryStore.setChaptersRead(local.providerId, progressSnapshot.readPaths, true)
@@ -424,8 +415,8 @@ class MalSyncController(
                     libraryStore.upsertFavorite(
                         local.copy(
                             malMangaId = entry.manga.id,
-                            lastChapterTitle = progressSnapshot?.lastChapterTitle.orEmpty(),
-                            lastChapterPath = progressSnapshot?.lastChapterPath.orEmpty(),
+                            lastChapterTitle = remoteChapterLabel,
+                            lastChapterPath = "",
                         )
                     )
                 }
@@ -434,16 +425,8 @@ class MalSyncController(
                     libraryStore.upsertReading(
                         local.copy(
                             malMangaId = entry.manga.id,
-                            lastChapterTitle = if (shouldAdvanceLocalProgress) {
-                                progressSnapshot?.lastChapterTitle.orEmpty()
-                            } else {
-                                ""
-                            },
-                            lastChapterPath = if (shouldAdvanceLocalProgress) {
-                                progressSnapshot?.lastChapterPath.orEmpty()
-                            } else {
-                                ""
-                            },
+                            lastChapterTitle = remoteChapterLabel,
+                            lastChapterPath = progressSnapshot?.lastChapterPath.orEmpty(),
                         )
                     )
                 }
@@ -543,9 +526,11 @@ class MalSyncController(
             return RemoteProgressSnapshot(emptyList(), "", "")
         }
 
+        val targetValue = remoteReadCount.toDouble()
         val sortedChapters = detail.chapters.sortedBy { chapterValue(it) }
-        val readChapters = sortedChapters.take(remoteReadCount.coerceAtMost(sortedChapters.size))
+        val readChapters = sortedChapters.filter { chapterValue(it) <= targetValue }
         val lastChapter = readChapters.maxByOrNull { chapterValue(it) }
+            ?: sortedChapters.firstOrNull { chapterValue(it) >= targetValue }
 
         return RemoteProgressSnapshot(
             readPaths = readChapters.map { buildChapterPath(detailPath, it) },
