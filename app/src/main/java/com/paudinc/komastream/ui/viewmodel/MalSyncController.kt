@@ -217,6 +217,7 @@ class MalSyncController(
         }
         val currentProvider = providerRegistry.get(providerId)
         scope.launch {
+            var deferFinishToFollowUpSync = false
             beginSync(
                 initialTotalUnits = SYNC_TO_REMOTE_BASE_UNITS,
                 stageMessage = "Refreshing MyAnimeList session",
@@ -299,6 +300,7 @@ class MalSyncController(
                 onLocalLibraryChanged?.invoke()
                 updateMessage("Synced local library to MyAnimeList")
                 if (pendingImports.isEmpty()) {
+                    deferFinishToFollowUpSync = onCompleted != null
                     onCompleted?.invoke()
                 } else {
                     pendingSyncContinuation = onCompleted
@@ -306,7 +308,9 @@ class MalSyncController(
             }.onFailure { throwable ->
                 updateMessage(throwable.message ?: "Could not sync to MyAnimeList", error = true)
             }
-            finishSync()
+            if (!deferFinishToFollowUpSync) {
+                finishSync()
+            }
         }
     }
 
@@ -360,10 +364,14 @@ class MalSyncController(
                         val remoteEntry = api.fetchUserMangaList(refreshed.accessToken, clientId)
                             .firstOrNull { it.manga.id == mangaId }
                         val localReadCount = numChaptersRead?.coerceAtLeast(0) ?: 0
+                        val mergedReadCount = max(
+                            localReadCount,
+                            remoteEntry?.listStatus?.numChaptersRead?.coerceAtLeast(0) ?: 0,
+                        )
                         val mergedStatus = mergeStatus(
                             localStatus = status,
                             localReadCount = localReadCount,
-                            mergedReadCount = localReadCount,
+                            mergedReadCount = mergedReadCount,
                             remoteStatus = remoteEntry?.listStatus?.status.orEmpty(),
                         )
                         api.updateMangaStatus(
@@ -371,7 +379,7 @@ class MalSyncController(
                             clientId = clientId,
                             mangaId = mangaId,
                             status = mergedStatus,
-                            numChaptersRead = localReadCount,
+                            numChaptersRead = mergedReadCount,
                         )
                     }
                 }
@@ -406,13 +414,20 @@ class MalSyncController(
         } else {
             0
         }
-        val readCount = localReadCount
+        val remoteReadCount = remoteEntry?.listStatus?.numChaptersRead?.coerceAtLeast(0) ?: 0
+        val readCount = max(localReadCount, remoteReadCount)
         val totalChapterCount = resolveMalReadCountForSelection(detail.chapters)
-        val status = when {
-            isReading && totalChapterCount > 0 && readCount >= totalChapterCount -> "completed"
+        val localStatus = when {
+            isReading && totalChapterCount > 0 && localReadCount >= totalChapterCount -> "completed"
             isReading -> "reading"
             else -> "plan_to_read"
         }
+        val status = mergeStatus(
+            localStatus = localStatus,
+            localReadCount = localReadCount,
+            mergedReadCount = readCount,
+            remoteStatus = remoteEntry?.listStatus?.status.orEmpty(),
+        )
         api.updateMangaStatus(
             accessToken = accessToken,
             clientId = clientId,

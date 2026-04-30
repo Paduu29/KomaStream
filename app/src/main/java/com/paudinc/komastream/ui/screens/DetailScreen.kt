@@ -60,6 +60,7 @@ fun DetailScreen(
     var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var malIdInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(malMangaId?.toString().orEmpty()) }
+    var showMalIdEditor by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     var hasAutoPositionedChapterList by remember(detail.providerId, detail.detailPath, autoJumpToUnread) { mutableStateOf(false) }
     var suppressAutoPositioning by remember(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -302,87 +303,14 @@ fun DetailScreen(
                                     leadingIcon = Icons.Default.History,
                                 )
                             }
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-                        border = cardBorder(),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        strings.malId,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(
-                                        malMangaId?.toString().orEmpty().ifBlank { strings.malIdNotSet },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                            OutlinedTextField(
-                                value = malIdInput,
-                                onValueChange = { input -> malIdInput = input.filter { it.isDigit() } },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(strings.malId) },
-                                placeholder = { Text(strings.malIdNotSet) },
-                                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done,
-                                ),
-                                keyboardActions = KeyboardActions(onDone = {
-                                    val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
-                                    onSetMalMangaId(parsed)
-                                }),
+                            MalIdStatCard(
+                                value = malMangaId?.toString().orEmpty().ifBlank { strings.malIdNotSet },
+                                label = strings.malId,
+                                onEdit = {
+                                    malIdInput = malMangaId?.toString().orEmpty()
+                                    showMalIdEditor = true
+                                },
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Button(
-                                    onClick = {
-                                        val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
-                                        onSetMalMangaId(parsed)
-                                    },
-                                    enabled = malIdInput.trim().toLongOrNull() != malMangaId,
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Icon(Icons.Default.Save, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(strings.save)
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        malIdInput = ""
-                                        onSetMalMangaId(null)
-                                    },
-                                    enabled = malMangaId != null || malIdInput.isNotBlank(),
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Icon(Icons.Default.Clear, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(strings.clear)
-                                }
-                            }
                         }
                     }
                     Surface(
@@ -779,6 +707,99 @@ fun DetailScreen(
                 }
             }
         }
+        if (showMalIdEditor) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp, vertical = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = strings.malId,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        IconButton(onClick = { showMalIdEditor = false }) {
+                            Icon(Icons.Default.Close, contentDescription = strings.cancel)
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        border = cardBorder(),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Text(
+                                text = malMangaId?.toString().orEmpty().ifBlank { strings.malIdNotSet },
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            OutlinedTextField(
+                                value = malIdInput,
+                                onValueChange = { input -> malIdInput = input.filter { it.isDigit() } },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text(strings.malId) },
+                                placeholder = { Text(strings.malIdNotSet) },
+                                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done,
+                                ),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
+                                    onSetMalMangaId(parsed)
+                                    showMalIdEditor = false
+                                }),
+                            )
+                            Button(
+                                onClick = {
+                                    val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
+                                    onSetMalMangaId(parsed)
+                                    showMalIdEditor = false
+                                },
+                                enabled = malIdInput.trim().toLongOrNull() != malMangaId,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(strings.save)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    malIdInput = ""
+                                    onSetMalMangaId(null)
+                                    showMalIdEditor = false
+                                },
+                                enabled = malMangaId != null || malIdInput.isNotBlank(),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(strings.clear)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -863,6 +884,66 @@ private fun DetailStatCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+@Composable
+private fun MalIdStatCard(
+    value: String,
+    label: String,
+    onEdit: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+        border = cardBorder(),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(end = 44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            FilledIconButton(
+                onClick = onEdit,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(32.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = label,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }

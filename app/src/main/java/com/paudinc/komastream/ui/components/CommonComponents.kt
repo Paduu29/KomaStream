@@ -455,7 +455,12 @@ fun FavoriteMangaCard(
 
 fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {
     val chapterNumber = parseChapterInput(lastChapterTitle)
-        ?: parseChapterInput(lastChapterPath.substringBeforeLast("/").substringAfterLast("/"))
+        ?: lastChapterPath
+            .split("/")
+            .filter { it.isNotBlank() }
+            .takeLast(2)
+            .asReversed()
+            .firstNotNullOfOrNull(::parseChapterInput)
     return when {
         chapterNumber != null -> strings.chapterNumberPrefix.format(chapterNumber)
         lastChapterTitle.isNotBlank() -> lastChapterTitle
