@@ -281,6 +281,24 @@ val currentProvider
         malSyncController.syncLocalLibraryToRemote(currentProvider.id)
     }
 
+    fun syncMalLibraryFromRemote() {
+        malSyncController.syncFromRemote(currentProvider.id)
+    }
+
+    fun syncMalLibraryBothWays() {
+        malSyncController.syncLocalLibraryToRemote(currentProvider.id) {
+            malSyncController.syncFromRemote(currentProvider.id)
+        }
+    }
+
+    fun setMangaMalId(providerId: String, detailPath: String, malMangaId: Long?) {
+        malSyncController.setMangaMalId(providerId, detailPath, malMangaId)
+    }
+
+    fun getMangaMalId(providerId: String, detailPath: String): Long? {
+        return malSyncController.getMangaMalId(providerId, detailPath)
+    }
+
     fun disconnectMal() {
         malSyncController.disconnect()
     }

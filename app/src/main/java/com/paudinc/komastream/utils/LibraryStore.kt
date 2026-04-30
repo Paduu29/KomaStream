@@ -161,6 +161,32 @@ class LibraryStore(context: Context) {
         return dao.readFavorites().any { sameStoredManga(it.toSavedManga(), target) }
     }
 
+    fun getMangaMalId(providerId: String, detailPath: String): Long? {
+        ensureInitialized()
+        val target = SavedManga(providerId, "", detailPath, "")
+        dao.readFavorites().firstOrNull { sameStoredManga(it.toSavedManga(), target) }?.malMangaId?.let { return it }
+        return dao.readReading().firstOrNull { sameStoredManga(it.toSavedManga(), target) }?.malMangaId
+    }
+
+    fun setMangaMalId(providerId: String, detailPath: String, malMangaId: Long?): Boolean {
+        ensureInitialized()
+        val target = SavedManga(providerId, "", detailPath, "")
+        var changed = false
+        dao.readFavorites().forEach { entity ->
+            if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
+                dao.upsertFavorite(entity.copy(malMangaId = malMangaId))
+                changed = true
+            }
+        }
+        dao.readReading().forEach { entity ->
+            if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
+                dao.upsertReading(entity.copy(malMangaId = malMangaId))
+                changed = true
+            }
+        }
+        return changed
+    }
+
     fun markChapterRead(providerId: String, chapterPath: String) {
         setChaptersRead(providerId, listOf(chapterPath), true)
     }

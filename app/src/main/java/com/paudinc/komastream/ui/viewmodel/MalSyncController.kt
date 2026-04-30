@@ -10,6 +10,7 @@ import com.paudinc.komastream.BuildConfig
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
+import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
@@ -29,11 +30,13 @@ import com.paudinc.komastream.utils.normalizeMalChapterNumber
 import com.paudinc.komastream.utils.parseChapterInput
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import com.paudinc.komastream.utils.resolveMalReadCountForSelection
+import com.paudinc.komastream.utils.sameMangaPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.Normalizer
+import kotlin.math.max
 
 class MalSyncController(
     private val context: Context,
@@ -54,12 +57,33 @@ class MalSyncController(
     private val linkStore = MyAnimeListLinkStore(context)
     private val clientId: String = BuildConfig.MAL_CLIENT_ID.trim()
     private var syncStartedAtMs: Long = 0L
+    private var pendingSyncContinuation: (() -> Unit)? = null
 
     var uiState by mutableStateOf(buildState())
         private set
 
     fun refreshState() {
         uiState = buildState()
+    }
+
+    fun setMangaMalId(providerId: String, detailPath: String, malMangaId: Long?) {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                libraryStore.setMangaMalId(providerId, detailPath, malMangaId)
+                if (malMangaId == null) {
+                    linkStore.removeMangaId(providerId, detailPath)
+                } else {
+                    linkStore.setMangaId(providerId, detailPath, malMangaId)
+                }
+            }
+            onLocalLibraryChanged?.invoke()
+            refreshState()
+        }
+    }
+
+    fun getMangaMalId(providerId: String, detailPath: String): Long? {
+        return libraryStore.getMangaMalId(providerId, detailPath)
+            ?: linkStore.getMangaId(providerId, detailPath)
     }
 
     fun beginConnect(): String {
@@ -130,18 +154,19 @@ class MalSyncController(
         updateMessage("Disconnected from MyAnimeList")
     }
 
-    fun syncFromRemote() {
+    fun syncFromRemote(providerId: String) {
         val current = sessionStore.read()
         if (!isConnected(current)) {
             updateMessage("Connect to MyAnimeList first", error = true)
             return
         }
-        val preferredProviderId = libraryStore.read(filterBySelectedProvider = false).selectedProviderId
+        val currentProvider = providerRegistry.get(providerId)
         scope.launch {
             beginSync(
                 initialTotalUnits = SYNC_FROM_REMOTE_BASE_UNITS,
                 stageMessage = "Refreshing MyAnimeList session",
             )
+            val pendingImports = mutableListOf<MyAnimeListPendingImport>()
             runCatching {
                 withContext(Dispatchers.IO) {
                     val refreshed = refreshTokensIfNeeded(current)
@@ -150,22 +175,33 @@ class MalSyncController(
                     advanceSyncProgress()
                     addSyncTotal(list.size)
                     val detailCache = mutableMapOf<String, MangaDetail?>()
+                    val currentState = libraryStore.read(filterBySelectedProvider = false)
                     updateSyncStage("Matching MyAnimeList entries to your library")
                     mergeRemoteEntriesIntoLocal(
                         remoteEntries = list,
-                        providerIdFilter = preferredProviderId,
+                        providerIdFilter = currentProvider.id,
+                        provider = currentProvider,
+                        currentState = currentState,
                         detailCache = detailCache,
                         onItemStarted = { entry ->
                             updateSyncStage(buildSyncItemMessage("Matching", entry.manga.title))
                         },
                         onItemProcessed = { advanceSyncProgress() },
+                        onPendingMatch = { pendingImports += it },
                     )
                 }
+                uiState = uiState.copy(pendingImports = pendingImports)
             }.onSuccess {
                 updateSyncStage("Finalizing sync")
                 advanceSyncProgress()
                 onLocalLibraryChanged?.invoke()
-                updateMessage("Synced from MyAnimeList")
+                updateMessage(
+                    if (uiState.pendingImports.isNotEmpty()) {
+                        "Synced from MyAnimeList. Review the pending matches to finish importing."
+                    } else {
+                        "Synced from MyAnimeList"
+                    }
+                )
             }.onFailure { throwable ->
                 updateMessage(throwable.message ?: "Could not sync from MyAnimeList", error = true)
             }
@@ -173,17 +209,19 @@ class MalSyncController(
         }
     }
 
-    fun syncLocalLibraryToRemote(providerId: String) {
+    fun syncLocalLibraryToRemote(providerId: String, onCompleted: (() -> Unit)? = null) {
         val current = sessionStore.read()
         if (!isConnected(current)) {
             updateMessage("Connect to MyAnimeList first", error = true)
             return
         }
+        val currentProvider = providerRegistry.get(providerId)
         scope.launch {
             beginSync(
                 initialTotalUnits = SYNC_TO_REMOTE_BASE_UNITS,
                 stageMessage = "Refreshing MyAnimeList session",
             )
+            val pendingImports = mutableListOf<MyAnimeListPendingImport>()
             runCatching {
                 withContext(Dispatchers.IO) {
                     val refreshed = refreshTokensIfNeeded(current)
@@ -237,6 +275,7 @@ class MalSyncController(
                             manga = entry.manga,
                             cache = mangaIdCache,
                         ) ?: run {
+                            pendingImports += buildPendingMangaImportForLocal(entry, refreshed.accessToken)
                             advanceSyncProgress()
                             return@forEach
                         }
@@ -253,11 +292,17 @@ class MalSyncController(
                         advanceSyncProgress()
                     }
                 }
+                uiState = uiState.copy(pendingImports = pendingImports)
             }.onSuccess {
                 updateSyncStage("Finalizing sync")
                 advanceSyncProgress()
                 onLocalLibraryChanged?.invoke()
                 updateMessage("Synced local library to MyAnimeList")
+                if (pendingImports.isEmpty()) {
+                    onCompleted?.invoke()
+                } else {
+                    pendingSyncContinuation = onCompleted
+                }
             }.onFailure { throwable ->
                 updateMessage(throwable.message ?: "Could not sync to MyAnimeList", error = true)
             }
@@ -416,7 +461,7 @@ class MalSyncController(
         if (completedPointedChapter) {
             return normalized.coerceAtLeast(1)
         }
-        return if (progressValue != null && isWholeChapterNumber(progressValue)) {
+        return if (isWholeChapterNumber(progressValue)) {
             (normalized - 1).coerceAtLeast(1)
         } else {
             normalized.coerceAtLeast(1)
@@ -426,67 +471,213 @@ class MalSyncController(
     private fun isWholeChapterNumber(value: Double): Boolean =
         kotlin.math.abs(value - value.toInt().toDouble()) < 0.0001
 
+    fun applyPendingMangaImports(providerId: String, selections: Map<String, String>) {
+        if (selections.isEmpty()) return
+        val pendingImports = uiState.pendingImports
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val refreshed = refreshTokensIfNeeded(sessionStore.read())
+                    val detailCache = mutableMapOf<String, MangaDetail?>()
+                    val currentState = libraryStore.read(filterBySelectedProvider = false)
+                    val pendingByKey = pendingImports.associateBy { it.pendingKey }
+                    selections.forEach { (pendingKey, candidateKey) ->
+                        val pending = pendingByKey[pendingKey] ?: return@forEach
+                        val candidate = pending.candidates.firstOrNull { it.key == candidateKey } ?: return@forEach
+                        when (pending.source) {
+                            MyAnimeListPendingImportSource.FROM_REMOTE -> {
+                                val detail = fetchDetailCached(
+                                    SavedManga(
+                                        providerId = candidate.providerId,
+                                        title = candidate.title,
+                                        detailPath = candidate.detailPath,
+                                        coverUrl = candidate.coverUrl,
+                                    ),
+                                    detailCache,
+                                ) ?: return@forEach
+                                applyRemoteEntry(
+                                    entry = MalUserMangaEntry(
+                                        manga = com.paudinc.komastream.utils.MalMangaRecord(
+                                            id = pending.malMangaId ?: return@forEach,
+                                            title = pending.title,
+                                            coverUrl = candidate.coverUrl,
+                                            numChapters = detail.chapters.size,
+                                            status = pending.status,
+                                            alternativeTitles = pending.alternativeTitles,
+                                        ),
+                                        listStatus = com.paudinc.komastream.utils.MalListStatus(
+                                            status = pending.status,
+                                            numChaptersRead = pending.numChaptersRead,
+                                        ),
+                                    ),
+                                    local = SavedManga(
+                                        providerId = candidate.providerId,
+                                        title = candidate.title,
+                                        detailPath = candidate.detailPath,
+                                        coverUrl = candidate.coverUrl,
+                                    ),
+                                    detail = detail,
+                                    detailCache = detailCache,
+                                )
+                            }
+                            MyAnimeListPendingImportSource.TO_REMOTE -> {
+                                val malId = candidate.malMangaId ?: return@forEach
+                                val local = SavedManga(
+                                    providerId = pending.localProviderId.ifBlank { providerId },
+                                    title = pending.title,
+                                    detailPath = pending.localDetailPath,
+                                    coverUrl = candidate.coverUrl,
+                                )
+                                linkStore.setMangaId(local.providerId, local.detailPath, malId)
+                                val existingLocal = (currentState.reading + currentState.favorites).firstOrNull {
+                                    it.providerId == local.providerId && sameMangaPath(local.providerId, it.detailPath, local.detailPath)
+                                }
+                                val updatedLocal = (existingLocal ?: local).copy(malMangaId = malId)
+                                if (existingLocal != null && currentState.favorites.any {
+                                        it.providerId == local.providerId && sameMangaPath(local.providerId, it.detailPath, local.detailPath)
+                                    }) {
+                                    libraryStore.upsertFavorite(updatedLocal)
+                                } else {
+                                    libraryStore.upsertReading(updatedLocal)
+                                }
+                                api.updateMangaStatus(
+                                    accessToken = refreshed.accessToken,
+                                    clientId = clientId,
+                                    mangaId = malId,
+                                    status = pending.status.ifBlank { "plan_to_read" },
+                                    numChaptersRead = pending.numChaptersRead.coerceAtLeast(0),
+                                )
+                            }
+                        }
+                    }
+                }
+            }.onSuccess {
+                uiState = uiState.copy(
+                    pendingImports = uiState.pendingImports.filterNot { it.pendingKey in selections.keys },
+                )
+                onLocalLibraryChanged?.invoke()
+                updateMessage("Imported selected MyAnimeList matches")
+                if (uiState.pendingImports.isEmpty()) {
+                    pendingSyncContinuation?.invoke()
+                    pendingSyncContinuation = null
+                }
+            }.onFailure { throwable ->
+                updateMessage(throwable.message ?: "Could not import selected MyAnimeList matches", error = true)
+            }
+        }
+    }
+
+    fun clearPendingMangaImports() {
+        uiState = uiState.copy(
+            pendingImports = emptyList(),
+            lastMessage = "",
+            errorMessage = "",
+        )
+        pendingSyncContinuation = null
+    }
+
     private fun mergeRemoteEntriesIntoLocal(
         remoteEntries: List<MalUserMangaEntry>,
         providerIdFilter: String? = null,
+        provider: com.paudinc.komastream.provider.MangaProvider,
+        currentState: LibraryState,
         addToFavorites: Boolean = false,
         detailCache: MutableMap<String, MangaDetail?>,
         onItemStarted: ((MalUserMangaEntry) -> Unit)? = null,
         onItemProcessed: (() -> Unit)? = null,
+        onPendingMatch: ((com.paudinc.komastream.ui.viewmodel.MyAnimeListPendingImport) -> Unit)? = null,
     ) {
-        val currentState = libraryStore.read(filterBySelectedProvider = false)
         remoteEntries.forEach { entry ->
             try {
                 onItemStarted?.invoke(entry)
+                val linkedLocal = (currentState.reading + currentState.favorites)
+                    .asSequence()
+                    .filter { providerIdFilter == null || it.providerId == providerIdFilter }
+                    .firstOrNull { it.malMangaId == entry.manga.id }
+                if (linkedLocal != null) {
+                    val detail = fetchDetailCached(linkedLocal, detailCache)
+                    applyRemoteEntry(
+                        entry = entry,
+                        local = linkedLocal,
+                        detail = detail,
+                        detailCache = detailCache,
+                        addToFavorites = addToFavorites,
+                    )
+                    return@forEach
+                }
                 val local = resolveLocalManga(
                     title = entry.manga.title,
                     alternativeTitles = entry.manga.alternativeTitles,
                     libraryState = currentState,
                     preferredProviderId = providerIdFilter,
-                ) ?: return@forEach
-
-                linkStore.setMangaId(local.providerId, local.detailPath, entry.manga.id)
+                    provider = provider,
+                )
+                if (local == null) {
+                    onPendingMatch?.invoke(buildPendingImport(entry, provider, detailCache))
+                    return@forEach
+                }
 
                 val detail = fetchDetailCached(local, detailCache)
-                val progressSnapshot = detail?.let {
-                    buildRemoteProgressSnapshot(
-                        detailPath = local.detailPath,
-                        detail = it,
-                        remoteReadCount = entry.listStatus.numChaptersRead,
-                    )
-                }
-                val remoteChapterCount = entry.listStatus.numChaptersRead.coerceAtLeast(0)
-                val remoteChapterLabel = remoteChapterCount.takeIf { it > 0 }?.toString()
-                    ?: progressSnapshot?.lastChapterTitle.orEmpty()
-
-                if (progressSnapshot != null && progressSnapshot.readPaths.isNotEmpty()) {
-                    libraryStore.setChaptersRead(local.providerId, progressSnapshot.readPaths, true)
-                }
-
-                if (addToFavorites) {
-                    libraryStore.upsertFavorite(
-                        local.copy(
-                            malMangaId = entry.manga.id,
-                            lastChapterTitle = remoteChapterLabel,
-                            lastChapterPath = "",
-                            lastReadChapterNumber = remoteChapterCount,
-                        )
-                    )
-                }
-
-                if (shouldTrackLocally(entry)) {
-                    libraryStore.upsertReading(
-                        local.copy(
-                            malMangaId = entry.manga.id,
-                            lastChapterTitle = remoteChapterLabel,
-                            lastChapterPath = progressSnapshot?.lastChapterPath.orEmpty(),
-                            lastReadChapterNumber = remoteChapterCount,
-                        )
-                    )
-                }
+                applyRemoteEntry(
+                    entry = entry,
+                    local = local,
+                    detail = detail,
+                    detailCache = detailCache,
+                    addToFavorites = addToFavorites,
+                )
             } finally {
                 onItemProcessed?.invoke()
             }
+        }
+    }
+
+    private fun applyRemoteEntry(
+        entry: MalUserMangaEntry,
+        local: SavedManga,
+        detail: MangaDetail?,
+        detailCache: MutableMap<String, MangaDetail?>,
+        addToFavorites: Boolean = false,
+    ) {
+        val currentState = libraryStore.read(filterBySelectedProvider = false)
+        val existingEntry = (currentState.reading + currentState.favorites).firstOrNull {
+            it.providerId == local.providerId && sameMangaPath(local.providerId, it.detailPath, local.detailPath)
+        }
+        val localReadCount = existingEntry?.lastReadChapterNumber
+            ?: detail?.let {
+                resolveMalReadCountForReadChapters(
+                    providerId = local.providerId,
+                    detailPath = local.detailPath,
+                    chapters = it.chapters,
+                    readChapters = libraryStore.readChaptersForProvider(local.providerId),
+                )
+            } ?: 0
+        val remoteReadCount = entry.listStatus.numChaptersRead.coerceAtLeast(0)
+        val mergedReadCount = max(localReadCount, remoteReadCount)
+        val progressSnapshot = detail?.let {
+            buildRemoteProgressSnapshot(
+                detailPath = local.detailPath,
+                detail = it,
+                remoteReadCount = mergedReadCount,
+            )
+        }
+        val remoteChapterLabel = mergedReadCount.takeIf { it > 0 }?.toString()
+            ?: progressSnapshot?.lastChapterTitle.orEmpty()
+        val imported = local.copy(
+            malMangaId = entry.manga.id,
+            title = local.title.ifBlank { detail?.title.orEmpty() }.ifBlank { entry.manga.title },
+            coverUrl = local.coverUrl.ifBlank { detail?.coverUrl.orEmpty() }.ifBlank { entry.manga.coverUrl },
+            lastChapterTitle = remoteChapterLabel,
+            lastChapterPath = progressSnapshot?.lastChapterPath.orEmpty(),
+            lastReadChapterNumber = mergedReadCount.takeIf { it > 0 },
+        )
+        linkStore.setMangaId(imported.providerId, imported.detailPath, entry.manga.id)
+        if (progressSnapshot != null && progressSnapshot.readPaths.isNotEmpty()) {
+            libraryStore.setChaptersRead(imported.providerId, progressSnapshot.readPaths, true)
+        }
+        if (addToFavorites || entry.listStatus.status == "plan_to_read") {
+            libraryStore.upsertFavorite(imported)
+        } else {
+            libraryStore.upsertReading(imported)
         }
     }
 
@@ -533,12 +724,19 @@ class MalSyncController(
             syncEtaSeconds = null,
             errorMessage = "",
             lastMessage = "",
+            pendingImports = emptyList(),
         )
     }
 
     private fun finishSync() {
         syncStartedAtMs = 0L
-        uiState = buildState().copy(isSyncing = false, syncStageMessage = "")
+        uiState = uiState.copy(
+            isSyncing = false,
+            syncStageMessage = "",
+            syncItemsProcessed = 0,
+            syncItemsTotal = 0,
+            syncEtaSeconds = null,
+        )
     }
 
     private fun addSyncTotal(delta: Int) {
@@ -657,34 +855,16 @@ class MalSyncController(
     )
 
     private fun resolveMangaId(accessToken: String, manga: SavedManga): Long? {
-        val candidates = buildMalSearchCandidates(
-            providerId = manga.providerId,
-            title = manga.title,
-            alternativeTitles = emptyList(),
-        )
-        var bestRemote: com.paudinc.komastream.utils.MalMangaRecord? = null
-        var bestScore = Int.MIN_VALUE
-        for (candidate in candidates) {
-            val results = api.searchManga(accessToken, clientId, candidate)
-            if (results.isEmpty()) continue
-            val scoredResults = results.map { remote ->
-                remote to scoreMalCandidate(localTitle = manga.title, remote = remote)
-            }.sortedByDescending { it.second }
-            val topResult = scoredResults.firstOrNull()
-            if (
-                topResult != null &&
-                topResult.second > bestScore &&
-                isExactTitleMatch(manga.title, buildTitleCandidates(topResult.first.title, topResult.first.alternativeTitles))
-            ) {
-                bestRemote = topResult.first
-                bestScore = topResult.second
-            }
+        getMangaMalId(manga.providerId, manga.detailPath)?.let { storedMangaId ->
+            linkStore.setMangaId(manga.providerId, manga.detailPath, storedMangaId)
+            return storedMangaId
         }
-        if (bestRemote != null && bestScore >= MIN_ACCEPTABLE_MAL_SCORE) {
-            linkStore.setMangaId(manga.providerId, manga.detailPath, bestRemote.id)
-            return bestRemote.id
-        }
-        return null
+        val matches = searchMalMatches(accessToken, manga)
+        val exactMatch = matches.firstOrNull { remote ->
+            isExactTitleMatch(manga.title, buildTitleCandidates(remote.title, remote.alternativeTitles))
+        } ?: return null
+        linkStore.setMangaId(manga.providerId, manga.detailPath, exactMatch.id)
+        return exactMatch.id
     }
 
     private fun scoreMalCandidate(
@@ -778,44 +958,138 @@ class MalSyncController(
         alternativeTitles: List<String>,
         libraryState: LibraryState,
         preferredProviderId: String? = null,
+        provider: com.paudinc.komastream.provider.MangaProvider,
     ): SavedManga? {
         val remoteTitleCandidates = buildTitleCandidates(title, alternativeTitles)
         val localCandidates = (libraryState.reading + libraryState.favorites)
-            .filter { preferredProviderId == null || it.providerId == preferredProviderId }
             .distinctBy { it.providerId to it.detailPath }
         localCandidates.firstOrNull { candidate ->
             matchesAnyTitle(candidate.title, remoteTitleCandidates)
         }?.let { return it }
 
-        val providers = preferredProviderId
-            ?.let { listOf(providerRegistry.get(it)) }
-            ?: providerRegistry.all()
-        for (provider in providers) {
-            for (query in remoteTitleCandidates) {
-                val searchResult = runCatching {
-                    provider.searchCatalog(
-                        query = query,
-                        categoryIds = emptyList(),
-                        sortBy = "",
-                        broadcastStatus = "",
-                        onlyFavorites = false,
-                        skip = 0,
-                        take = 10,
-                    )
-                }.getOrNull() ?: continue
-                val candidate = searchResult.items.firstOrNull { item ->
-                    matchesAnyTitle(item.title, remoteTitleCandidates)
-                } ?: continue
-                return SavedManga(
-                    providerId = candidate.providerId,
-                    title = candidate.title,
-                    detailPath = candidate.detailPath,
-                    coverUrl = candidate.coverUrl,
-                    malMangaId = null,
+        return searchProviderMatches(provider, remoteTitleCandidates)
+            .firstOrNull { candidate ->
+                matchesAnyTitle(candidate.title, remoteTitleCandidates)
+            }
+            ?.let {
+                SavedManga(
+                    providerId = it.providerId,
+                    title = it.title,
+                    detailPath = it.detailPath,
+                    coverUrl = it.coverUrl,
                 )
             }
+    }
+
+    private fun buildPendingImport(
+        entry: MalUserMangaEntry,
+        provider: com.paudinc.komastream.provider.MangaProvider,
+        detailCache: MutableMap<String, MangaDetail?>,
+    ): com.paudinc.komastream.ui.viewmodel.MyAnimeListPendingImport {
+        val candidates = searchProviderMatches(provider, buildTitleCandidates(entry.manga.title, entry.manga.alternativeTitles))
+            .map { manga ->
+                val detail = fetchDetailCached(
+                    SavedManga(
+                        providerId = manga.providerId,
+                        title = manga.title,
+                        detailPath = manga.detailPath,
+                        coverUrl = manga.coverUrl,
+                    ),
+                    detailCache,
+                )
+                MyAnimeListMatchCandidate(
+                    key = "local:${manga.providerId}:${manga.detailPath}",
+                    title = manga.title,
+                    displayTitle = detail?.title?.ifBlank { manga.title } ?: manga.title,
+                    coverUrl = manga.coverUrl,
+                    providerId = manga.providerId,
+                    detailPath = manga.detailPath,
+                    status = manga.status,
+                    chaptersCount = manga.chaptersCount,
+                )
+            }
+        return com.paudinc.komastream.ui.viewmodel.MyAnimeListPendingImport(
+            source = MyAnimeListPendingImportSource.FROM_REMOTE,
+            pendingKey = "remote:${entry.manga.id}",
+            malMangaId = entry.manga.id,
+            title = entry.manga.title,
+            status = entry.listStatus.status,
+            numChaptersRead = entry.listStatus.numChaptersRead.coerceAtLeast(0),
+            alternativeTitles = entry.manga.alternativeTitles,
+            candidates = candidates,
+        )
+    }
+
+    private fun buildPendingMangaImportForLocal(
+        entry: SyncEntry,
+        accessToken: String,
+    ): MyAnimeListPendingImport {
+        val manga = entry.manga
+        val searchResults = searchMalMatches(accessToken = accessToken, manga = manga)
+        val candidates = searchResults
+            .map { remote ->
+                MyAnimeListMatchCandidate(
+                    key = "mal:${remote.id}",
+                    title = remote.title,
+                    displayTitle = remote.title,
+                    coverUrl = remote.coverUrl,
+                    malMangaId = remote.id,
+                    status = remote.status,
+                )
+            }
+        return MyAnimeListPendingImport(
+            source = MyAnimeListPendingImportSource.TO_REMOTE,
+            pendingKey = "local:${manga.providerId}:${manga.detailPath}",
+            localProviderId = manga.providerId,
+            localDetailPath = manga.detailPath,
+            title = manga.title,
+            status = if (entry.isReading) "reading" else "plan_to_read",
+            numChaptersRead = if (entry.isReading) (manga.lastReadChapterNumber ?: 0).coerceAtLeast(0) else 0,
+            alternativeTitles = emptyList(),
+            candidates = candidates,
+        )
+    }
+
+    private fun searchMalMatches(
+        accessToken: String,
+        manga: SavedManga,
+    ): List<com.paudinc.komastream.utils.MalMangaRecord> {
+        val candidates = buildMalSearchCandidates(
+            providerId = manga.providerId,
+            title = manga.title,
+            alternativeTitles = emptyList(),
+        )
+        val results = mutableListOf<com.paudinc.komastream.utils.MalMangaRecord>()
+        candidates.forEach { candidate ->
+            val searchResults = runCatching {
+                api.searchManga(accessToken, clientId, candidate)
+            }.getOrNull().orEmpty()
+            results += searchResults
         }
-        return null
+        return results.distinctBy { it.id }
+    }
+
+    private fun searchProviderMatches(
+        provider: com.paudinc.komastream.provider.MangaProvider,
+        titleCandidates: List<String>,
+    ): List<MangaSummary> {
+        val results = mutableListOf<MangaSummary>()
+        titleCandidates.forEach { query ->
+            val searchResult = runCatching {
+                provider.searchCatalog(
+                    query = query,
+                    categoryIds = emptyList(),
+                    sortBy = "",
+                    broadcastStatus = "",
+                    onlyFavorites = false,
+                    skip = 0,
+                    take = 10,
+                )
+            }.getOrNull() ?: return@forEach
+            results += searchResult.items
+        }
+        return results
+            .distinctBy { it.providerId to it.detailPath }
     }
 
     private fun buildTitleCandidates(
@@ -841,35 +1115,7 @@ class MalSyncController(
         title: String,
         alternativeTitles: List<String>,
     ): List<String> {
-        val allCandidates = buildTitleCandidates(title, alternativeTitles)
-        if (!providerId.endsWith("-es")) return allCandidates
-
-        val semanticCandidates = buildList {
-            add(buildSemanticSearchQuery(title))
-            add(buildOrderedSemanticSearchQuery(title))
-            alternativeTitles.forEach { candidate ->
-                add(buildSemanticSearchQuery(candidate))
-                add(buildOrderedSemanticSearchQuery(candidate))
-            }
-        }.map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-
-        return if (semanticCandidates.isNotEmpty()) semanticCandidates else allCandidates
-    }
-
-    private fun shouldSkipMalSearchForLocalizedSpanishTitle(
-        providerId: String,
-        title: String,
-    ): Boolean {
-        if (!providerId.endsWith("-es")) return false
-        val normalized = foldDiacritics(title).lowercase()
-        val spanishMarkers = listOf(
-            " la ", " el ", " los ", " las ", " de ", " del ",
-            " mision ", " capitulo ", " anos ", " ano ", " temporada ", " especial "
-        )
-        val padded = " $normalized "
-        return spanishMarkers.any { it in padded }
+        return buildTitleCandidates(title, alternativeTitles)
     }
 
     private fun matchesAnyTitle(localTitle: String, remoteTitleCandidates: List<String>): Boolean {
@@ -889,14 +1135,25 @@ class MalSyncController(
     private fun matchesTitle(localTitle: String, remoteTitle: String, alternativeTitles: List<String>): Boolean {
         val normalizedLocal = normalizeTitle(localTitle)
         val normalizedRemote = normalizeTitle(remoteTitle)
+        val semanticLocal = normalizeSemanticTitle(localTitle)
+        val semanticRemote = normalizeSemanticTitle(remoteTitle)
         if (normalizedLocal.isBlank() || normalizedRemote.isBlank()) return false
         if (normalizedLocal == normalizedRemote) return true
         if (normalizedLocal in normalizedRemote || normalizedRemote in normalizedLocal) return true
+        if (semanticLocal.isNotBlank() && semanticRemote.isNotBlank()) {
+            if (semanticLocal == semanticRemote) return true
+            if (semanticLocal in semanticRemote || semanticRemote in semanticLocal) return true
+        }
         return alternativeTitles.any { candidate ->
             val normalizedCandidate = normalizeTitle(candidate)
+            val semanticCandidate = normalizeSemanticTitle(candidate)
             normalizedCandidate == normalizedLocal ||
                 (normalizedCandidate.isNotBlank() && (
                     normalizedLocal in normalizedCandidate || normalizedCandidate in normalizedLocal
+                )) ||
+                (semanticCandidate.isNotBlank() && semanticLocal.isNotBlank() && (
+                    semanticCandidate == semanticLocal ||
+                        semanticLocal in semanticCandidate || semanticCandidate in semanticLocal
                 ))
         }
     }

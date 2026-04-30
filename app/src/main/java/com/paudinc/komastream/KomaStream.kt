@@ -12,6 +12,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,9 +52,13 @@ import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.ui.navigation.ScreenStackSaver
 import com.paudinc.komastream.ui.screens.*
 import com.paudinc.komastream.ui.viewmodel.KomaViewModel
+import com.paudinc.komastream.ui.viewmodel.MyAnimeListPendingImportSource
+import com.paudinc.komastream.ui.viewmodel.MyAnimeListPendingImport
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.utils.*
 import kotlinx.coroutines.launch
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -456,7 +462,7 @@ fun KomaStream() {
                                                     .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
                                             )
                                         },
-                                        onMalSync = { viewModel.syncMalLibrary() },
+                                        onMalSync = { viewModel.syncMalLibraryBothWays() },
                                         onMalDisconnect = { viewModel.disconnectMal() },
                                         onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
                                         onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
@@ -473,6 +479,11 @@ fun KomaStream() {
                                         val detailReading = allProvidersLibraryState.reading.firstOrNull {
                                             it.providerId == detail.providerId && it.detailPath == detail.detailPath
                                         }
+                                        val detailSavedManga = allProvidersLibraryState.reading.firstOrNull {
+                                            it.providerId == detail.providerId && sameMangaPath(detail.providerId, it.detailPath, detail.detailPath)
+                                        } ?: allProvidersLibraryState.favorites.firstOrNull {
+                                            it.providerId == detail.providerId && sameMangaPath(detail.providerId, it.detailPath, detail.detailPath)
+                                        }
                                     DetailScreen(
                                         strings = strings,
                                         detail = detail,
@@ -485,6 +496,10 @@ fun KomaStream() {
                                         isChapterDownloaded = { path -> offlineStore.isChapterDownloaded(detail.providerId, path) },
                                         downloadProgress = libraryController.downloadProgress,
                                         isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
+                                        malMangaId = detailSavedManga?.malMangaId,
+                                        onSetMalMangaId = { malMangaId ->
+                                            viewModel.setMangaMalId(detail.providerId, detail.detailPath, malMangaId)
+                                        },
                                         onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
                                         onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path, detail) },
                                         onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, read) },
@@ -567,7 +582,7 @@ fun KomaStream() {
                                             .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
                                     )
                                 },
-                                onMalSync = { viewModel.syncMalLibrary() },
+                                onMalSync = { viewModel.syncMalLibraryBothWays() },
                                 onMalDisconnect = { viewModel.disconnectMal() },
                                 onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
                                 onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
@@ -669,6 +684,22 @@ fun KomaStream() {
                         }
                     }
                 }
+
+                if (malUiState.pendingImports.isNotEmpty()) {
+                    MalSyncPendingImportsDialog(
+                        strings = strings,
+                        pendingImports = malUiState.pendingImports,
+                        onConfirm = { selections ->
+                            viewModel.malSyncController.applyPendingMangaImports(
+                                providerId = currentProvider.id,
+                                selections = selections,
+                            )
+                        },
+                        onDismiss = {
+                            viewModel.malSyncController.clearPendingMangaImports()
+                        },
+                    )
+                }
             }
         }
     }
@@ -712,6 +743,242 @@ fun KomaStream() {
             }
         } else if (!viewModel.goBack()) {
             activity?.finish()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MalSyncPendingImportsDialog(
+    strings: AppStrings,
+    pendingImports: List<MyAnimeListPendingImport>,
+    onConfirm: (Map<String, String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (pendingImports.isEmpty()) return
+
+    val selections = remember(pendingImports) { mutableStateMapOf<String, String>() }
+    val selectionsToApply = pendingImports.associate { pending ->
+        pending.pendingKey to selections[pending.pendingKey].orEmpty()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(24.dp),
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = strings.malSyncReviewImports,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = strings.malSyncReviewImportsDescription,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(pendingImports, key = { it.pendingKey }) { pending ->
+                        val selectedKey = selections[pending.pendingKey].orEmpty()
+                        val noneSelected = selectedKey.isBlank()
+                        ElevatedCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text(
+                                    text = pending.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = when (pending.source) {
+                                        MyAnimeListPendingImportSource.FROM_REMOTE -> "Match from MyAnimeList"
+                                        MyAnimeListPendingImportSource.TO_REMOTE -> "Match from local library"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = buildString {
+                                        append(pending.status)
+                                        if (pending.numChaptersRead > 0) {
+                                            append(" · ")
+                                            append(pending.numChaptersRead)
+                                            append(" ")
+                                            append(strings.chapters)
+                                        }
+                                    }.trim().trimStart('·').trim(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+
+                                if (pending.candidates.isEmpty()) {
+                                    Text(
+                                        text = strings.malSyncNoMatchesFound,
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Surface(
+                                            onClick = { selections[pending.pendingKey] = "" },
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (noneSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                            tonalElevation = 0.dp,
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(10.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.weight(1f),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                ) {
+                                                    Text(
+                                                        text = "None of these",
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    )
+                                                    Text(
+                                                        text = "Leave this manga unmatched for now",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                                Checkbox(
+                                                    checked = noneSelected,
+                                                    onCheckedChange = {
+                                                        selections[pending.pendingKey] = ""
+                                                    },
+                                                )
+                                            }
+                                        }
+                                        pending.candidates.forEach { candidate ->
+                                            val isSelected = selectedKey == candidate.key
+                                            Surface(
+                                                onClick = {
+                                                    selections[pending.pendingKey] = candidate.key
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                                tonalElevation = 0.dp,
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(10.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    AsyncImage(
+                                                        model = candidate.coverUrl,
+                                                        contentDescription = candidate.displayTitle,
+                                                        modifier = Modifier
+                                                            .size(width = 58.dp, height = 82.dp)
+                                                            .clip(RoundedCornerShape(8.dp)),
+                                                    )
+                                                    Column(
+                                                        modifier = Modifier.weight(1f),
+                                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                    ) {
+                                                        Text(
+                                                            text = candidate.displayTitle,
+                                                            style = MaterialTheme.typography.bodyLarge,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                        candidate.status.takeIf { it.isNotBlank() }?.let {
+                                                            Text(
+                                                                text = it,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                        candidate.chaptersCount.takeIf { it.isNotBlank() }?.let {
+                                                            Text(
+                                                                text = "${strings.chapters} $it",
+                                                                style = MaterialTheme.typography.labelMedium,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                        candidate.detailPath.takeIf { it.isNotBlank() }?.let {
+                                                            Text(
+                                                                text = it,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                    }
+                                                    Checkbox(
+                                                        checked = isSelected,
+                                                        onCheckedChange = { checked ->
+                                                            selections[pending.pendingKey] = if (checked) candidate.key else ""
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                ) {
+                    OutlinedButton(onClick = onDismiss) {
+                        Text(strings.cancel)
+                    }
+                    Button(
+                        onClick = { onConfirm(selectionsToApply) },
+                        enabled = pendingImports.isNotEmpty(),
+                    ) {
+                        Text(strings.malSyncImportSelected)
+                    }
+                }
+            }
         }
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -45,6 +46,8 @@ fun DetailScreen(
     isChapterDownloaded: (String) -> Boolean,
     downloadProgress: Map<String, Int>,
     isBulkUpdatingChapters: Boolean,
+    malMangaId: Long?,
+    onSetMalMangaId: (Long?) -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleChapterRead: (String) -> Unit,
     onSetAllChaptersRead: (Boolean) -> Unit,
@@ -56,6 +59,7 @@ fun DetailScreen(
 ) {
     var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
+    var malIdInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(malMangaId?.toString().orEmpty()) }
     var hasAutoPositionedChapterList by remember(detail.providerId, detail.detailPath, autoJumpToUnread) { mutableStateOf(false) }
     var suppressAutoPositioning by remember(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -67,6 +71,9 @@ fun DetailScreen(
         detail.chapters.associate { chapter ->
             buildChapterPath(detail.detailPath, chapter) to canonicalChapterKey(detail.providerId, buildChapterPath(detail.detailPath, chapter))
         }
+    }
+    LaunchedEffect(malMangaId) {
+        malIdInput = malMangaId?.toString().orEmpty()
     }
 
     val filteredChapters = remember(detail.chapters, chapterQuery) {
@@ -294,6 +301,87 @@ fun DetailScreen(
                                     label = strings.latest,
                                     leadingIcon = Icons.Default.History,
                                 )
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                        border = cardBorder(),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        strings.malId,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        malMangaId?.toString().orEmpty().ifBlank { strings.malIdNotSet },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            OutlinedTextField(
+                                value = malIdInput,
+                                onValueChange = { input -> malIdInput = input.filter { it.isDigit() } },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text(strings.malId) },
+                                placeholder = { Text(strings.malIdNotSet) },
+                                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done,
+                                ),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
+                                    onSetMalMangaId(parsed)
+                                }),
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
+                                        onSetMalMangaId(parsed)
+                                    },
+                                    enabled = malIdInput.trim().toLongOrNull() != malMangaId,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Icon(Icons.Default.Save, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(strings.save)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        malIdInput = ""
+                                        onSetMalMangaId(null)
+                                    },
+                                    enabled = malMangaId != null || malIdInput.isNotBlank(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Icon(Icons.Default.Clear, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(strings.clear)
+                                }
                             }
                         }
                     }

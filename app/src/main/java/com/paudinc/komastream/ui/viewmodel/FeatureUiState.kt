@@ -53,4 +53,35 @@ data class MyAnimeListUiState(
     val syncEtaSeconds: Int? = null,
     val lastMessage: String = "",
     val errorMessage: String = "",
+    val pendingImports: List<MyAnimeListPendingImport> = emptyList(),
+)
+
+enum class MyAnimeListPendingImportSource {
+    FROM_REMOTE,
+    TO_REMOTE,
+}
+
+data class MyAnimeListMatchCandidate(
+    val key: String,
+    val title: String,
+    val displayTitle: String = title,
+    val coverUrl: String,
+    val providerId: String = "",
+    val detailPath: String = "",
+    val malMangaId: Long? = null,
+    val status: String = "",
+    val chaptersCount: String = "",
+)
+
+data class MyAnimeListPendingImport(
+    val source: MyAnimeListPendingImportSource,
+    val pendingKey: String,
+    val malMangaId: Long? = null,
+    val localProviderId: String = "",
+    val localDetailPath: String = "",
+    val title: String,
+    val status: String,
+    val numChaptersRead: Int,
+    val alternativeTitles: List<String>,
+    val candidates: List<MyAnimeListMatchCandidate>,
 )
