@@ -6,6 +6,7 @@ import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.MangaFireWebViewResolver
 import com.paudinc.komastream.utils.chapterValue
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -414,9 +415,9 @@ class MangaFireProvider(
         if (path.isBlank()) return ""
         val parsed = path.toHttpUrlOrNull()
         return when {
-            parsed != null -> parsed.encodedPath
-            path.startsWith("/") -> path
-            else -> "/$path"
+            parsed != null -> normalizeStoredPath(parsed.encodedPath)
+            path.startsWith("/") -> normalizeStoredPath(path)
+            else -> normalizeStoredPath("/$path")
         }
     }
 

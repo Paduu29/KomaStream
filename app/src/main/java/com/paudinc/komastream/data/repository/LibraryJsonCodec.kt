@@ -1,6 +1,7 @@
 package com.paudinc.komastream.data.repository
 
 import com.paudinc.komastream.data.model.SavedManga
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -184,17 +185,6 @@ class LibraryJsonCodec(
                 ?.let { if (it.startsWith("/")) it else "/$it" }
                 .orEmpty()
             else -> normalizedPath
-        }
-    }
-
-    private fun normalizeStoredPath(value: String): String {
-        if (value.isBlank()) return ""
-        val trimmed = value.trim()
-        val parsed = trimmed.toHttpUrlOrNull()
-        return when {
-            parsed != null -> parsed.encodedPath
-            trimmed.startsWith("/") -> trimmed
-            else -> "/$trimmed"
         }
     }
 

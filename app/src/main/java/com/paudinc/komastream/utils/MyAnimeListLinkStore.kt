@@ -6,6 +6,10 @@ import org.json.JSONObject
 class MyAnimeListLinkStore(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    init {
+        migrateLegacyKeys()
+    }
+
     fun getMangaId(providerId: String, detailPath: String): Long? {
         val json = JSONObject(prefs.getString(KEY_MANGA_LINKS, "{}").orEmpty())
         val key = mangaKey(providerId, detailPath)
@@ -33,7 +37,21 @@ class MyAnimeListLinkStore(context: Context) {
     }
 
     private fun mangaKey(providerId: String, detailPath: String): String =
-        "$providerId::$detailPath"
+        "$providerId::${canonicalMangaPathKey(providerId, detailPath)}"
+
+    private fun migrateLegacyKeys() {
+        val json = JSONObject(prefs.getString(KEY_MANGA_LINKS, "{}").orEmpty())
+        val migrated = JSONObject()
+        json.keys().forEach { key ->
+            val providerId = key.substringBefore("::", missingDelimiterValue = "")
+            val detailPath = key.substringAfter("::", missingDelimiterValue = "")
+            if (providerId.isBlank() || detailPath.isBlank()) return@forEach
+            migrated.put(mangaKey(providerId, detailPath), json.get(key))
+        }
+        if (migrated.length() > 0) {
+            prefs.edit().putString(KEY_MANGA_LINKS, migrated.toString()).apply()
+        }
+    }
 
     private companion object {
         const val PREFS_NAME = "manga_library"

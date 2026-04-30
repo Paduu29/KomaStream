@@ -27,6 +27,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.ceil
@@ -456,9 +457,9 @@ class MangaFireWebViewResolver(
         if (path.isBlank()) return ""
         val uri = Uri.parse(path)
         return when {
-            !uri.scheme.isNullOrBlank() -> uri.path.orEmpty()
-            path.startsWith("/") -> path
-            else -> "/$path"
+            !uri.scheme.isNullOrBlank() -> uri.path.orEmpty().lowercase(Locale.ROOT)
+            path.startsWith("/") -> path.lowercase(Locale.ROOT)
+            else -> "/$path".lowercase(Locale.ROOT)
         }
     }
 

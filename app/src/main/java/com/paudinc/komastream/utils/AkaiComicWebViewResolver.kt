@@ -16,6 +16,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -37,7 +38,7 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
             val mangaMap = mutableMapOf<String, Pair<String, String>>() // id -> (name, cover)
             (0 until arr.length()).forEach { i ->
                 val m = arr.optJSONObject(i) ?: return@forEach
-                val id = m.optString("id") ?: return@forEach
+                val id = m.optString("id").takeIf { it.isNotBlank() }?.lowercase(Locale.ROOT) ?: return@forEach
                 val name = m.optString("series_name", "").ifBlank { m.optString("alternative_name", "").substringBefore(",") }
                 val cover = m.optString("cover_url", "")
                 mangaMap[id] = Pair(name, cover)
@@ -66,8 +67,8 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                     chapterLabel = "Chapter $chNum",
                     chapterNumberUrl = chNum,
                     chapterId = chNum,
-                    mangaPath = "/manga/$mid",
-                    chapterPath = "/manga/$mid/chapter/$chNum",
+                    mangaPath = "/manga/${mid.lowercase(Locale.ROOT)}",
+                    chapterPath = "/manga/${mid.lowercase(Locale.ROOT)}/chapter/$chNum",
                     coverUrl = mangaCover,
                     registrationLabel = chDate.take(10),
                 ))
@@ -102,7 +103,7 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                 val status = m.optString("status", "")
                 val views = m.optString("views", "")
                 Log.d("AkaiWebView", ">>> featured[$i]: name=$name cover=$cover")
-                MangaSummary("akaicomic-en", name, "/manga/$id", cover, status, "", "", "", views)
+                MangaSummary("akaicomic-en", name, "/manga/${id.lowercase(Locale.ROOT)}", cover, status, "", "", "", views)
             }
         } catch (e: Exception) { emptyList() }
     }
@@ -121,7 +122,7 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                 val mangaType = m.optString("type", "")
                 val year = m.optString("release_year", "")
                 val updated = m.optString("updated_at", "").replace(" GMT", "").replace(", ", " ")
-                MangaSummary("akaicomic-en", name, "/manga/$id", cover, status, mangaType, updated, "", "")
+                MangaSummary("akaicomic-en", name, "/manga/${id.lowercase(Locale.ROOT)}", cover, status, mangaType, updated, "", "")
             }
         } catch (e: Exception) { emptyList() }
     }
@@ -139,7 +140,7 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                 val status = m.optString("status", "")
                 val mangaType = m.optString("type", "")
                 val year = m.optString("release_year", "")
-                MangaSummary("akaicomic-en", name, "/manga/$id", cover, status, mangaType, "", "", "")
+                MangaSummary("akaicomic-en", name, "/manga/${id.lowercase(Locale.ROOT)}", cover, status, mangaType, "", "", "")
             }
         } catch (e: Exception) { emptyList() }
     }
@@ -167,7 +168,7 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                 val status = m.optString("status", "")
                 val mangaType = m.optString("type", "")
                 val year = m.optString("release_year", "")
-                MangaSummary("akaicomic-en", name, "/manga/$id", cover, status, mangaType, "", "", "")
+                MangaSummary("akaicomic-en", name, "/manga/${id.lowercase(Locale.ROOT)}", cover, status, mangaType, "", "", "")
             }
         } catch (e: Exception) { emptyList() }
     }

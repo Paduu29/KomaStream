@@ -4,6 +4,8 @@ import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.SavedManga
+import com.paudinc.komastream.utils.normalizeStoredPath
+import com.paudinc.komastream.utils.sameMangaPath
 
 class ReaderActionInteractor {
     fun resolveCurrentManga(
@@ -59,9 +61,9 @@ class ReaderActionInteractor {
         currentDetailPath: String,
     ): String {
         return when {
-            isBetterDetailPath(providerId, readerDetailPath, currentDetailPath) -> readerDetailPath
-            currentDetailPath.isNotBlank() -> currentDetailPath
-            else -> readerDetailPath
+            isBetterDetailPath(providerId, readerDetailPath, currentDetailPath) -> normalizeStoredPath(readerDetailPath)
+            currentDetailPath.isNotBlank() -> normalizeStoredPath(currentDetailPath)
+            else -> normalizeStoredPath(readerDetailPath)
         }
     }
 
@@ -69,22 +71,9 @@ class ReaderActionInteractor {
         if (candidate.isBlank()) return false
         if (existing.isBlank()) return true
         return when (providerId) {
-            "inmanga-es" -> candidate.count { it == '/' } > existing.count { it == '/' }
-            else -> candidate.length >= existing.length
+            "inmanga-es" -> normalizeStoredPath(candidate).count { it == '/' } > normalizeStoredPath(existing).count { it == '/' }
+            else -> normalizeStoredPath(candidate).length >= normalizeStoredPath(existing).length
         }
     }
 
-    private fun sameMangaPath(providerId: String, left: String, right: String): Boolean {
-        if (left == right) return true
-        if (left.isBlank() || right.isBlank()) return false
-        return when (providerId) {
-            "inmanga-es" -> inmangaKey(left) == inmangaKey(right)
-            else -> left.substringBefore("?").trim('/') == right.substringBefore("?").trim('/')
-        }
-    }
-
-    private fun inmangaKey(path: String): String {
-        val parts = path.trim('/').split("/").filter { it.isNotBlank() }
-        return parts.take(3).joinToString("/")
-    }
 }

@@ -1,18 +1,17 @@
 package com.paudinc.komastream.utils
 
 import com.paudinc.komastream.data.model.MangaChapter
-import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 fun buildChapterPath(detailPath: String, chapter: MangaChapter): String {
     if (chapter.path.isNotBlank()) {
-        return if (chapter.path.startsWith("/")) chapter.path else "/${chapter.path}"
+        return normalizeStoredPath(chapter.path)
     }
-    val prefix = detailPath.substringBeforeLast("/")
+    val prefix = normalizeStoredPath(detailPath).substringBeforeLast("/")
     val path = "$prefix/${chapter.chapterNumberUrl}/${chapter.id}".replace("//", "/")
-    return if (path.startsWith("/")) path else "/$path"
+    return normalizeStoredPath(path)
 }
 
 fun parseChapterInput(value: String): Double? {
@@ -125,24 +124,7 @@ fun canonicalChapterKeys(providerId: String, chapterPaths: Iterable<String>): Se
 }
 
 fun canonicalChapterKey(providerId: String, chapterPath: String): String {
-    val normalized = canonicalizeChapterPath(chapterPath)
-    return when (providerId) {
-        "inmanga-es" -> {
-            val parts = normalized
-                .split("/")
-                .filter { it.isNotBlank() }
-                .map { it.lowercase() }
-            when {
-                parts.size >= 6 && isUuid(parts[3]) -> listOf(parts[0], parts[1], parts[2], parts[4], parts[5]).joinToString("/")
-                else -> normalized
-                    .split("/")
-                    .filter { it.isNotBlank() }
-                    .map { it.lowercase() }
-                    .joinToString("/")
-            }
-        }
-        else -> normalized
-    }
+    return canonicalChapterPathKey(providerId, chapterPath)
 }
 
 fun chapterValue(chapter: MangaChapter): Double {
@@ -232,10 +214,6 @@ fun formatDateEu(input: String): String {
     }
 }
 
-private fun isUuid(value: String): Boolean {
-    return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
-}
-
 private fun normalizeChapterNumberToken(value: String): String? {
     if (value.isBlank()) return null
     val normalizedHyphen = value.replace(Regex("(?<=\\d)-(?=\\d)"), ".")
@@ -267,24 +245,4 @@ private fun normalizeChapterNumberToken(value: String): String? {
         right.length == 3 -> left + right
         else -> "$left.$right"
     }
-}
-
-private fun canonicalizeChapterPath(chapterPath: String): String {
-    val normalized = chapterPath
-        .substringBefore("?")
-        .substringBefore("#")
-        .trim('/')
-    if (normalized.isBlank()) return ""
-
-    val parts = normalized.split("/").filter { it.isNotBlank() }.toMutableList()
-    if (parts.size >= 2) {
-        val chapterIndex = parts.lastIndex - 1
-        normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
-    }
-    return parts.joinToString("/")
-}
-
-private fun normalizeChapterPathToken(value: String): String? {
-    val parsed = parseChapterInput(value) ?: return null
-    return BigDecimal(parsed.toString()).stripTrailingZeros().toPlainString()
 }

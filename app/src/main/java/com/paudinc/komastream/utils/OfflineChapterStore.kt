@@ -20,12 +20,16 @@ class OfflineChapterStore(val context: Context) {
     private val rootDir = File(context.filesDir, "offline_chapters").apply { mkdirs() }
     private val cryptoLock = Any()
 
+    init {
+        migrateLegacyChapterDirs()
+    }
+
     fun getDownloadedChapterPaths(): Set<String> {
         return rootDir.listFiles()
             ?.mapNotNull { directory ->
                 readManifest(directory)?.let { manifest ->
                     val providerId = manifest.optString("providerId")
-                    val chapterPath = manifest.optString("chapterPath")
+                    val chapterPath = canonicalChapterPathKey(providerId, manifest.optString("chapterPath"))
                     if (providerId.isBlank() || chapterPath.isBlank()) null else qualifyProviderValue(providerId, chapterPath)
                 }
             }
@@ -58,12 +62,12 @@ class OfflineChapterStore(val context: Context) {
 
         val manifest = JSONObject()
             .put("providerId", readerData.providerId)
-            .put("chapterPath", readerData.chapterPath)
+            .put("chapterPath", canonicalChapterPathKey(readerData.providerId, readerData.chapterPath))
             .put("mangaTitle", readerData.mangaTitle)
-            .put("mangaDetailPath", readerData.mangaDetailPath)
+            .put("mangaDetailPath", normalizeStoredPath(readerData.mangaDetailPath))
             .put("chapterTitle", readerData.chapterTitle)
-            .put("previousChapterPath", readerData.previousChapterPath ?: JSONObject.NULL)
-            .put("nextChapterPath", readerData.nextChapterPath ?: JSONObject.NULL)
+            .put("previousChapterPath", readerData.previousChapterPath?.let { normalizeStoredPath(it) } ?: JSONObject.NULL)
+            .put("nextChapterPath", readerData.nextChapterPath?.let { normalizeStoredPath(it) } ?: JSONObject.NULL)
             .put("pages", pageJson)
 
         File(chapterDir, "manifest.json").writeText(manifest.toString(), StandardCharsets.UTF_8)
@@ -75,11 +79,11 @@ class OfflineChapterStore(val context: Context) {
         return ReaderData(
             providerId = manifest.optString("providerId").ifBlank { providerId },
             mangaTitle = manifest.optString("mangaTitle"),
-            mangaDetailPath = manifest.optString("mangaDetailPath"),
+            mangaDetailPath = normalizeStoredPath(manifest.optString("mangaDetailPath")),
             chapterTitle = manifest.optString("chapterTitle"),
-            chapterPath = manifest.optString("chapterPath"),
-            previousChapterPath = manifest.optString("previousChapterPath").takeIf { it.isNotBlank() && it != "null" },
-            nextChapterPath = manifest.optString("nextChapterPath").takeIf { it.isNotBlank() && it != "null" },
+            chapterPath = canonicalChapterPathKey(providerId, manifest.optString("chapterPath")),
+            previousChapterPath = manifest.optString("previousChapterPath").takeIf { it.isNotBlank() && it != "null" }?.let(::normalizeStoredPath),
+            nextChapterPath = manifest.optString("nextChapterPath").takeIf { it.isNotBlank() && it != "null" }?.let(::normalizeStoredPath),
             pages = buildList(pages.length()) {
                 for (index in 0 until pages.length()) {
                     val item = pages.getJSONObject(index)
@@ -167,6 +171,23 @@ class OfflineChapterStore(val context: Context) {
                 .build()
         )
         return generator.generateKey()
+    }
+
+    private fun migrateLegacyChapterDirs() {
+        rootDir.listFiles()?.forEach { directory ->
+            if (!directory.isDirectory) return@forEach
+            val manifest = readManifest(directory) ?: return@forEach
+            val providerId = manifest.optString("providerId")
+            val chapterPath = canonicalChapterPathKey(providerId, manifest.optString("chapterPath"))
+            if (providerId.isBlank() || chapterPath.isBlank()) return@forEach
+            val targetDir = chapterDir(providerId, chapterPath)
+            if (directory.absolutePath == targetDir.absolutePath) return@forEach
+            if (targetDir.exists()) {
+                directory.deleteRecursively()
+            } else {
+                directory.renameTo(targetDir)
+            }
+        }
     }
 
     companion object {

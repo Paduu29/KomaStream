@@ -17,6 +17,7 @@ import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.JavaNetCookieJar
@@ -781,9 +782,9 @@ class MangaBallProvider(
         if (path.isBlank()) return ""
         val parsed = path.toHttpUrlOrNull()
         return when {
-            parsed != null -> parsed.encodedPath + parsed.encodedQuery?.let { "?$it" }.orEmpty()
-            path.startsWith("/") -> path
-            else -> "/$path"
+            parsed != null -> normalizeStoredPath(parsed.encodedPath + parsed.encodedQuery?.let { "?$it" }.orEmpty())
+            path.startsWith("/") -> normalizeStoredPath(path)
+            else -> normalizeStoredPath("/$path")
         }
     }
 

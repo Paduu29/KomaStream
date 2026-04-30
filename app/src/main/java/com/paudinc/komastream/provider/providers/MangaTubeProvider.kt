@@ -23,6 +23,7 @@ import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.JavaNetCookieJar
@@ -1082,9 +1083,9 @@ class MangaTubeProvider(
         if (isBlank()) return ""
         val parsed = toHttpUrlOrNull()
         return when {
-            parsed != null -> parsed.encodedPath + parsed.encodedQuery?.let { "?$it" }.orEmpty()
-            startsWith("/") -> this
-            else -> "/$this"
+            parsed != null -> normalizeStoredPath(parsed.encodedPath + parsed.encodedQuery?.let { "?$it" }.orEmpty())
+            startsWith("/") -> normalizeStoredPath(this)
+            else -> normalizeStoredPath("/$this")
         }
     }
 

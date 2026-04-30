@@ -18,7 +18,6 @@ import com.paudinc.komastream.data.repository.LibraryJsonCodec
 import com.paudinc.komastream.data.repository.MangaDetailCacheCodec
 import org.json.JSONArray
 import org.json.JSONObject
-import java.math.BigDecimal
 
 class LibraryStore(context: Context) {
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
@@ -205,15 +204,15 @@ class LibraryStore(context: Context) {
         ensureInitialized()
         val detailKey = mangaKey(detail.providerId, detail.detailPath)
         val existing = dao.readMangaDetailCache(detail.providerId, detailKey)
-            ?: dao.readMangaDetailCacheByPath(detail.providerId, detail.detailPath)
+            ?: dao.readMangaDetailCacheByPath(detail.providerId, normalizeStoredPath(detail.detailPath))
         val storedDetail = existing?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
         if (storedDetail != null && mangaDetailCacheCodec.sameChapterSignature(storedDetail, detail)) {
             return false
         }
         val canonicalDetailPath = when {
-            existing?.detailPath.isNullOrBlank() -> detail.detailPath
-            detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> detail.detailPath
-            else -> existing.detailPath
+            existing?.detailPath.isNullOrBlank() -> normalizeStoredPath(detail.detailPath)
+            detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> normalizeStoredPath(detail.detailPath)
+            else -> normalizeStoredPath(existing.detailPath)
         }
         dao.upsertMangaDetailCache(
             MangaDetailCacheEntity(
@@ -232,7 +231,7 @@ class LibraryStore(context: Context) {
         ensureInitialized()
         val detailKey = mangaKey(providerId, detailPath)
         val cached = dao.readMangaDetailCache(providerId, detailKey)
-            ?: dao.readMangaDetailCacheByPath(providerId, detailPath)
+            ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
         return cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
     }
 
@@ -452,8 +451,8 @@ class LibraryStore(context: Context) {
         for (index in 0 until json.length()) {
             val item = json.optJSONObject(index) ?: continue
             val providerId = item.optString("providerId").orEmpty()
-            val detailKey = item.optString("detailKey").orEmpty()
-            val detailPath = item.optString("detailPath").orEmpty()
+            val detailPath = normalizeStoredPath(item.optString("detailPath"))
+            val detailKey = mangaKey(providerId, detailPath)
             val detailJson = item.optString("detailJson").orEmpty()
             if (providerId.isBlank() || detailKey.isBlank() || detailJson.isBlank()) continue
             dao.upsertMangaDetailCache(
@@ -615,11 +614,12 @@ class LibraryStore(context: Context) {
     private fun serializeMangaDetailCache(items: List<MangaDetailCacheEntity>): String {
         return JSONArray().apply {
             items.forEach { item ->
+                val detailPath = normalizeStoredPath(item.detailPath)
                 put(
                     JSONObject()
                         .put("providerId", item.providerId)
-                        .put("detailKey", item.detailKey)
-                        .put("detailPath", item.detailPath)
+                        .put("detailKey", mangaKey(item.providerId, detailPath))
+                        .put("detailPath", detailPath)
                         .put("detailJson", item.detailJson)
                         .put("chapterCount", item.chapterCount)
                         .put("updatedAt", item.updatedAt)
@@ -636,7 +636,7 @@ class LibraryStore(context: Context) {
     private fun SavedManga.toFavoriteEntity(orderIndex: Long): FavoriteMangaEntity {
         return FavoriteMangaEntity(
             providerId = providerId,
-            detailPath = detailPath,
+            detailPath = normalizeStoredPath(detailPath),
             title = title,
             coverUrl = coverUrl,
             lastChapterTitle = lastChapterTitle,
@@ -650,7 +650,7 @@ class LibraryStore(context: Context) {
     private fun SavedManga.toReadingEntity(orderIndex: Long): ReadingMangaEntity {
         return ReadingMangaEntity(
             providerId = providerId,
-            detailPath = detailPath,
+            detailPath = normalizeStoredPath(detailPath),
             title = title,
             coverUrl = coverUrl,
             lastChapterTitle = lastChapterTitle,
@@ -710,7 +710,7 @@ class LibraryStore(context: Context) {
         fun normalize(items: List<SavedManga>): List<SavedManga> {
             return items.map { item ->
                 val canonical = canonicalByKey[mangaKey(item.providerId, item.detailPath)]
-                item.copy(detailPath = canonical?.detailPath ?: item.detailPath)
+                item.copy(detailPath = normalizeStoredPath(canonical?.detailPath ?: item.detailPath))
             }.distinctBy { it.providerId to it.detailPath }
         }
 
@@ -719,22 +719,18 @@ class LibraryStore(context: Context) {
 
     private fun preferCanonicalDetailPath(left: SavedManga, right: SavedManga): String {
         return if (detailPathScore(right.providerId, right.detailPath) >= detailPathScore(left.providerId, left.detailPath)) {
-            right.detailPath
+            normalizeStoredPath(right.detailPath)
         } else {
-            left.detailPath
+            normalizeStoredPath(left.detailPath)
         }
     }
 
     private fun mangaKey(providerId: String, detailPath: String): String {
-        val normalized = detailPath.substringBefore("?").trim('/')
-        return when (providerId) {
-            "inmanga-es" -> normalized.split("/").take(3).joinToString("/")
-            else -> normalized
-        }
+        return canonicalMangaPathKey(providerId, detailPath)
     }
 
     private fun detailPathScore(providerId: String, detailPath: String): Int {
-        val normalized = detailPath.substringBefore("?").trim('/')
+        val normalized = normalizeStoredPath(detailPath).substringBefore("?").trim('/')
         return when (providerId) {
             "inmanga-es" -> normalized.split("/").size
             else -> normalized.length
@@ -755,48 +751,7 @@ class LibraryStore(context: Context) {
     }
 
     private fun canonicalChapterKey(providerId: String, chapterPath: String): String {
-        val normalized = canonicalizeChapterPath(chapterPath)
-        return when (providerId) {
-            "inmanga-es" -> {
-                val parts = normalized
-                    .split("/")
-                    .filter { it.isNotBlank() }
-                    .map { it.lowercase() }
-                when {
-                    parts.size >= 6 && isUuid(parts[3]) -> listOf(parts[0], parts[1], parts[2], parts[4], parts[5]).joinToString("/")
-                    else -> normalized
-                        .split("/")
-                        .filter { it.isNotBlank() }
-                        .map { it.lowercase() }
-                        .joinToString("/")
-                }
-            }
-            else -> normalized
-        }
-    }
-
-    private fun isUuid(value: String): Boolean {
-        return Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(value)
-    }
-
-    private fun canonicalizeChapterPath(chapterPath: String): String {
-        val normalized = chapterPath
-            .substringBefore("?")
-            .substringBefore("#")
-            .trim('/')
-        if (normalized.isBlank()) return ""
-
-        val parts = normalized.split("/").filter { it.isNotBlank() }.toMutableList()
-        if (parts.size >= 2) {
-            val chapterIndex = parts.lastIndex - 1
-            normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
-        }
-        return parts.joinToString("/")
-    }
-
-    private fun normalizeChapterPathToken(value: String): String? {
-        val parsed = parseChapterInput(value) ?: return null
-        return BigDecimal(parsed.toString()).stripTrailingZeros().toPlainString()
+        return canonicalChapterPathKey(providerId, chapterPath)
     }
 
     private companion object {

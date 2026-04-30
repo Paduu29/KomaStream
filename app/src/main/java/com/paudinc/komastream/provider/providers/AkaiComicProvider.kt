@@ -5,6 +5,7 @@ import android.util.Log
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.AkaiComicWebViewResolver
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -66,11 +67,12 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
     }
 
     override fun fetchMangaDetail(path: String): MangaDetail {
-        val mid = path.removePrefix("/manga/")
+        val normalizedPath = normalizeStoredPath(path)
+        val mid = normalizedPath.removePrefix("/manga/")
         return try {
             val detailJson = webViewResolver.fetchMangaDetail(mid)
             val detail = JSONObject(detailJson).optJSONObject("manga")
-            if (detail == null) return MangaDetail(id, mid, "?", path, "", "", "", "", "", "", emptyList())
+            if (detail == null) return MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", emptyList())
             
             val seriesName = detail.optString("series_name", "")
             val altName = detail.optString("alternative_name", "")
@@ -93,20 +95,21 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
                 val locked = ch.optInt("locked_by_coins", 0)
                 if (locked > 0) return@mapNotNull null
                 val chNum = ch.optString("chapter_number") ?: return@mapNotNull null
-                MangaChapter("$mid/$chNum", "Chapter $chNum", chNum, "/manga/$mid/chapter/$chNum", 0, ch.optString("created_at") ?: "")
+                MangaChapter("$mid/$chNum", "Chapter $chNum", chNum, normalizeStoredPath("/manga/$mid/chapter/$chNum"), 0, ch.optString("created_at") ?: "")
             }.sortedByDescending { it.chapterNumberUrl.toFloatOrNull() }
             
-            MangaDetail(id, title, title, path, cover, banner, desc, "$genres\n$status - $mangaType ($year)", author, artist, chapters)
-        } catch (e: Exception) { MangaDetail(id, mid, "?", path, "", "", "", "", "", "", emptyList()) }
+            MangaDetail(id, title, title, normalizedPath, cover, banner, desc, "$genres\n$status - $mangaType ($year)", author, artist, chapters)
+        } catch (e: Exception) { MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", emptyList()) }
     }
 
     override fun fetchReaderData(path: String): ReaderData {
-        val parts = path.removePrefix("/manga/").split("/chapter/")
+        val normalizedPath = normalizeStoredPath(path)
+        val parts = normalizedPath.removePrefix("/manga/").split("/chapter/")
         if (parts.size != 2) return rd(path)
         val (mid, cn) = parts
         return try {
             val pages = webViewResolver.fetchPages(mid, cn)
-            ReaderData(id, "", "/manga/$mid", "Chapter $cn", path, null, null, pages)
+            ReaderData(id, "", normalizeStoredPath("/manga/$mid"), "Chapter $cn", normalizedPath, null, null, pages)
         } catch (e: Exception) { rd(path) }
     }
 

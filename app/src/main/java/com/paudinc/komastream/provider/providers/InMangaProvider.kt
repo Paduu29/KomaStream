@@ -2,6 +2,7 @@ package com.paudinc.komastream.provider.providers
 
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.JavaNetCookieJar
@@ -596,9 +597,9 @@ class InMangaProvider : MangaProvider {
 
     private fun String.normalizePath(): String {
         return when {
-            startsWith("http://") || startsWith("https://") -> toHttpUrl().encodedPath
-            startsWith("/") -> this
-            else -> "/$this"
+            startsWith("http://") || startsWith("https://") -> normalizeStoredPath(toHttpUrl().encodedPath)
+            startsWith("/") -> normalizeStoredPath(this)
+            else -> normalizeStoredPath("/$this")
         }
     }
 

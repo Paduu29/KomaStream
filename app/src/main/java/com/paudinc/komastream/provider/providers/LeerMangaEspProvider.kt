@@ -16,6 +16,7 @@ import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -458,9 +459,9 @@ class LeerMangaEspProvider : MangaProvider {
         if (path.isBlank()) return ""
         val parsed = path.toHttpUrlOrNull()
         return when {
-            parsed != null -> parsed.encodedPath + parsed.query?.let { "?$it" }.orEmpty()
-            path.startsWith("/") -> path
-            else -> "/$path"
+            parsed != null -> normalizeStoredPath(parsed.encodedPath + parsed.query?.let { "?$it" }.orEmpty())
+            path.startsWith("/") -> normalizeStoredPath(path)
+            else -> normalizeStoredPath("/$path")
         }
     }
 
