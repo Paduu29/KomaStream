@@ -168,6 +168,24 @@ fun KomaStream() {
         savedNavigationStack = viewModel.navigationController.navigationStack
     }
 
+    LaunchedEffect(screen, readerUiState.readerData, readerUiState.selectedDetail) {
+        when (screen) {
+            is Screen.Reader -> {
+                val activeReader = readerUiState.readerData
+                if (activeReader?.providerId != screen.providerId || activeReader.chapterPath != screen.chapterPath) {
+                    viewModel.restoreScreenStateIfNeeded(screen)
+                }
+            }
+            is Screen.Detail -> {
+                val activeDetail = readerUiState.selectedDetail
+                if (activeDetail?.providerId != screen.providerId || activeDetail.detailPath != screen.detailPath) {
+                    viewModel.restoreScreenStateIfNeeded(screen)
+                }
+            }
+            else -> Unit
+        }
+    }
+
     MaterialTheme(
         colorScheme = if (libraryState.useDarkTheme) komaDarkColorScheme() else komaLightColorScheme(),
         typography = komaTypography(),
@@ -497,6 +515,17 @@ fun KomaStream() {
                                         downloadProgress = libraryController.downloadProgress,
                                         isBulkUpdatingChapters = libraryUiState.isBulkUpdatingChapters,
                                         malMangaId = detailSavedManga?.malMangaId,
+                                        showMalIdEditor = screen.isMalIdEditorOpen,
+                                        onOpenMalIdEditor = {
+                                            viewModel.pushScreen(
+                                                Screen.Detail(
+                                                    providerId = detail.providerId,
+                                                    detailPath = detail.detailPath,
+                                                    isMalIdEditorOpen = true,
+                                                )
+                                            )
+                                        },
+                                        onCloseMalIdEditor = { viewModel.goBack() },
                                         onSetMalMangaId = { malMangaId ->
                                             viewModel.setMangaMalId(detail.providerId, detail.detailPath, malMangaId)
                                         },
@@ -542,7 +571,7 @@ fun KomaStream() {
                                         onBack = { viewModel.goBack() },
                                         isChapterLoading = readerUiState.isChapterLoading,
                                     )
-                                } ?: LoadingPlaceholder()
+                                } ?: LoadingPlaceholder(strings.loadingChapter)
                             }
                             is Screen.HomeSection -> HomeSectionScreen(
                                 sectionId = screen.sectionId,
@@ -1043,7 +1072,7 @@ private fun komaTypography(): Typography {
 
 private fun Screen.saveableKey(): String = when (this) {
     is Screen.Root -> "root:${tab.name}"
-    is Screen.Detail -> "detail:$providerId:$detailPath"
+    is Screen.Detail -> "detail:$providerId:$detailPath:$isMalIdEditorOpen"
     is Screen.Reader -> "reader:$providerId:$chapterPath"
     is Screen.HomeSection -> "home-section:$sectionId"
     Screen.ProviderPicker -> "provider-picker"

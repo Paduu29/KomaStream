@@ -18,7 +18,11 @@ enum class LibraryTab(val label: String) {
 
 sealed interface Screen {
     data class Root(val tab: RootTab) : Screen
-    data class Detail(val providerId: String, val detailPath: String) : Screen
+    data class Detail(
+        val providerId: String,
+        val detailPath: String,
+        val isMalIdEditorOpen: Boolean = false,
+    ) : Screen
     data class Reader(val providerId: String, val chapterPath: String) : Screen
     data class HomeSection(val sectionId: String) : Screen
     data object ProviderPicker : Screen
@@ -35,7 +39,7 @@ val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
         stack.map { screen ->
             when (screen) {
                 is Screen.Root -> listOf("root", screen.tab.name)
-                is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath)
+                is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath, screen.isMalIdEditorOpen.toString())
                 is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
                 is Screen.HomeSection -> listOf("home-section", screen.sectionId)
                 Screen.ProviderPicker -> listOf("provider-picker")
@@ -47,7 +51,11 @@ val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
         saved.map { item ->
             when (item.firstOrNull()) {
                 "root" -> Screen.Root(RootTab.valueOf(item.getOrElse(1) { RootTab.Home.name }))
-                "detail" -> Screen.Detail(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
+                "detail" -> Screen.Detail(
+                    providerId = item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id },
+                    detailPath = item.getOrElse(2) { "/" },
+                    isMalIdEditorOpen = item.getOrNull(3)?.toBooleanStrictOrNull() ?: false,
+                )
                 "reader" -> Screen.Reader(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
                 "home-section" -> Screen.HomeSection(item.getOrElse(1) { "latest-updates" })
                 "provider-picker" -> Screen.ProviderPicker

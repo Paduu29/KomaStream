@@ -68,13 +68,14 @@ class LibraryStore(context: Context) {
         ensureInitialized()
         val current = dao.readFavorites()
         val existingFavorite = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+        val existingReading = dao.readReading().firstOrNull { sameStoredManga(it.toSavedManga(), manga) }?.toSavedManga()
         val mergedFavorite = manga.copy(
-            title = manga.title.ifBlank { existingFavorite?.title.orEmpty() },
-            coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl.orEmpty() },
-            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle.orEmpty() },
-            lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath.orEmpty() },
-            malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId,
-            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
+            title = manga.title.ifBlank { existingFavorite?.title ?: existingReading?.title.orEmpty() },
+            coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl ?: existingReading?.coverUrl.orEmpty() },
+            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle ?: existingReading?.lastChapterTitle.orEmpty() },
+            lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath ?: existingReading?.lastChapterPath.orEmpty() },
+            malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId ?: existingReading?.malMangaId,
+            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
         )
         dao.upsertFavorite(
             mergedFavorite.toFavoriteEntity(
@@ -98,6 +99,7 @@ class LibraryStore(context: Context) {
             }
         }
         replaceReadingEntities(reading)
+        synchronizeLinkedProgress(mergedFavorite)
     }
 
     fun removeFavorite(providerId: String, detailPath: String) {
@@ -109,13 +111,14 @@ class LibraryStore(context: Context) {
         ensureInitialized()
         val current = dao.readReading()
         val existingReading = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+        val existingFavorite = dao.readFavorites().firstOrNull { sameStoredManga(it.toSavedManga(), manga) }?.toSavedManga()
         val mergedReading = manga.copy(
-            title = manga.title.ifBlank { existingReading?.title.orEmpty() },
-            coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl.orEmpty() },
-            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle.orEmpty() },
-            lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath.orEmpty() },
-            malMangaId = manga.malMangaId ?: existingReading?.malMangaId,
-            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
+            title = manga.title.ifBlank { existingReading?.title ?: existingFavorite?.title.orEmpty() },
+            coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl ?: existingFavorite?.coverUrl.orEmpty() },
+            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle ?: existingFavorite?.lastChapterTitle.orEmpty() },
+            lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath ?: existingFavorite?.lastChapterPath.orEmpty() },
+            malMangaId = manga.malMangaId ?: existingReading?.malMangaId ?: existingFavorite?.malMangaId,
+            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
         )
         dao.upsertReading(
             mergedReading.toReadingEntity(
@@ -139,6 +142,7 @@ class LibraryStore(context: Context) {
             }
         }
         replaceFavoriteEntities(favorites)
+        synchronizeLinkedProgress(mergedReading)
     }
 
     fun removeReading(providerId: String, detailPath: String) {
@@ -557,6 +561,41 @@ class LibraryStore(context: Context) {
     private fun replaceReadingEntities(items: List<ReadingMangaEntity>) {
         dao.clearReading()
         items.forEach { dao.upsertReading(it) }
+    }
+
+    private fun synchronizeLinkedProgress(source: SavedManga) {
+        val sourceMalId = source.malMangaId ?: return
+        val sourceReadCount = source.lastReadChapterNumber?.takeIf { it > 0 } ?: return
+
+        dao.readFavorites().forEach { entity ->
+            if (entity.malMangaId != sourceMalId) return@forEach
+            val current = entity.toSavedManga()
+            if (sameStoredManga(current, source)) return@forEach
+            val currentReadCount = current.lastReadChapterNumber ?: 0
+            if (currentReadCount >= sourceReadCount) return@forEach
+            dao.upsertFavorite(
+                entity.copy(
+                    lastChapterTitle = source.lastChapterTitle.ifBlank { entity.lastChapterTitle },
+                    lastChapterPath = "",
+                    lastReadChapterNumber = sourceReadCount,
+                )
+            )
+        }
+
+        dao.readReading().forEach { entity ->
+            if (entity.malMangaId != sourceMalId) return@forEach
+            val current = entity.toSavedManga()
+            if (sameStoredManga(current, source)) return@forEach
+            val currentReadCount = current.lastReadChapterNumber ?: 0
+            if (currentReadCount >= sourceReadCount) return@forEach
+            dao.upsertReading(
+                entity.copy(
+                    lastChapterTitle = source.lastChapterTitle.ifBlank { entity.lastChapterTitle },
+                    lastChapterPath = "",
+                    lastReadChapterNumber = sourceReadCount,
+                )
+            )
+        }
     }
 
     private fun replaceReadChapterEntries(qualifiedPaths: List<String>) {

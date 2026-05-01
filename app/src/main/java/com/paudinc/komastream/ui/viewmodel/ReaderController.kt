@@ -12,6 +12,7 @@ import com.paudinc.komastream.data.repository.ReaderActionInteractor
 import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
+import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
@@ -27,6 +28,7 @@ class ReaderController(
     private val scope: CoroutineScope,
     private val providerRegistry: ProviderRegistry,
     private val libraryStore: LibraryStore,
+    private val offlineStore: OfflineChapterStore,
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
 ) {
@@ -42,33 +44,34 @@ class ReaderController(
     ) {
         scope.launch {
             onLoadingChange(true)
-            val cachedDetail = withContext(Dispatchers.IO) {
-                libraryStore.getCachedMangaDetail(providerId, path)
-            }
-            if (cachedDetail != null) {
-                uiState = uiState.copy(selectedDetail = cachedDetail)
-                navigationController.pushScreen(Screen.Detail(providerId, path))
-                onLoadingChange(false)
-                launch {
-                    refreshDetailCache(providerId, path, cachedDetail)
-                }
-                return@launch
-            }
-
-            val provider = providerRegistry.get(providerId)
-            runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
-                .onSuccess { detail ->
-                    withContext(Dispatchers.IO) {
-                        libraryStore.cacheMangaDetail(detail)
-                    }
-                    uiState = uiState.copy(selectedDetail = detail)
+            loadDetail(
+                providerId = providerId,
+                path = path,
+                onSuccess = {
                     navigationController.pushScreen(Screen.Detail(providerId, path))
-                }
-                .onFailure {
-                    Log.e("KomaStream", "Could not fetch manga detail", it)
-                    onError(it.message ?: "Could not open manga")
-                }
-                .also { onLoadingChange(false) }
+                },
+                onError = onError,
+            )
+            onLoadingChange(false)
+        }
+    }
+
+    fun restoreDetail(
+        providerId: String,
+        path: String,
+        onLoadingChange: (Boolean) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        if (uiState.selectedDetail?.let { it.providerId == providerId && it.detailPath == path } == true) return
+        scope.launch {
+            onLoadingChange(true)
+            loadDetail(
+                providerId = providerId,
+                path = path,
+                onSuccess = {},
+                onError = onError,
+            )
+            onLoadingChange(false)
         }
     }
 
@@ -107,54 +110,52 @@ class ReaderController(
         scope.launch {
             uiState = uiState.copy(isChapterLoading = true)
             onLoadingChange(true)
-            val provider = providerRegistry.get(providerId)
-            runCatching { withContext(Dispatchers.IO) { provider.fetchReaderData(path) } }
-                .onSuccess { data ->
-                    val currentManga = readerActionInteractor.resolveCurrentManga(
-                        providerId = providerId,
-                        readerData = data,
-                        reading = libraryState.reading,
-                        favorites = libraryState.favorites,
-                        selectedDetail = uiState.selectedDetail,
-                        homeFeed = homeFeed,
-                    )
-                    val resolvedDetailPath = readerActionInteractor.chooseCanonicalDetailPath(
-                        providerId = providerId,
-                        readerDetailPath = data.mangaDetailPath,
-                        currentDetailPath = currentManga?.detailPath.orEmpty(),
-                    )
-                    val resolvedData = data.copy(mangaDetailPath = resolvedDetailPath)
-                    val initialPageIndex = if (resumeProgress) {
-                        libraryStore.getChapterProgress(providerId, path)
-                    } else {
-                        0
-                    }
-                    uiState = uiState.copy(
-                        readerData = resolvedData,
-                        initialPageIndex = initialPageIndex,
-                        currentPageIndex = initialPageIndex,
-                        isChapterLoading = false,
-                    )
-                    libraryStore.upsertReading(
-                        readerActionInteractor.buildReadingEntry(
-                            providerId = providerId,
-                            readerData = resolvedData,
-                            currentManga = currentManga,
-                        )
-                    )
-                    onLibraryChanged()
+            loadReader(
+                providerId = providerId,
+                path = path,
+                resumeProgress = resumeProgress,
+                libraryState = libraryState,
+                homeFeed = homeFeed,
+                onLibraryChanged = onLibraryChanged,
+                onSuccess = {
                     val next = Screen.Reader(providerId, path)
                     if (replace && navigationController.screen is Screen.Reader) {
                         navigationController.replaceTop(next)
                     } else {
                         navigationController.pushScreen(next)
                     }
-                }
-                .onFailure {
-                    Log.e("KomaStream", "Could not open chapter $providerId:$path", it)
-                    onError(it.message ?: "Could not open chapter")
-                }
-                .also { onLoadingChange(false) }
+                },
+                onError = onError,
+            )
+            onLoadingChange(false)
+        }
+    }
+
+    fun restoreReader(
+        providerId: String,
+        path: String,
+        libraryState: LibraryState,
+        homeFeed: HomeFeed?,
+        onLibraryChanged: () -> Unit,
+        onLoadingChange: (Boolean) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val currentReader = uiState.readerData
+        if (currentReader?.providerId == providerId && currentReader.chapterPath == path) return
+        scope.launch {
+            uiState = uiState.copy(isChapterLoading = true)
+            onLoadingChange(true)
+            loadReader(
+                providerId = providerId,
+                path = path,
+                resumeProgress = true,
+                libraryState = libraryState,
+                homeFeed = homeFeed,
+                onLibraryChanged = onLibraryChanged,
+                onSuccess = {},
+                onError = onError,
+            )
+            onLoadingChange(false)
         }
     }
 
@@ -230,5 +231,97 @@ class ReaderController(
                 lastReadChapterNumber = lastReadChapterNumber,
             )
         )
+    }
+
+    private suspend fun loadDetail(
+        providerId: String,
+        path: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val cachedDetail = withContext(Dispatchers.IO) {
+            libraryStore.getCachedMangaDetail(providerId, path)
+        }
+        if (cachedDetail != null) {
+            uiState = uiState.copy(selectedDetail = cachedDetail)
+            onSuccess()
+            scope.launch {
+                refreshDetailCache(providerId, path, cachedDetail)
+            }
+            return
+        }
+
+        val provider = providerRegistry.get(providerId)
+        runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
+            .onSuccess { detail ->
+                withContext(Dispatchers.IO) {
+                    libraryStore.cacheMangaDetail(detail)
+                }
+                uiState = uiState.copy(selectedDetail = detail)
+                onSuccess()
+            }
+            .onFailure {
+                Log.e("KomaStream", "Could not fetch manga detail", it)
+                onError(it.message ?: "Could not open manga")
+            }
+    }
+
+    private suspend fun loadReader(
+        providerId: String,
+        path: String,
+        resumeProgress: Boolean,
+        libraryState: LibraryState,
+        homeFeed: HomeFeed?,
+        onLibraryChanged: () -> Unit,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val offlineReader = withContext(Dispatchers.IO) {
+            offlineStore.loadChapter(providerId, path)
+        }
+        val readerResult = offlineReader ?: runCatching {
+            val provider = providerRegistry.get(providerId)
+            withContext(Dispatchers.IO) { provider.fetchReaderData(path) }
+        }.getOrElse {
+            uiState = uiState.copy(isChapterLoading = false)
+            Log.e("KomaStream", "Could not open chapter $providerId:$path", it)
+            onError(it.message ?: "Could not open chapter")
+            return
+        }
+
+        val currentManga = readerActionInteractor.resolveCurrentManga(
+            providerId = providerId,
+            readerData = readerResult,
+            reading = libraryState.reading,
+            favorites = libraryState.favorites,
+            selectedDetail = uiState.selectedDetail,
+            homeFeed = homeFeed,
+        )
+        val resolvedDetailPath = readerActionInteractor.chooseCanonicalDetailPath(
+            providerId = providerId,
+            readerDetailPath = readerResult.mangaDetailPath,
+            currentDetailPath = currentManga?.detailPath.orEmpty(),
+        )
+        val resolvedData = readerResult.copy(mangaDetailPath = resolvedDetailPath)
+        val initialPageIndex = if (resumeProgress) {
+            libraryStore.getChapterProgress(providerId, path)
+        } else {
+            0
+        }
+        uiState = uiState.copy(
+            readerData = resolvedData,
+            initialPageIndex = initialPageIndex,
+            currentPageIndex = initialPageIndex,
+            isChapterLoading = false,
+        )
+        libraryStore.upsertReading(
+            readerActionInteractor.buildReadingEntry(
+                providerId = providerId,
+                readerData = resolvedData,
+                currentManga = currentManga,
+            )
+        )
+        onLibraryChanged()
+        onSuccess()
     }
 }

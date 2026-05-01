@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
@@ -47,6 +48,9 @@ fun DetailScreen(
     downloadProgress: Map<String, Int>,
     isBulkUpdatingChapters: Boolean,
     malMangaId: Long?,
+    showMalIdEditor: Boolean,
+    onOpenMalIdEditor: () -> Unit,
+    onCloseMalIdEditor: () -> Unit,
     onSetMalMangaId: (Long?) -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleChapterRead: (String) -> Unit,
@@ -60,7 +64,6 @@ fun DetailScreen(
     var chapterQuery by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var bulkChapterInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf("") }
     var malIdInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(malMangaId?.toString().orEmpty()) }
-    var showMalIdEditor by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     var hasAutoPositionedChapterList by remember(detail.providerId, detail.detailPath, autoJumpToUnread) { mutableStateOf(false) }
     var suppressAutoPositioning by remember(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -75,6 +78,9 @@ fun DetailScreen(
     }
     LaunchedEffect(malMangaId) {
         malIdInput = malMangaId?.toString().orEmpty()
+    }
+    BackHandler(enabled = showMalIdEditor) {
+        onCloseMalIdEditor()
     }
 
     val filteredChapters = remember(detail.chapters, chapterQuery) {
@@ -308,7 +314,7 @@ fun DetailScreen(
                                 label = strings.malId,
                                 onEdit = {
                                     malIdInput = malMangaId?.toString().orEmpty()
-                                    showMalIdEditor = true
+                                    onOpenMalIdEditor()
                                 },
                             )
                         }
@@ -728,7 +734,7 @@ fun DetailScreen(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                         )
-                        IconButton(onClick = { showMalIdEditor = false }) {
+                        IconButton(onClick = onCloseMalIdEditor) {
                             Icon(Icons.Default.Close, contentDescription = strings.cancel)
                         }
                     }
@@ -764,14 +770,14 @@ fun DetailScreen(
                                 keyboardActions = KeyboardActions(onDone = {
                                     val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
                                     onSetMalMangaId(parsed)
-                                    showMalIdEditor = false
+                                    onCloseMalIdEditor()
                                 }),
                             )
                             Button(
                                 onClick = {
                                     val parsed = malIdInput.trim().takeIf { it.isNotBlank() }?.toLongOrNull()
                                     onSetMalMangaId(parsed)
-                                    showMalIdEditor = false
+                                    onCloseMalIdEditor()
                                 },
                                 enabled = malIdInput.trim().toLongOrNull() != malMangaId,
                                 shape = RoundedCornerShape(16.dp),
@@ -785,7 +791,7 @@ fun DetailScreen(
                                 onClick = {
                                     malIdInput = ""
                                     onSetMalMangaId(null)
-                                    showMalIdEditor = false
+                                    onCloseMalIdEditor()
                                 },
                                 enabled = malMangaId != null || malIdInput.isNotBlank(),
                                 shape = RoundedCornerShape(16.dp),

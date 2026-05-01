@@ -461,6 +461,7 @@ fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {
             .takeLast(2)
             .asReversed()
             .firstNotNullOfOrNull(::parseChapterInput)
+        ?: lastReadChapterNumber?.takeIf { it > 0 }?.toDouble()
     return when {
         chapterNumber != null -> strings.chapterNumberPrefix.format(chapterNumber)
         lastChapterTitle.isNotBlank() -> lastChapterTitle

@@ -83,6 +83,7 @@ class KomaViewModel(
         scope = viewModelScope,
         providerRegistry = providerRegistry,
         libraryStore = libraryStore,
+        offlineStore = offlineStore,
         readerActionInteractor = readerActionInteractor,
         strings = strings,
     )
@@ -124,6 +125,27 @@ val currentProvider
     }
 
     fun goBack(): Boolean = navigationController.goBack()
+
+    fun restoreScreenStateIfNeeded(screen: Screen = navigationController.screen) {
+        when (screen) {
+            is Screen.Detail -> readerController.restoreDetail(
+                providerId = screen.providerId,
+                path = screen.detailPath,
+                onLoadingChange = ::updateLoadingState,
+                onError = { showError(it.ifBlank { strings.couldNotOpenManga }) },
+            )
+            is Screen.Reader -> readerController.restoreReader(
+                providerId = screen.providerId,
+                path = screen.chapterPath,
+                libraryState = libraryController.currentState(),
+                homeFeed = homeController.uiState.feed,
+                onLibraryChanged = { libraryController.refreshState() },
+                onLoadingChange = ::updateLoadingState,
+                onError = { showError(it.ifBlank { strings.couldNotOpenChapter }) },
+            )
+            else -> Unit
+        }
+    }
 
     fun checkForUpdates(notifyIfCurrent: Boolean = false, openDialogOnUpdate: Boolean = false) {
         updateController.checkForUpdates(notifyIfCurrent, openDialogOnUpdate)
@@ -336,6 +358,7 @@ val currentProvider
             selectedProviderIdFallback = libraryController.uiState.state.selectedProviderId,
         ) {
             libraryController.refreshState()
+            libraryController.changeLanguage(libraryController.currentState().appLanguage)
             homeController.refreshHome(currentProvider, ::showError)
         }
     }

@@ -215,7 +215,6 @@ class MalSyncController(
             updateMessage("Connect to MyAnimeList first", error = true)
             return
         }
-        val currentProvider = providerRegistry.get(providerId)
         scope.launch {
             var deferFinishToFollowUpSync = false
             beginSync(
@@ -231,41 +230,12 @@ class MalSyncController(
                     advanceSyncProgress()
                     val detailCache = mutableMapOf<String, MangaDetail?>()
                     val mangaIdCache = mutableMapOf<String, Long?>()
-                    val currentProviderState = libraryStore.read(filterBySelectedProvider = false)
-                    val preSyncState = currentProviderState
-                    val preSyncReadChapters = libraryStore.readChaptersForProvider(providerId)
+                    val preSyncState = libraryStore.read(filterBySelectedProvider = false)
                     val remoteEntriesById = remoteEntries.associateBy { it.manga.id }
-                    val state = preSyncState
-                    val entriesByKey = linkedMapOf<String, SyncEntry>()
-
-                    state.reading
-                        .filter { it.providerId == providerId }
-                        .forEach { manga ->
-                            val normalized = manga.copy(
-                                detailPath = manga.detailPath.lowercase().trim()
-                            )
-                            entriesByKey[syncKey(normalized)] = SyncEntry(
-                                manga = normalized,
-                                isReading = true
-                            )
-                        }
-
-                    state.favorites
-                        .filter { it.providerId == providerId }
-                        .forEach { manga ->
-                            val normalized = manga.copy(
-                                detailPath = manga.detailPath.lowercase().trim()
-                            )
-                            val key = syncKey(normalized)
-
-                            val existing = entriesByKey[key]
-                            if (existing == null || !existing.isReading) {
-                                entriesByKey[key] = SyncEntry(
-                                    manga = normalized,
-                                    isReading = false
-                                )
-                            }
-                        }
+                    val entriesByKey = buildAggregatedSyncEntries(
+                        state = preSyncState,
+                        preferredProviderId = providerId,
+                    )
                     addSyncTotal(entriesByKey.size)
                     advanceSyncProgress(stageMessage = "Preparing local library entries")
 
@@ -288,7 +258,6 @@ class MalSyncController(
                             isReading = entry.isReading,
                             remoteEntry = remoteEntriesById[mangaId],
                             detailCache = detailCache,
-                            readChapters = preSyncReadChapters,
                         )
                         advanceSyncProgress()
                     }
@@ -397,7 +366,6 @@ class MalSyncController(
         isReading: Boolean,
         remoteEntry: MalUserMangaEntry?,
         detailCache: MutableMap<String, MangaDetail?>,
-        readChapters: Set<String>,
     ) {
         if (!isReading) {
             val remoteStatus = remoteEntry?.listStatus?.status.orEmpty()
@@ -410,7 +378,11 @@ class MalSyncController(
             coverUrl = manga.coverUrl.ifBlank { detail.coverUrl },
         )
         val localReadCount = if (isReading) {
-            resolveReadCountFromProgress(target, detail, readChapters)
+            resolveReadCountFromProgress(
+                manga = target,
+                detail = detail,
+                readChapters = libraryStore.readChaptersForProvider(target.providerId),
+            )
         } else {
             0
         }
@@ -962,6 +934,62 @@ class MalSyncController(
 
     private fun syncKey(manga: SavedManga): String =
         "${manga.providerId}::${manga.detailPath.lowercase().trim()}"
+
+    private fun aggregateSyncKey(manga: SavedManga): String =
+        manga.malMangaId?.let { "mal:$it" } ?: syncKey(manga)
+
+    private fun buildAggregatedSyncEntries(
+        state: LibraryState,
+        preferredProviderId: String,
+    ): LinkedHashMap<String, SyncEntry> {
+        val grouped = linkedMapOf<String, MutableList<Pair<SavedManga, Boolean>>>()
+        state.reading.forEach { manga ->
+            val normalized = manga.copy(detailPath = manga.detailPath.lowercase().trim())
+            grouped.getOrPut(aggregateSyncKey(normalized)) { mutableListOf() }.add(normalized to true)
+        }
+        state.favorites.forEach { manga ->
+            val normalized = manga.copy(detailPath = manga.detailPath.lowercase().trim())
+            grouped.getOrPut(aggregateSyncKey(normalized)) { mutableListOf() }.add(normalized to false)
+        }
+
+        return linkedMapOf<String, SyncEntry>().apply {
+            grouped.forEach { (key, entries) ->
+                put(key, aggregateSyncEntry(entries, preferredProviderId))
+            }
+        }
+    }
+
+    private fun aggregateSyncEntry(
+        entries: List<Pair<SavedManga, Boolean>>,
+        preferredProviderId: String,
+    ): SyncEntry {
+        val bestProgress = entries
+            .sortedWith(
+                compareByDescending<Pair<SavedManga, Boolean>> { it.first.lastReadChapterNumber ?: 0 }
+                    .thenByDescending { it.second }
+                    .thenByDescending { it.first.lastChapterPath.isNotBlank() }
+                    .thenByDescending { it.first.providerId == preferredProviderId }
+                    .thenBy { it.first.providerId }
+                    .thenBy { it.first.detailPath }
+            )
+            .first()
+        val representative = bestProgress.first
+        val mergedReadCount = entries.maxOfOrNull { it.first.lastReadChapterNumber ?: 0 }?.takeIf { it > 0 }
+        val mergedTitle = entries.firstNotNullOfOrNull { it.first.title.takeIf(String::isNotBlank) }.orEmpty()
+        val mergedCover = entries.firstNotNullOfOrNull { it.first.coverUrl.takeIf(String::isNotBlank) }.orEmpty()
+        val mergedMalId = entries.firstNotNullOfOrNull { it.first.malMangaId }
+        val isReading = entries.any { it.second } || (mergedReadCount ?: 0) > 0
+
+        return SyncEntry(
+            manga = representative.copy(
+                title = representative.title.ifBlank { mergedTitle },
+                coverUrl = representative.coverUrl.ifBlank { mergedCover },
+                malMangaId = mergedMalId,
+                lastReadChapterNumber = mergedReadCount,
+            ),
+            isReading = isReading,
+        )
+    }
 
     private data class SyncEntry(
         val manga: SavedManga,
