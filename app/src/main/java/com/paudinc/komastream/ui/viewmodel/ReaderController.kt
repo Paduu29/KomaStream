@@ -43,16 +43,17 @@ class ReaderController(
         onError: (String) -> Unit,
     ) {
         scope.launch {
-            onLoadingChange(true)
+            uiState = uiState.copy(selectedDetail = null)
+            navigationController.pushScreen(Screen.Detail(providerId, path))
             loadDetail(
                 providerId = providerId,
                 path = path,
-                onSuccess = {
-                    navigationController.pushScreen(Screen.Detail(providerId, path))
+                onSuccess = {},
+                onError = {
+                    navigationController.goBack()
+                    onError(it)
                 },
-                onError = onError,
             )
-            onLoadingChange(false)
         }
     }
 
@@ -64,14 +65,13 @@ class ReaderController(
     ) {
         if (uiState.selectedDetail?.let { it.providerId == providerId && it.detailPath == path } == true) return
         scope.launch {
-            onLoadingChange(true)
+            uiState = uiState.copy(selectedDetail = null)
             loadDetail(
                 providerId = providerId,
                 path = path,
                 onSuccess = {},
                 onError = onError,
             )
-            onLoadingChange(false)
         }
     }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
@@ -624,6 +626,121 @@ fun LoadingPlaceholder(message: String) {
 }
 
 @Composable
+fun DetailLoadingPlaceholder(strings: AppStrings) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.surface,
+                    )
+                )
+            ),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .padding(start = 20.dp, bottom = 24.dp)
+                        .align(Alignment.BottomStart)
+                        .size(width = 116.dp, height = 168.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    border = cardBorder(),
+                ) {}
+            }
+        }
+        item {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+                    border = cardBorder(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        PlaceholderLine(widthFraction = 0.68f, height = 28.dp)
+                        PlaceholderLine(widthFraction = 0.42f)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PlaceholderChip(width = 88.dp)
+                            PlaceholderChip(width = 104.dp)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        repeat(3) {
+                            PlaceholderLine(widthFraction = if (it == 2) 0.74f else 1f)
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                    border = cardBorder(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                PlaceholderLine(widthFraction = 0.44f, height = 22.dp)
+                                PlaceholderLine(widthFraction = 0.28f)
+                            }
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+                        }
+                        repeat(4) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(22.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = cardBorder(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        PlaceholderLine(widthFraction = 0.56f)
+                                        PlaceholderLine(widthFraction = 0.3f)
+                                    }
+                                    Text(
+                                        text = strings.loadingChapter,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun EmptyCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -930,3 +1047,28 @@ fun BackupOperationDialog(
 
 @Composable
 fun cardBorder() = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f))
+
+@Composable
+private fun PlaceholderLine(
+    widthFraction: Float,
+    height: Dp = 16.dp,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth(widthFraction.coerceIn(0.1f, 1f))
+            .height(height),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+    ) {}
+}
+
+@Composable
+private fun PlaceholderChip(width: Dp) {
+    Surface(
+        modifier = Modifier
+            .width(width)
+            .height(28.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+    ) {}
+}

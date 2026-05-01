@@ -244,12 +244,18 @@ class LibraryStore(context: Context) {
             detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> normalizeStoredPath(detail.detailPath)
             else -> normalizeStoredPath(existing.detailPath)
         }
+        val detailJson = mangaDetailCacheCodec.serialize(detail.copy(detailPath = canonicalDetailPath))
+        if (detailJson.length > MAX_CACHED_DETAIL_PAYLOAD_SIZE) {
+            dao.deleteMangaDetailCache(detail.providerId, detailKey)
+            dao.deleteMangaDetailCacheByPath(detail.providerId, canonicalDetailPath)
+            return false
+        }
         dao.upsertMangaDetailCache(
             MangaDetailCacheEntity(
                 providerId = detail.providerId,
                 detailKey = detailKey,
                 detailPath = canonicalDetailPath,
-                detailJson = mangaDetailCacheCodec.serialize(detail.copy(detailPath = canonicalDetailPath)),
+                detailJson = detailJson,
                 chapterCount = detail.chapters.size,
                 updatedAt = System.currentTimeMillis(),
             )
@@ -395,6 +401,7 @@ class LibraryStore(context: Context) {
         if (initialized) return
         synchronized(initLock) {
             if (initialized) return
+            dao.deleteOversizedMangaDetailCaches(MAX_CACHED_DETAIL_PAYLOAD_SIZE)
             val settings = dao.readSettings()
             if (settings == null) {
                 if (legacyPrefs.getAll().isNotEmpty()) {
@@ -483,8 +490,9 @@ class LibraryStore(context: Context) {
             val providerId = item.optString("providerId").orEmpty()
             val detailPath = normalizeStoredPath(item.optString("detailPath"))
             val detailKey = mangaKey(providerId, detailPath)
-            val detailJson = item.optString("detailJson").orEmpty()
+            val detailJson = mangaDetailCacheCodec.normalizeStoragePayload(item.optString("detailJson").orEmpty())
             if (providerId.isBlank() || detailKey.isBlank() || detailJson.isBlank()) continue
+            if (detailJson.length > MAX_CACHED_DETAIL_PAYLOAD_SIZE) continue
             dao.upsertMangaDetailCache(
                 MangaDetailCacheEntity(
                     providerId = providerId,
@@ -821,5 +829,6 @@ class LibraryStore(context: Context) {
 
     private companion object {
         private const val KEY_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
+        private const val MAX_CACHED_DETAIL_PAYLOAD_SIZE = 900_000
     }
 }

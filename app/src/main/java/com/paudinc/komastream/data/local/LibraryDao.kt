@@ -109,11 +109,17 @@ interface LibraryDao {
     @Query("SELECT * FROM manga_detail_cache")
     fun readMangaDetailCaches(): List<MangaDetailCacheEntity>
 
+    @Query("DELETE FROM manga_detail_cache WHERE LENGTH(detail_json) > :maxPayloadSize")
+    fun deleteOversizedMangaDetailCaches(maxPayloadSize: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertMangaDetailCache(entity: MangaDetailCacheEntity)
 
     @Query("DELETE FROM manga_detail_cache WHERE provider_id = :providerId AND detail_key = :detailKey")
     fun deleteMangaDetailCache(providerId: String, detailKey: String)
+
+    @Query("DELETE FROM manga_detail_cache WHERE provider_id = :providerId AND detail_path = :detailPath")
+    fun deleteMangaDetailCacheByPath(providerId: String, detailPath: String)
 
     @Query("DELETE FROM manga_detail_cache")
     fun clearMangaDetailCache()

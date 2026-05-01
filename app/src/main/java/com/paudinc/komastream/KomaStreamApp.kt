@@ -2,12 +2,16 @@ package com.paudinc.komastream
 
 import android.app.Application
 import android.content.Context
-import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.disk.DiskCache
 import com.paudinc.komastream.data.model.AppLanguage
+import com.paudinc.komastream.utils.AppCacheMaintenance
+import java.io.File
 
-class KomaStreamApp : Application() {
+class KomaStreamApp : Application(), ImageLoaderFactory {
 
     override fun attachBaseContext(base: Context) {
 
@@ -28,5 +32,25 @@ class KomaStreamApp : Application() {
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageTag))
 
         super.attachBaseContext(base)
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        AppCacheMaintenance.trimAll(this)
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        return ImageLoader.Builder(this)
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(File(cacheDir, "image_cache"))
+                    .maxSizeBytes(MAX_IMAGE_CACHE_BYTES)
+                    .build()
+            }
+            .build()
+    }
+
+    companion object {
+        private const val MAX_IMAGE_CACHE_BYTES = 64L * 1024L * 1024L
     }
 }

@@ -8,6 +8,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.paudinc.komastream.BuildConfig
+import com.paudinc.komastream.utils.AppCacheMaintenance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -135,6 +136,7 @@ class GitHubReleaseUpdater(
         release: GitHubRelease,
         onProgress: (Int) -> Unit = {},
     ): File = withContext(Dispatchers.IO) {
+        AppCacheMaintenance.trimUpdateCache(context)
         val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
         updateDir.listFiles()?.forEach { existing ->
             if (existing.name != release.asset.name) {
@@ -200,8 +202,8 @@ class GitHubReleaseUpdater(
             file,
         )
 
-        val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-            data = apkUri
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, APK_MIME_TYPE)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             putExtra(Intent.EXTRA_RETURN_RESULT, false)
@@ -301,4 +303,8 @@ class GitHubReleaseUpdater(
             .split(Regex("[^0-9]+"))
             .filter { it.isNotBlank() }
             .mapNotNull { it.toIntOrNull() }
+
+    private companion object {
+        private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+    }
 }

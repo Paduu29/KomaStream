@@ -37,16 +37,16 @@ abstract class LibraryDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .addMigrations(MIGRATION_4_5)
                     .allowMainThreadQueries()
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
             }
         }
 
         private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE favorite_manga ADD COLUMN last_read_chapter_number INTEGER")
-                database.execSQL("ALTER TABLE reading_manga ADD COLUMN last_read_chapter_number INTEGER")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE favorite_manga ADD COLUMN last_read_chapter_number INTEGER")
+                db.execSQL("ALTER TABLE reading_manga ADD COLUMN last_read_chapter_number INTEGER")
             }
         }
         val MIGRATION_3_4 = object : Migration(3, 4) {

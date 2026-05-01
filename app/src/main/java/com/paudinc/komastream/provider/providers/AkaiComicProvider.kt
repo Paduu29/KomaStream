@@ -56,18 +56,26 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
 
     override fun fetchCatalogFilterOptions() = CatalogFilterOptions(emptyList(), emptyList(), emptyList())
 
-    override fun searchCatalog(q: String, cats: List<String>, s: String, st: String, fav: Boolean, skip: Int, take: Int): CatalogSearchResult {
+    override fun searchCatalog(
+        query: String,
+        categoryIds: List<String>,
+        sortBy: String,
+        broadcastStatus: String,
+        onlyFavorites: Boolean,
+        skip: Int,
+        take: Int,
+    ): CatalogSearchResult {
         return try {
             val page = (skip / take) + 1
-            val body = webViewResolver.searchManga(q, page, take)
+            val body = webViewResolver.searchManga(query, page, take)
             val results = webViewResolver.parseMangaListFromJson(body)
             val hasMore = results.size >= take
             CatalogSearchResult(results, hasMore)
         } catch (e: Exception) { CatalogSearchResult(emptyList(), false) }
     }
 
-    override fun fetchMangaDetail(path: String): MangaDetail {
-        val normalizedPath = normalizeStoredPath(path)
+    override fun fetchMangaDetail(detailPath: String): MangaDetail {
+        val normalizedPath = normalizeStoredPath(detailPath)
         val mid = normalizedPath.removePrefix("/manga/")
         return try {
             val detailJson = webViewResolver.fetchMangaDetail(mid)
@@ -102,18 +110,18 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
         } catch (e: Exception) { MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", emptyList()) }
     }
 
-    override fun fetchReaderData(path: String): ReaderData {
-        val normalizedPath = normalizeStoredPath(path)
+    override fun fetchReaderData(chapterPath: String): ReaderData {
+        val normalizedPath = normalizeStoredPath(chapterPath)
         val parts = normalizedPath.removePrefix("/manga/").split("/chapter/")
-        if (parts.size != 2) return rd(path)
+        if (parts.size != 2) return rd(chapterPath)
         val (mid, cn) = parts
         return try {
             val pages = webViewResolver.fetchPages(mid, cn)
             ReaderData(id, "", normalizeStoredPath("/manga/$mid"), "Chapter $cn", normalizedPath, null, null, pages)
-        } catch (e: Exception) { rd(path) }
+        } catch (e: Exception) { rd(chapterPath) }
     }
 
-    override fun downloadBytes(url: String, ref: String?) = webViewResolver.downloadBytes(url, ref)
+    override fun downloadBytes(url: String, referer: String?) = webViewResolver.downloadBytes(url, referer)
     private fun emptyFeed() = HomeFeed(emptyList(), emptyList(), emptyList(), emptyList())
     private fun rd(p: String) = ReaderData(id, "", "", "", p, null, null, emptyList())
 }

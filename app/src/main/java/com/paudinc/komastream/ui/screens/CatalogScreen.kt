@@ -69,7 +69,7 @@ fun CatalogScreen(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    TabRow(
+                    PrimaryTabRow(
                         selectedTabIndex = catalogMode.ordinal,
                         containerColor = androidx.compose.ui.graphics.Color.Transparent,
                     ) {

@@ -44,6 +44,7 @@ import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.ui.components.BackupOperationDialog
+import com.paudinc.komastream.ui.components.DetailLoadingPlaceholder
 import com.paudinc.komastream.ui.components.LoadingPlaceholder
 import com.paudinc.komastream.ui.components.UpdateAvailableDialog
 import com.paudinc.komastream.ui.navigation.LibraryTab
@@ -186,9 +187,12 @@ fun KomaStream() {
         }
     }
 
+    val colorScheme = if (libraryState.useDarkTheme) komaDarkColorScheme() else komaLightColorScheme()
+    val typography = komaTypography()
+
     MaterialTheme(
-        colorScheme = if (libraryState.useDarkTheme) komaDarkColorScheme() else komaLightColorScheme(),
-        typography = komaTypography(),
+        colorScheme = colorScheme,
+        typography = typography,
     ) {
         Surface(color = MaterialTheme.colorScheme.background) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -541,7 +545,7 @@ fun KomaStream() {
                                         onSelectChapterSource = { path -> viewModel.openDetail(detail.providerId, path) },
                                         onSolveCloudflare = null,
                                     )
-                                } ?: LoadingPlaceholder()
+                                } ?: DetailLoadingPlaceholder(strings)
                             }
                             is Screen.Reader -> {
                                 readerUiState.readerData?.let { data ->
@@ -733,22 +737,27 @@ fun KomaStream() {
         }
     }
 
-    if (updateController.isDialogVisible) {
-        UpdateAvailableDialog(
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = typography,
+    ) {
+        if (updateController.isDialogVisible) {
+            UpdateAvailableDialog(
+                strings = strings,
+                updateState = updateController.updateState,
+                onDismiss = { updateController.isDialogVisible = false },
+                onDownloadUpdate = downloadUpdate,
+                onInstallUpdate = installUpdate,
+                onOpenReleasePage = openReleasePage,
+            )
+        }
+
+        BackupOperationDialog(
             strings = strings,
-            updateState = updateController.updateState,
-            onDismiss = { updateController.isDialogVisible = false },
-            onDownloadUpdate = downloadUpdate,
-            onInstallUpdate = installUpdate,
-            onOpenReleasePage = openReleasePage,
+            state = backupOperationState,
+            onConfirm = { viewModel.dismissBackupOperationDialog() },
         )
     }
-
-    BackupOperationDialog(
-        strings = strings,
-        state = backupOperationState,
-        onConfirm = { viewModel.dismissBackupOperationDialog() },
-    )
 
     BackHandler {
         if (isMalSyncBlocking) return@BackHandler

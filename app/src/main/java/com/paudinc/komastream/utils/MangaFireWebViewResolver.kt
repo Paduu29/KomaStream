@@ -40,6 +40,10 @@ class MangaFireWebViewResolver(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cookieManager = CookieManager.getInstance()
 
+    init {
+        AppCacheMaintenance.trimMangaFirePageCache(context)
+    }
+
     fun fetchReaderData(providerId: String, chapterPath: String): ReaderData {
         val normalizedChapterPath = normalizePath(chapterPath)
         val chapterDocument = getDocument(normalizedChapterPath)
@@ -411,12 +415,15 @@ class MangaFireWebViewResolver(
         }
 
     private fun cacheDescrambledPage(chapterPath: String, pageIndex: Int, imageUrl: String, offset: Int): String {
+        AppCacheMaintenance.trimMangaFirePageCache(context)
         val cacheDir = File(context.cacheDir, "mangafire-pages").apply { mkdirs() }
         val fileName = sha1("$chapterPath|$pageIndex|$offset|$imageUrl") + ".jpg"
         val file = File(cacheDir, fileName)
         if (!file.exists()) {
             val scrambledBytes = downloadBytes(imageUrl, referer = chapterPath)
             file.writeBytes(descramble(scrambledBytes, offset))
+        } else {
+            file.setLastModified(System.currentTimeMillis())
         }
         return Uri.fromFile(file).toString()
     }

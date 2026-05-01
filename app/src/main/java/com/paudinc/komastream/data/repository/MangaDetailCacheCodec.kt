@@ -1,14 +1,19 @@
 package com.paudinc.komastream.data.repository
 
+import android.util.Base64
 import com.paudinc.komastream.data.model.ChapterSourceOption
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 class MangaDetailCacheCodec {
     fun serialize(detail: MangaDetail): String {
-        return JSONObject()
+        val rawPayload = JSONObject()
             .put("providerId", detail.providerId)
             .put("identification", detail.identification)
             .put("title", detail.title)
@@ -24,10 +29,11 @@ class MangaDetailCacheCodec {
             .put("chapters", serializeChapters(detail.chapters))
             .put("chapterSources", serializeChapterSources(detail.chapterSources))
             .toString()
+        return normalizeStoragePayload(rawPayload)
     }
 
     fun deserialize(value: String): MangaDetail {
-        val json = JSONObject(value)
+        val json = JSONObject(decodeStoragePayload(value))
         return MangaDetail(
             providerId = json.optString("providerId"),
             identification = json.optString("identification"),
@@ -59,6 +65,12 @@ class MangaDetailCacheCodec {
             left.periodicity == right.periodicity &&
             left.selectedChapterSourceId == right.selectedChapterSourceId &&
             left.needsCloudflareClearance == right.needsCloudflareClearance
+    }
+
+    fun normalizeStoragePayload(value: String): String {
+        if (value.startsWith(GZIP_PREFIX)) return value
+        val compressed = compress(value)
+        return if (compressed.length < value.length) compressed else value
     }
 
     fun chapterSignature(detail: MangaDetail): String {
@@ -149,5 +161,23 @@ class MangaDetailCacheCodec {
                 )
             )
         }
+    }
+
+    private fun decodeStoragePayload(value: String): String {
+        if (!value.startsWith(GZIP_PREFIX)) return value
+        val compressed = Base64.decode(value.removePrefix(GZIP_PREFIX), Base64.NO_WRAP)
+        return GZIPInputStream(ByteArrayInputStream(compressed)).bufferedReader(Charsets.UTF_8).use { it.readText() }
+    }
+
+    private fun compress(value: String): String {
+        val output = ByteArrayOutputStream()
+        GZIPOutputStream(output).bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write(value)
+        }
+        return GZIP_PREFIX + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+    }
+
+    private companion object {
+        private const val GZIP_PREFIX = "gz:"
     }
 }
