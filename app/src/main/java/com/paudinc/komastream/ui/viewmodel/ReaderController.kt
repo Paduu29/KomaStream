@@ -303,6 +303,7 @@ class ReaderController(
             currentDetailPath = currentManga?.detailPath.orEmpty(),
         )
         val resolvedData = readerResult.copy(mangaDetailPath = resolvedDetailPath)
+
         val initialPageIndex = if (resumeProgress) {
             libraryStore.getChapterProgress(providerId, path)
         } else {

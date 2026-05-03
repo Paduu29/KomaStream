@@ -183,12 +183,27 @@ class LeerMangaEspProvider : MangaProvider {
         val navigationLinks = document.select("a[href^=/leer-m/]")
             .map { it.attr("href").trim() }
             .distinct()
-        val previousChapterPath = navigationLinks.firstOrNull {
-            chapterValueFromPath(it) < chapterValueFromPath(normalizedPath)
-        }?.let(::normalizePath)
-        val nextChapterPath = navigationLinks.firstOrNull {
-            chapterValueFromPath(it) > chapterValueFromPath(normalizedPath)
-        }?.let(::normalizePath)
+        val currentValue = chapterValueFromPath(normalizedPath)
+
+        val nextChapterPath = navigationLinks
+            .mapNotNull {
+                val value = chapterValueFromPath(it)
+                if (value >= 0) it to value else null
+            }
+            .filter { it.second > currentValue }
+            .minByOrNull { it.second }
+            ?.first
+            ?.let(::normalizePath)
+
+        val previousChapterPath = navigationLinks
+            .mapNotNull {
+                val value = chapterValueFromPath(it)
+                if (value >= 0) it to value else null
+            }
+            .filter { it.second < currentValue }
+            .maxByOrNull { it.second }
+            ?.first
+            ?.let(::normalizePath)
 
         val pages = document.select("img[alt*=Pagina], img[alt*=P\\u00e1gina], img[alt*=Manga]")
             .mapNotNull { image ->
@@ -466,8 +481,10 @@ class LeerMangaEspProvider : MangaProvider {
     }
 
     private fun chapterValueFromPath(path: String): Double {
+        val clean = path.trimEnd('/')
+        val segment = clean.substringAfterLast('/')
         return Regex("(\\d+(?:\\.\\d+)?)")
-            .find(path.substringBeforeLast('/').substringAfterLast('/'))
+            .find(segment)
             ?.groupValues
             ?.get(1)
             ?.toDoubleOrNull()

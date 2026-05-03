@@ -250,7 +250,6 @@ class InMangaProvider : MangaProvider {
             val pageNumber = option.text()
             val imageUrl = buildPageUrl(scriptText, pageId, pageNumber)
                 ?: "https://manga.megatesting.lat/u/m/manga/$chapterId/$pageNumber.jpg"
-//            android.util.Log.d("InMangaProvider", "page: id=$pageId, number=$pageNumber, url=$imageUrl")
             ReaderPage(
                 id = pageId,
                 numberLabel = pageNumber,
