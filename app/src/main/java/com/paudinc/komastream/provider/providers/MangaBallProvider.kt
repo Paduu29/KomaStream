@@ -17,6 +17,7 @@ import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.data.local.LibraryDatabase
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -213,7 +214,7 @@ class MangaBallProvider(
             add("search_input" to query)
             add("filters[page]" to page.toString())
             add("filters[sort]" to sortBy.ifBlank { "updated_chapters_desc" })
-            add("filters[contentRating]" to "any")
+            add("filters[contentRating]" to if (isAdultContentEnabled()) "any" else "safe")
             add("filters[demographic]" to "any")
             add("filters[publicationStatus]" to broadcastStatus.ifBlank { "any" })
             add("filters[person]" to "any")
@@ -428,9 +429,12 @@ class MangaBallProvider(
     }
 
     private fun isAdultContentEnabled(): Boolean =
-        appContext
-            .getSharedPreferences("manga_library", Context.MODE_PRIVATE)
-            .getBoolean(PREF_MANGABALL_ADULT_CONTENT, false)
+        com.paudinc.komastream.data.local.LibraryDatabase
+            .getInstance(appContext)
+            .libraryDao()
+            .readSettings()
+            ?.mangaBallAdultContentEnabled
+            ?: false
 
     private fun getDocument(path: String, retry: Boolean = true): Document {
         return runCatching {
