@@ -16,6 +16,7 @@ import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.LibraryBackupPayloadCodec
 import com.paudinc.komastream.data.repository.LibraryJsonCodec
 import com.paudinc.komastream.data.repository.MangaDetailCacheCodec
+import com.paudinc.komastream.utils.toProgressChapterNumber
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -74,6 +75,7 @@ class LibraryStore(context: Context) {
             coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl ?: existingReading?.coverUrl.orEmpty() },
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle ?: existingReading?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath ?: existingReading?.lastChapterPath.orEmpty() },
+            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber,
             malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId ?: existingReading?.malMangaId,
             lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
         )
@@ -91,6 +93,7 @@ class LibraryStore(context: Context) {
                     detailPath = preferCanonicalDetailPath(saved.toSavedManga(), mergedFavorite),
                     lastChapterTitle = mergedFavorite.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedFavorite.lastChapterPath.ifBlank { saved.lastChapterPath },
+                    lastProgressChapterNumber = mergedFavorite.lastProgressChapterNumber ?: saved.lastProgressChapterNumber,
                     malMangaId = mergedFavorite.malMangaId ?: saved.malMangaId,
                     lastReadChapterNumber = mergedFavorite.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                 ).toReadingEntity(orderIndex = saved.orderIndex)
@@ -117,6 +120,7 @@ class LibraryStore(context: Context) {
             coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl ?: existingFavorite?.coverUrl.orEmpty() },
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle ?: existingFavorite?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath ?: existingFavorite?.lastChapterPath.orEmpty() },
+            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber,
             malMangaId = manga.malMangaId ?: existingReading?.malMangaId ?: existingFavorite?.malMangaId,
             lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
         )
@@ -134,6 +138,7 @@ class LibraryStore(context: Context) {
                     detailPath = preferCanonicalDetailPath(saved.toSavedManga(), mergedReading),
                     lastChapterTitle = mergedReading.lastChapterTitle.ifBlank { saved.lastChapterTitle },
                     lastChapterPath = mergedReading.lastChapterPath.ifBlank { saved.lastChapterPath },
+                    lastProgressChapterNumber = mergedReading.lastProgressChapterNumber ?: saved.lastProgressChapterNumber,
                     malMangaId = mergedReading.malMangaId ?: saved.malMangaId,
                     lastReadChapterNumber = mergedReading.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                 ).toFavoriteEntity(orderIndex = saved.orderIndex)
@@ -269,6 +274,14 @@ class LibraryStore(context: Context) {
         val cached = dao.readMangaDetailCache(providerId, detailKey)
             ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
         return cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
+    }
+
+    fun getCachedMangaChapterCount(providerId: String, detailPath: String): Int? {
+        ensureInitialized()
+        val detailKey = mangaKey(providerId, detailPath)
+        val cached = dao.readMangaDetailCache(providerId, detailKey)
+            ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
+        return cached?.chapterCount?.takeIf { it > 0 }
     }
 
     fun setChaptersRead(providerId: String, chapterPaths: Collection<String>, read: Boolean) {
@@ -477,6 +490,8 @@ class LibraryStore(context: Context) {
             manga.toReadingEntity(orderIndex = (reading.size - index).toLong())
         }.forEach(dao::upsertReading)
 
+        (favorites + reading).forEach(::synchronizeLinkedProgress)
+
         importQualifiedChapterPaths(importedPayload.readChapters)
         importProgressMap(importedPayload.readProgress)
         importPageCountMap(importedPayload.chapterPageCounts)
@@ -573,19 +588,34 @@ class LibraryStore(context: Context) {
 
     private fun synchronizeLinkedProgress(source: SavedManga) {
         val sourceMalId = source.malMangaId ?: return
-        val sourceReadCount = source.lastReadChapterNumber?.takeIf { it > 0 } ?: return
+        val sourceReadCount = source.lastReadChapterNumber?.takeIf { it > 0 }
+        val sourceProgressChapterNumber = source.lastProgressChapterNumber ?: source.lastChapterTitle.toProgressChapterNumber()
+        if (sourceReadCount == null && sourceProgressChapterNumber == null) return
 
         dao.readFavorites().forEach { entity ->
             if (entity.malMangaId != sourceMalId) return@forEach
             val current = entity.toSavedManga()
             if (sameStoredManga(current, source)) return@forEach
-            val currentReadCount = current.lastReadChapterNumber ?: 0
-            if (currentReadCount >= sourceReadCount) return@forEach
+            val resolvedChapterPath = resolveChapterPathForProgressReference(
+                providerId = entity.providerId,
+                detailPath = entity.detailPath,
+                chapters = getCachedMangaDetail(entity.providerId, entity.detailPath)?.chapters.orEmpty(),
+                progressChapterNumber = sourceProgressChapterNumber,
+                fallbackChapterPath = source.lastChapterPath,
+            ) ?: current.lastChapterPath
+            val shouldUpdate = sourceReadCount != null && (current.lastReadChapterNumber ?: 0) < sourceReadCount ||
+                sourceProgressChapterNumber != null && (
+                    current.lastProgressChapterNumber == null ||
+                        kotlin.math.abs((current.lastProgressChapterNumber ?: 0.0) - sourceProgressChapterNumber) > 0.0001 ||
+                        current.lastChapterPath != resolvedChapterPath
+                )
+            if (!shouldUpdate) return@forEach
             dao.upsertFavorite(
                 entity.copy(
                     lastChapterTitle = source.lastChapterTitle.ifBlank { entity.lastChapterTitle },
-                    lastChapterPath = "",
-                    lastReadChapterNumber = sourceReadCount,
+                    lastChapterPath = resolvedChapterPath,
+                    lastProgressChapterNumber = sourceProgressChapterNumber ?: entity.lastProgressChapterNumber,
+                    lastReadChapterNumber = sourceReadCount ?: entity.lastReadChapterNumber,
                 )
             )
         }
@@ -594,13 +624,26 @@ class LibraryStore(context: Context) {
             if (entity.malMangaId != sourceMalId) return@forEach
             val current = entity.toSavedManga()
             if (sameStoredManga(current, source)) return@forEach
-            val currentReadCount = current.lastReadChapterNumber ?: 0
-            if (currentReadCount >= sourceReadCount) return@forEach
+            val resolvedChapterPath = resolveChapterPathForProgressReference(
+                providerId = entity.providerId,
+                detailPath = entity.detailPath,
+                chapters = getCachedMangaDetail(entity.providerId, entity.detailPath)?.chapters.orEmpty(),
+                progressChapterNumber = sourceProgressChapterNumber,
+                fallbackChapterPath = source.lastChapterPath,
+            ) ?: current.lastChapterPath
+            val shouldUpdate = sourceReadCount != null && (current.lastReadChapterNumber ?: 0) < sourceReadCount ||
+                sourceProgressChapterNumber != null && (
+                    current.lastProgressChapterNumber == null ||
+                        kotlin.math.abs((current.lastProgressChapterNumber ?: 0.0) - sourceProgressChapterNumber) > 0.0001 ||
+                        current.lastChapterPath != resolvedChapterPath
+                )
+            if (!shouldUpdate) return@forEach
             dao.upsertReading(
                 entity.copy(
                     lastChapterTitle = source.lastChapterTitle.ifBlank { entity.lastChapterTitle },
-                    lastChapterPath = "",
-                    lastReadChapterNumber = sourceReadCount,
+                    lastChapterPath = resolvedChapterPath,
+                    lastProgressChapterNumber = sourceProgressChapterNumber ?: entity.lastProgressChapterNumber,
+                    lastReadChapterNumber = sourceReadCount ?: entity.lastReadChapterNumber,
                 )
             )
         }
@@ -714,6 +757,7 @@ class LibraryStore(context: Context) {
             coverUrl = coverUrl,
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
+            lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
             lastReadChapterNumber = lastReadChapterNumber,
             orderIndex = orderIndex,
@@ -728,6 +772,7 @@ class LibraryStore(context: Context) {
             coverUrl = coverUrl,
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
+            lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
             lastReadChapterNumber = lastReadChapterNumber,
             orderIndex = orderIndex,
@@ -742,6 +787,7 @@ class LibraryStore(context: Context) {
             coverUrl = coverUrl,
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = lastChapterPath,
+            lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
             lastReadChapterNumber = lastReadChapterNumber,
         )
@@ -755,6 +801,7 @@ class LibraryStore(context: Context) {
             coverUrl = coverUrl,
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = lastChapterPath,
+            lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
             lastReadChapterNumber = lastReadChapterNumber,
         )

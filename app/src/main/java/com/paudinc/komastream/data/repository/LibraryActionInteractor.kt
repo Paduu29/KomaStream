@@ -14,6 +14,7 @@ class LibraryActionInteractor {
         return manga.copy(
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existing?.lastChapterTitle.orEmpty() },
             lastChapterPath = manga.lastChapterPath.ifBlank { existing?.lastChapterPath.orEmpty() },
+            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existing?.lastProgressChapterNumber,
             lastReadChapterNumber = manga.lastReadChapterNumber ?: existing?.lastReadChapterNumber,
         )
     }

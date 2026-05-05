@@ -4,6 +4,7 @@ import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.SavedManga
+import com.paudinc.komastream.utils.toProgressChapterNumber
 import com.paudinc.komastream.utils.normalizeStoredPath
 import com.paudinc.komastream.utils.sameMangaPath
 
@@ -51,6 +52,8 @@ class ReaderActionInteractor {
             coverUrl = currentManga?.coverUrl ?: "",
             lastChapterTitle = readerData.chapterTitle,
             lastChapterPath = readerData.chapterPath,
+            lastProgressChapterNumber = readerData.chapterTitle.toProgressChapterNumber()
+                ?: readerData.chapterPath.toProgressChapterNumber(),
             lastReadChapterNumber = currentManga?.lastReadChapterNumber,
         )
     }

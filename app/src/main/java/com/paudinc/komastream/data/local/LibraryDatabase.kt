@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppSettingsEntity::class,
         MangaDetailCacheEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -35,7 +35,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     "komastream_library.db",
                 )
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
-                    .addMigrations(MIGRATION_4_5)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
                     .allowMainThreadQueries()
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
@@ -238,6 +238,13 @@ abstract class LibraryDatabase : RoomDatabase() {
         """)
                 db.execSQL("DROP TABLE manga_detail_cache")
                 db.execSQL("ALTER TABLE manga_detail_cache_new RENAME TO manga_detail_cache")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE favorite_manga ADD COLUMN last_progress_chapter_number REAL")
+                db.execSQL("ALTER TABLE reading_manga ADD COLUMN last_progress_chapter_number REAL")
             }
         }
 

@@ -31,6 +31,7 @@ import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.canonicalChapterKey
 import com.paudinc.komastream.utils.canonicalChapterKeys
+import com.paudinc.komastream.utils.sameMangaPath
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import java.io.File
 
@@ -402,6 +403,17 @@ val currentProvider
             ?.chapterPath
             ?.takeIf { it.isNotBlank() }
             ?: currentPath
+        val activeDetail = readerController.uiState.selectedDetail?.takeIf {
+            it.providerId == providerId && sameMangaPath(providerId, it.detailPath, readerController.uiState.readerData?.mangaDetailPath.orEmpty())
+        }
+        if (markCurrentRead && activeDetail != null) {
+            readerController.syncReadingSnapshot(
+                providerId = providerId,
+                detail = activeDetail,
+                chapterPath = activeChapterPath,
+                chapterTitle = readerController.uiState.readerData?.chapterTitle.orEmpty(),
+            )
+        }
         readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
         libraryController.refreshState()
         openReader(providerId, targetPath, replace = true, resumeProgress = false)

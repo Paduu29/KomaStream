@@ -203,6 +203,7 @@ data class SavedManga(
     val coverUrl: String,
     val lastChapterTitle: String = "",
     val lastChapterPath: String = "",
+    val lastProgressChapterNumber: Double? = null,
     val malMangaId: Long? = null,
     val lastReadChapterNumber: Int? = null,
 )

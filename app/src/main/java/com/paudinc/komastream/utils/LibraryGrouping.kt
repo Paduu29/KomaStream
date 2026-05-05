@@ -20,6 +20,7 @@ fun groupLibrarySeries(items: List<SavedManga>): List<LibrarySeriesGroup> {
             key = key,
             entries = entries.sortedWith(
                 compareByDescending<SavedManga> { it.malMangaId != null }
+                    .thenByDescending { it.lastProgressChapterNumber ?: it.lastReadChapterNumber?.toDouble() ?: -1.0 }
                     .thenByDescending { it.lastChapterPath.isNotBlank() }
                     .thenBy { it.providerId }
                     .thenBy { it.detailPath }
@@ -35,10 +36,17 @@ fun preferredLibrarySeriesEntry(
     group: LibrarySeriesGroup,
     preferredProviderId: String,
 ): SavedManga {
-    return group.entries.firstOrNull { it.providerId == preferredProviderId }
-        ?: group.entries.firstOrNull { it.lastChapterPath.isNotBlank() }
-        ?: group.entries.first()
+    return group.entries.maxWithOrNull(
+        compareBy<SavedManga> { it.lastProgressChapterNumber ?: it.lastReadChapterNumber?.toDouble() ?: -1.0 }
+            .thenByDescending { it.lastChapterPath.isNotBlank() }
+            .thenByDescending { it.providerId == preferredProviderId }
+            .thenByDescending { it.malMangaId != null }
+            .thenBy { it.providerId }
+            .thenBy { it.detailPath }
+    ) ?: group.entries.first()
 }
+
+fun librarySeriesSortTitle(group: LibrarySeriesGroup): String = canonicalGroupTitle(group)
 
 private fun librarySeriesKey(manga: SavedManga): String {
     manga.malMangaId?.let { return "mal:$it" }

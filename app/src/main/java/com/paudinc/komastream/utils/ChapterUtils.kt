@@ -92,6 +92,23 @@ fun resolveProgressChapterPath(
     return readEntries.maxByOrNull { it.third }?.first
 }
 
+fun resolveLatestReadChapterPath(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    readChapters: Set<String>,
+): String? {
+    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    return chapters.mapNotNull { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        if (canonicalChapterKey(providerId, path) in canonicalReadKeys) {
+            path to chapterValue(chapter)
+        } else {
+            null
+        }
+    }.maxByOrNull { it.second }?.first
+}
+
 fun resolveReadThroughChapterPaths(
     providerId: String,
     detailPath: String,
@@ -131,6 +148,27 @@ fun chapterValue(chapter: MangaChapter): Double {
     return parseChapterInput(chapter.chapterNumberUrl)
         ?: parseChapterInput(chapter.chapterLabel)
         ?: Double.MAX_VALUE
+}
+
+fun String.toProgressChapterNumber(): Double? = parseChapterInput(this)
+
+fun resolveChapterPathForProgressReference(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    progressChapterNumber: Double?,
+    fallbackChapterPath: String = "",
+): String? {
+    if (fallbackChapterPath.isNotBlank()) {
+        chapters.firstOrNull { chapter ->
+            canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) == canonicalChapterKey(providerId, fallbackChapterPath)
+        }?.let { return buildChapterPath(detailPath, it) }
+    }
+    val targetNumber = progressChapterNumber?.takeIf { it.isFinite() } ?: return null
+    return chapters.firstOrNull { chapter ->
+        val value = chapterValue(chapter)
+        value.isFinite() && kotlin.math.abs(value - targetNumber) < 0.0001
+    }?.let { buildChapterPath(detailPath, it) }
 }
 
 fun normalizeMalChapterNumber(value: Double): Int =

@@ -409,6 +409,21 @@ fun KomaStream() {
                                         providerNameForId = { providerId ->
                                             runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
                                         },
+                                        chapterCountForManga = { providerId, detailPath ->
+                                            libraryStore.getCachedMangaChapterCount(providerId, detailPath)
+                                        },
+                                        resolveChapterPathForManga = { providerId, detailPath, progressNumber, fallbackPath ->
+                                            val cachedDetail = libraryStore.getCachedMangaDetail(providerId, detailPath)
+                                            cachedDetail?.chapters?.let { chapters ->
+                                                com.paudinc.komastream.utils.resolveChapterPathForProgressReference(
+                                                    providerId = providerId,
+                                                    detailPath = detailPath,
+                                                    chapters = chapters,
+                                                    progressChapterNumber = progressNumber,
+                                                    fallbackChapterPath = fallbackPath,
+                                                )
+                                            }
+                                        },
                                         onSelectTab = {
                                             viewModel.replaceRoot(
                                                 if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
@@ -451,14 +466,29 @@ fun KomaStream() {
                                         libraryState = allProvidersLibraryState,
                                         strings = strings,
                                         selectedTab = LibraryTab.Favorites,
-                                        providerNameForId = { providerId ->
-                                            runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
-                                        },
-                                        onSelectTab = {
-                                            viewModel.replaceRoot(
-                                                if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
-                                            )
-                                        },
+                                providerNameForId = { providerId ->
+                                    runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
+                                },
+                                chapterCountForManga = { providerId, detailPath ->
+                                    libraryStore.getCachedMangaChapterCount(providerId, detailPath)
+                                },
+                                resolveChapterPathForManga = { providerId, detailPath, progressNumber, fallbackPath ->
+                                    val cachedDetail = libraryStore.getCachedMangaDetail(providerId, detailPath)
+                                    cachedDetail?.chapters?.let { chapters ->
+                                        com.paudinc.komastream.utils.resolveChapterPathForProgressReference(
+                                            providerId = providerId,
+                                            detailPath = detailPath,
+                                            chapters = chapters,
+                                            progressChapterNumber = progressNumber,
+                                            fallbackChapterPath = fallbackPath,
+                                        )
+                                    }
+                                },
+                                onSelectTab = {
+                                    viewModel.replaceRoot(
+                                        if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
+                                    )
+                                },
                                         onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                         onOpenChapter = { id, path -> viewModel.openReader(id, path) },
                                         onRemoveFromContinueReading = { viewModel.removeReading(it) },

@@ -16,9 +16,8 @@ import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
-import com.paudinc.komastream.utils.resolveMalReadCountFromProgressPointer
-import com.paudinc.komastream.utils.resolveProgressChapterPath
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
+import com.paudinc.komastream.utils.toProgressChapterNumber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -189,32 +188,22 @@ class ReaderController(
                 )
             } ?: listOf(path)
             libraryStore.setChaptersRead(providerId, chaptersToMark, true)
-            detail?.let { syncReadingSnapshot(providerId, it) }
+            detail?.let { syncReadingSnapshot(providerId, it, path, uiState.readerData?.chapterTitle.orEmpty()) }
             onChapterMarkedRead()
         }
     }
 
-    private fun syncReadingSnapshot(
+    fun syncReadingSnapshot(
         providerId: String,
         detail: com.paudinc.komastream.data.model.MangaDetail,
+        chapterPath: String,
+        chapterTitle: String,
     ) {
         val readChapters = libraryStore.readChaptersForProvider(providerId)
-        val progressPath = resolveProgressChapterPath(
-            providerId = providerId,
-            detailPath = detail.detailPath,
-            chapters = detail.chapters,
-            readChapters = readChapters,
-        ) ?: return
         val progressChapter = detail.chapters.firstOrNull { chapter ->
-            buildChapterPath(detail.detailPath, chapter) == progressPath
+            buildChapterPath(detail.detailPath, chapter) == chapterPath
         } ?: return
-        val lastReadChapterNumber = resolveMalReadCountFromProgressPointer(
-            providerId = providerId,
-            detailPath = detail.detailPath,
-            chapters = detail.chapters,
-            progressChapterPath = progressPath,
-            readChapters = readChapters,
-        ) ?: resolveMalReadCountForReadChapters(
+        val lastReadChapterNumber = resolveMalReadCountForReadChapters(
             providerId = providerId,
             detailPath = detail.detailPath,
             chapters = detail.chapters,
@@ -227,7 +216,9 @@ class ReaderController(
                 detailPath = detail.detailPath,
                 coverUrl = detail.coverUrl,
                 lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
-                lastChapterPath = progressPath,
+                lastChapterPath = chapterPath,
+                lastProgressChapterNumber = chapterTitle.toProgressChapterNumber()
+                    ?: progressChapter.chapterNumberUrl.toProgressChapterNumber(),
                 lastReadChapterNumber = lastReadChapterNumber,
             )
         )
