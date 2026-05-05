@@ -15,6 +15,7 @@ class LibraryBackupPayloadCodec {
         mangaDetailCache: String,
     ): String {
         return JSONObject()
+            .put("backupVersion", CURRENT_BACKUP_VERSION)
             .put("favorites", JSONArray(favorites))
             .put("reading", JSONArray(reading))
             .put("readChapters", JSONArray(readChapters))
@@ -32,6 +33,7 @@ class LibraryBackupPayloadCodec {
     ): ImportedLibraryPayload {
         val json = JSONObject(payload)
         return ImportedLibraryPayload(
+            backupVersion = json.optInt("backupVersion", 1),
             favorites = json.optJSONArray("favorites")?.toString() ?: "[]",
             reading = json.optJSONArray("reading")?.toString() ?: "[]",
             readChapters = json.optJSONArray("readChapters")?.toString() ?: "[]",
@@ -45,6 +47,7 @@ class LibraryBackupPayloadCodec {
 }
 
 data class ImportedLibraryPayload(
+    val backupVersion: Int,
     val favorites: String,
     val reading: String,
     val readChapters: String,
@@ -54,3 +57,5 @@ data class ImportedLibraryPayload(
     val settings: String? = null,
     val mangaDetailCache: String = "[]",
 )
+
+private const val CURRENT_BACKUP_VERSION = 2

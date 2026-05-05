@@ -17,6 +17,7 @@ import androidx.work.WorkManager
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaChapter
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.LibraryActionInteractor
 import com.paudinc.komastream.ui.viewmodel.MalSyncController
@@ -286,6 +287,12 @@ class LibraryController(
         malSyncController?.pushReadingEntry(manga)
         refreshState()
         Toast.makeText(context, strings.addedToContinueReading, Toast.LENGTH_SHORT).show()
+    }
+
+    fun setFavoriteStatus(manga: SavedManga, status: FavoriteMangaStatus) {
+        libraryStore.setFavoriteStatus(manga.providerId, manga.detailPath, status)
+        refreshState()
+        Toast.makeText(context, strings.favoritesUpdated, Toast.LENGTH_SHORT).show()
     }
 
     fun changeLanguage(language: AppLanguage) {

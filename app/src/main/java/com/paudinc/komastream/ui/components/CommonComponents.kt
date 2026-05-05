@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.ChapterSummary
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.model.BackupOperationType
@@ -389,44 +391,56 @@ fun FavoriteMangaCard(
     strings: AppStrings,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
+    onSetStatus: (FavoriteMangaStatus) -> Unit,
 ) {
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(cardBorder(), RoundedCornerShape(24.dp))
-            .clickable(onClick = onOpen),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
-        ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
+    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
+
+    Box {
+        ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .border(cardBorder(), RoundedCornerShape(24.dp))
+                .combinedClickable(
+                    onClick = onOpen,
+                    onLongClick = { menuExpanded = true },
+                ),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+            ),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
         ) {
-            AsyncImage(
-                model = manga.coverUrl,
-                contentDescription = manga.title,
+            Row(
                 modifier = Modifier
-                    .size(width = 84.dp, height = 118.dp)
-                    .clip(RoundedCornerShape(16.dp)),
-                contentScale = ContentScale.Crop,
-                placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
-            )
-            Spacer(Modifier.width(14.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncImage(
+                    model = manga.coverUrl,
+                    contentDescription = manga.title,
+                    modifier = Modifier
+                        .size(width = 84.dp, height = 118.dp)
+                        .clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Crop,
+                    placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                    error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
+                )
+                Spacer(Modifier.width(14.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
                         manga.title,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.SemiBold,
+                    )
+                    TagChip(
+                        label = manga.favoriteStatus.label(strings),
+                        containerColor = favoriteStatusContainerColor(manga.favoriteStatus),
+                        labelColor = favoriteStatusLabelColor(manga.favoriteStatus),
                     )
                     val localizedLastChapterTitle = manga.localizedLastChapterTitle(strings)
                     if (localizedLastChapterTitle.isNotBlank()) {
@@ -436,23 +450,72 @@ fun FavoriteMangaCard(
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                FilledTonalIconButton(
+                    onClick = onRemove,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        contentColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = strings.removeFromFavorites,
                     )
                 }
             }
-            FilledTonalIconButton(
-                onClick = onRemove,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    contentColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = strings.removeFromFavorites,
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(strings.openManga) },
+                onClick = {
+                    menuExpanded = false
+                    onOpen()
+                },
+            )
+            FavoriteMangaStatus.entries.forEach { status ->
+                DropdownMenuItem(
+                    text = { Text(status.label(strings)) },
+                    leadingIcon = if (manga.favoriteStatus == status) {
+                        { Icon(Icons.Default.Check, contentDescription = null) }
+                    } else null,
+                    onClick = {
+                        menuExpanded = false
+                        onSetStatus(status)
+                    },
                 )
             }
+            DropdownMenuItem(
+                text = { Text(strings.removeFromFavorites) },
+                onClick = {
+                    menuExpanded = false
+                    onRemove()
+                },
+            )
         }
     }
+}
+
+@Composable
+private fun favoriteStatusContainerColor(status: FavoriteMangaStatus): Color = when (status) {
+    FavoriteMangaStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
+    FavoriteMangaStatus.READING -> MaterialTheme.colorScheme.secondaryContainer
+    FavoriteMangaStatus.PAUSED -> MaterialTheme.colorScheme.tertiaryContainer
+    FavoriteMangaStatus.DROPPED -> MaterialTheme.colorScheme.errorContainer
+}
+
+@Composable
+private fun favoriteStatusLabelColor(status: FavoriteMangaStatus): Color = when (status) {
+    FavoriteMangaStatus.COMPLETED -> MaterialTheme.colorScheme.onPrimaryContainer
+    FavoriteMangaStatus.READING -> MaterialTheme.colorScheme.onSecondaryContainer
+    FavoriteMangaStatus.PAUSED -> MaterialTheme.colorScheme.onTertiaryContainer
+    FavoriteMangaStatus.DROPPED -> MaterialTheme.colorScheme.onErrorContainer
 }
 
 fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {

@@ -432,7 +432,8 @@ fun KomaStream() {
                                         onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                         onOpenChapter = { id, path -> viewModel.openReader(id, path, resumeProgress = true) },
                                         onRemoveFromContinueReading = { viewModel.removeReading(it) },
-                                        onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
+                                        onRemoveFromFavorites = { viewModel.toggleFavorite(it) },
+                                        onSetFavoriteStatus = { manga, status -> viewModel.setFavoriteStatus(manga, status) },
                                     )
                                     RootTab.Catalog -> CatalogScreen(
                                         strings = strings,
@@ -489,11 +490,12 @@ fun KomaStream() {
                                         if (it == LibraryTab.ContinueReading) RootTab.Library else RootTab.Favorites
                                     )
                                 },
-                                        onOpenManga = { id, path -> viewModel.openDetail(id, path) },
-                                        onOpenChapter = { id, path -> viewModel.openReader(id, path) },
-                                        onRemoveFromContinueReading = { viewModel.removeReading(it) },
-                                        onRemoveFromFavorites = { viewModel.toggleFavorite(it) }
-                                    )
+                                onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                onRemoveFromContinueReading = { viewModel.removeReading(it) },
+                                onRemoveFromFavorites = { viewModel.toggleFavorite(it) },
+                                onSetFavoriteStatus = { manga, status -> viewModel.setFavoriteStatus(manga, status) },
+                            )
                                     RootTab.Settings -> SettingsScreen(
                                         strings = strings,
                                         selectedProviderId = libraryState.selectedProviderId,

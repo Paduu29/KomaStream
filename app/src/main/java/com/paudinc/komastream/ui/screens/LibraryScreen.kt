@@ -1,7 +1,7 @@
 package com.paudinc.komastream.ui.screens
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,10 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.ui.components.*
@@ -63,16 +65,26 @@ fun LibraryScreen(
     onOpenChapter: (String, String) -> Unit,
     onRemoveFromContinueReading: (SavedManga) -> Unit,
     onRemoveFromFavorites: (SavedManga) -> Unit,
+    onSetFavoriteStatus: (SavedManga, FavoriteMangaStatus) -> Unit,
 ) {
-    val favoriteSeries = remember(libraryState.favorites) { groupLibrarySeries(libraryState.favorites) }
     val readingSeries = remember(libraryState.reading) { groupLibrarySeries(libraryState.reading) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var favoritesQuery by rememberSaveable { mutableStateOf("") }
     var favoritesSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.TitleAscending.name) }
+    var favoritesStatusFilter by rememberSaveable { mutableStateOf(FavoriteLibraryStatusFilter.All.name) }
     var readingQuery by rememberSaveable { mutableStateOf("") }
     var readingSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.TitleAscending.name) }
+    val selectedFavoriteStatusFilter = FavoriteLibraryStatusFilter.fromName(favoritesStatusFilter)
+    val favoriteFilteredSeries = remember(libraryState.favorites, selectedFavoriteStatusFilter) {
+        groupLibrarySeries(
+            libraryState.favorites.filter {
+                selectedFavoriteStatusFilter == FavoriteLibraryStatusFilter.All ||
+                    it.favoriteStatus == selectedFavoriteStatusFilter.status
+            }
+        )
+    }
     val selectedSeries = when (selectedTab) {
-        LibraryTab.Favorites -> favoriteSeries
+        LibraryTab.Favorites -> favoriteFilteredSeries
         LibraryTab.ContinueReading -> readingSeries
     }
     val selectedQuery = when (selectedTab) {
@@ -101,7 +113,10 @@ fun LibraryScreen(
         LibraryTab.Favorites -> strings.addMangaHint
         LibraryTab.ContinueReading -> strings.readingHint
     }
-    val emptyMessage = if (selectedSeries.isEmpty()) emptyHint else strings.noLibraryResults
+    val emptyMessage = when (selectedTab) {
+        LibraryTab.Favorites -> if (libraryState.favorites.isEmpty()) emptyHint else strings.noLibraryResults
+        LibraryTab.ContinueReading -> if (readingSeries.isEmpty()) emptyHint else strings.noLibraryResults
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -112,6 +127,27 @@ fun LibraryScreen(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (selectedTab == LibraryTab.Favorites) {
+                    ScrollableTabRow(
+                        selectedTabIndex = selectedFavoriteStatusFilter.ordinal,
+                        edgePadding = 0.dp,
+                        divider = {},
+                    ) {
+                        FavoriteLibraryStatusFilter.entries.forEach { filter ->
+                            Tab(
+                                selected = selectedFavoriteStatusFilter == filter,
+                                onClick = { favoritesStatusFilter = filter.name },
+                                text = {
+                                    Text(
+                                        filter.label(strings),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = selectedQuery,
                     onValueChange = { query ->
@@ -162,13 +198,18 @@ fun LibraryScreen(
                             )
                         }
                     }
-                    if (selectedQuery.isNotBlank() || selectedSortOption != LibrarySortOption.TitleAscending) {
+                    if (
+                        selectedQuery.isNotBlank() ||
+                        selectedSortOption != LibrarySortOption.TitleAscending ||
+                        (selectedTab == LibraryTab.Favorites && selectedFavoriteStatusFilter != FavoriteLibraryStatusFilter.All)
+                    ) {
                         TextButton(
                             onClick = {
                                 when (selectedTab) {
                                     LibraryTab.Favorites -> {
                                         favoritesQuery = ""
                                         favoritesSortOption = LibrarySortOption.TitleAscending.name
+                                        favoritesStatusFilter = FavoriteLibraryStatusFilter.All.name
                                     }
                                     LibraryTab.ContinueReading -> {
                                         readingQuery = ""
@@ -214,6 +255,7 @@ fun LibraryScreen(
                         onProviderSelected = { activeProviderId = it },
                         onOpen = { onOpenManga(activeEntry.providerId, activeEntry.detailPath) },
                         onRemove = { onRemoveFromFavorites(activeEntry) },
+                        onSetStatus = { status -> onSetFavoriteStatus(activeEntry, status) },
                     )
                     LibraryTab.ContinueReading -> GroupedContinueReadingCard(
                         manga = activeEntry,
@@ -409,6 +451,7 @@ private fun GroupedFavoriteMangaCard(
     onProviderSelected: (String) -> Unit,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
+    onSetStatus: (FavoriteMangaStatus) -> Unit,
 ) {
     CompactSeriesCardShell(
         manga = manga,
@@ -418,7 +461,13 @@ private fun GroupedFavoriteMangaCard(
         onProviderSelected = onProviderSelected,
         onOpen = onOpen,
         onRemove = onRemove,
+        onSetStatus = onSetStatus,
     ) {
+        TagChip(
+            label = manga.favoriteStatus.label(strings),
+            containerColor = favoriteStatusContainerColor(manga.favoriteStatus),
+            labelColor = favoriteStatusLabelColor(manga.favoriteStatus),
+        )
         val progressText = libraryProgressText(strings, manga, chapterCount)
         if (progressText.isNotBlank()) {
             Text(
@@ -451,13 +500,19 @@ private fun CompactSeriesCardShell(
     onProviderSelected: (String) -> Unit,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
+    onSetStatus: ((FavoriteMangaStatus) -> Unit)? = null,
     body: @Composable () -> Unit,
 ) {
+    var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
+
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .border(cardBorder(), RoundedCornerShape(18.dp))
-            .clickable(onClick = onOpen),
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = { menuExpanded = true },
+            ),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
@@ -520,6 +575,40 @@ private fun CompactSeriesCardShell(
                 Icon(Icons.Default.Delete, contentDescription = strings.removeFromFavorites)
             }
         }
+    }
+
+    DropdownMenu(
+        expanded = menuExpanded,
+        onDismissRequest = { menuExpanded = false },
+    ) {
+        DropdownMenuItem(
+            text = { Text(strings.openManga) },
+            onClick = {
+                menuExpanded = false
+                onOpen()
+            },
+        )
+        if (onSetStatus != null) {
+            FavoriteMangaStatus.entries.forEach { status ->
+                DropdownMenuItem(
+                    text = { Text(status.label(strings)) },
+                    leadingIcon = if (manga.favoriteStatus == status) {
+                        { Icon(Icons.Default.Check, contentDescription = null) }
+                    } else null,
+                    onClick = {
+                        menuExpanded = false
+                        onSetStatus(status)
+                    },
+                )
+            }
+        }
+        DropdownMenuItem(
+            text = { Text(strings.removeFromFavorites) },
+            onClick = {
+                menuExpanded = false
+                onRemove()
+            },
+        )
     }
 }
 
@@ -602,4 +691,44 @@ private fun seriesChapterCount(
     return entries.asSequence()
         .mapNotNull { entry -> chapterCountForManga(entry.providerId, entry.detailPath) }
         .maxOrNull()
+}
+
+private enum class FavoriteLibraryStatusFilter(
+    val status: FavoriteMangaStatus?,
+) {
+    All(null),
+    Completed(FavoriteMangaStatus.COMPLETED),
+    Reading(FavoriteMangaStatus.READING),
+    Paused(FavoriteMangaStatus.PAUSED),
+    Dropped(FavoriteMangaStatus.DROPPED),
+    ;
+
+    fun label(strings: AppStrings): String = when (this) {
+        All -> strings.favoriteStatusAll
+        Completed -> strings.completedStatus
+        Reading -> strings.favoriteStatusReading
+        Paused -> strings.favoriteStatusPaused
+        Dropped -> strings.favoriteStatusDropped
+    }
+
+    companion object {
+        fun fromName(value: String?): FavoriteLibraryStatusFilter =
+            entries.firstOrNull { it.name == value } ?: All
+    }
+}
+
+@Composable
+private fun favoriteStatusContainerColor(status: FavoriteMangaStatus): Color = when (status) {
+    FavoriteMangaStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
+    FavoriteMangaStatus.READING -> MaterialTheme.colorScheme.secondaryContainer
+    FavoriteMangaStatus.PAUSED -> MaterialTheme.colorScheme.tertiaryContainer
+    FavoriteMangaStatus.DROPPED -> MaterialTheme.colorScheme.errorContainer
+}
+
+@Composable
+private fun favoriteStatusLabelColor(status: FavoriteMangaStatus): Color = when (status) {
+    FavoriteMangaStatus.COMPLETED -> MaterialTheme.colorScheme.onPrimaryContainer
+    FavoriteMangaStatus.READING -> MaterialTheme.colorScheme.onSecondaryContainer
+    FavoriteMangaStatus.PAUSED -> MaterialTheme.colorScheme.onTertiaryContainer
+    FavoriteMangaStatus.DROPPED -> MaterialTheme.colorScheme.onErrorContainer
 }

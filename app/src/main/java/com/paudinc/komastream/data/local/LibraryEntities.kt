@@ -2,6 +2,7 @@ package com.paudinc.komastream.data.local
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 
 @Entity(
     tableName = "favorite_manga",
@@ -15,6 +16,8 @@ data class FavoriteMangaEntity(
     val title: String,
     @ColumnInfo(name = "cover_url")
     val coverUrl: String,
+    @ColumnInfo(name = "favorite_status")
+    val favoriteStatus: String = FavoriteMangaStatus.COMPLETED.name,
     @ColumnInfo(name = "last_chapter_title")
     val lastChapterTitle: String = "",
     @ColumnInfo(name = "last_chapter_path")
@@ -112,6 +115,8 @@ data class AppSettingsEntity(
     val hasSeenProviderPicker: Boolean = false,
     @ColumnInfo(name = "legacy_prefs_migrated")
     val legacyPrefsMigrated: Boolean = false,
+    @ColumnInfo(name = "favorite_status_backfill_done")
+    val favoriteStatusBackfillDone: Boolean = false,
 )
 
 @Entity(

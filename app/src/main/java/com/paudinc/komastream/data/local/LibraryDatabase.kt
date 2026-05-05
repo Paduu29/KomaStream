@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppSettingsEntity::class,
         MangaDetailCacheEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -35,7 +35,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     "komastream_library.db",
                 )
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .allowMainThreadQueries()
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
@@ -245,6 +245,23 @@ abstract class LibraryDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE favorite_manga ADD COLUMN last_progress_chapter_number REAL")
                 db.execSQL("ALTER TABLE reading_manga ADD COLUMN last_progress_chapter_number REAL")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE favorite_manga ADD COLUMN favorite_status TEXT NOT NULL DEFAULT 'COMPLETED'")
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN favorite_status_backfill_done INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("""
+                    UPDATE favorite_manga
+                    SET favorite_status = 'READING'
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM reading_manga
+                        WHERE reading_manga.provider_id = favorite_manga.provider_id
+                          AND reading_manga.detail_path = favorite_manga.detail_path
+                    )
+                """.trimIndent())
             }
         }
 

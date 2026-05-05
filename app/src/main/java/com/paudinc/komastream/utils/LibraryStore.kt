@@ -10,6 +10,7 @@ import com.paudinc.komastream.data.local.LibraryDatabase
 import com.paudinc.komastream.data.local.ReadChapterEntity
 import com.paudinc.komastream.data.local.ReadingMangaEntity
 import com.paudinc.komastream.data.model.AppLanguage
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.SavedManga
@@ -70,7 +71,14 @@ class LibraryStore(context: Context) {
         val current = dao.readFavorites()
         val existingFavorite = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
         val existingReading = dao.readReading().firstOrNull { sameStoredManga(it.toSavedManga(), manga) }?.toSavedManga()
+        val resolvedStatus = when {
+            manga.favoriteStatus != FavoriteMangaStatus.COMPLETED -> manga.favoriteStatus
+            existingFavorite != null -> FavoriteMangaStatus.fromStored(existingFavorite.favoriteStatus)
+            existingReading != null -> existingReading.favoriteStatus
+            else -> manga.favoriteStatus
+        }
         val mergedFavorite = manga.copy(
+            favoriteStatus = resolvedStatus,
             title = manga.title.ifBlank { existingFavorite?.title ?: existingReading?.title.orEmpty() },
             coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl ?: existingReading?.coverUrl.orEmpty() },
             lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle ?: existingReading?.lastChapterTitle.orEmpty() },
@@ -148,6 +156,15 @@ class LibraryStore(context: Context) {
         }
         replaceFavoriteEntities(favorites)
         synchronizeLinkedProgress(mergedReading)
+    }
+
+    fun setFavoriteStatus(providerId: String, detailPath: String, status: FavoriteMangaStatus) {
+        ensureInitialized()
+        dao.readFavorites().forEach { entity ->
+            if (sameStoredManga(entity.toSavedManga(), SavedManga(providerId, "", detailPath, "")) && entity.favoriteStatus != status.name) {
+                dao.upsertFavorite(entity.copy(favoriteStatus = status.name))
+            }
+        }
     }
 
     fun removeReading(providerId: String, detailPath: String) {
@@ -429,6 +446,7 @@ class LibraryStore(context: Context) {
                     dao.upsertSettings(settings.copy(legacyPrefsMigrated = true))
                 }
             }
+            runFavoriteStatusBackfillIfNeeded()
             initialized = true
         }
     }
@@ -476,11 +494,14 @@ class LibraryStore(context: Context) {
         val parsedFavorites = jsonCodec.parseSavedMangaList(
             value = importedPayload.favorites,
             fallbackProviderId = defaultProviderId,
+            missingFavoriteStatus = FavoriteMangaStatus.READING,
         )
         val parsedReading = jsonCodec.parseSavedMangaList(
             value = importedPayload.reading,
             fallbackProviderId = defaultProviderId,
+            missingFavoriteStatus = FavoriteMangaStatus.READING,
         )
+        val legacyBackup = importedPayload.backupVersion < 2
         val (favorites, reading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
 
         favorites.mapIndexed { index, manga ->
@@ -496,6 +517,7 @@ class LibraryStore(context: Context) {
         importProgressMap(importedPayload.readProgress)
         importPageCountMap(importedPayload.chapterPageCounts)
         importMangaDetailCache(importedPayload.mangaDetailCache)
+        reconcileImportedFavoriteStatuses(legacyBackup)
     }
 
     private fun importMangaDetailCache(serializedValue: String) {
@@ -518,6 +540,40 @@ class LibraryStore(context: Context) {
                     updatedAt = item.optLong("updatedAt", System.currentTimeMillis()),
                 )
             )
+        }
+    }
+
+    private fun reconcileImportedFavoriteStatuses(legacyBackup: Boolean) {
+        dao.readFavorites().forEach { entity ->
+            val currentStatus = FavoriteMangaStatus.fromStored(entity.favoriteStatus)
+            val readingMatch = if (legacyBackup) {
+                dao.readReading().firstOrNull { sameStoredManga(it.toSavedManga(), entity.toSavedManga()) }
+            } else {
+                null
+            }
+            val detail = dao.readMangaDetailCache(entity.providerId, mangaKey(entity.providerId, entity.detailPath))
+                ?: dao.readMangaDetailCacheByPath(entity.providerId, normalizeStoredPath(entity.detailPath))
+                ?: return@forEach
+            val cachedDetail = detail.detailJson.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() } ?: return@forEach
+            val totalChapterCount = cachedDetail.chapters.size
+            if (totalChapterCount <= 0) return@forEach
+            val readCount = entity.lastReadChapterNumber?.takeIf { it > 0 }
+                ?: resolveMalReadCountForReadChapters(
+                    providerId = entity.providerId,
+                    detailPath = entity.detailPath,
+                    chapters = cachedDetail.chapters,
+                    readChapters = dao.readChaptersForProvider(entity.providerId).map { it.chapterPath }.toSet(),
+                )
+            val inferredStatus = when {
+                readCount >= totalChapterCount -> FavoriteMangaStatus.COMPLETED
+                legacyBackup -> FavoriteMangaStatus.READING
+                readingMatch != null -> FavoriteMangaStatus.READING
+                readCount > 0 || entity.lastProgressChapterNumber != null || entity.lastChapterPath.isNotBlank() -> FavoriteMangaStatus.READING
+                else -> currentStatus
+            }
+            if (inferredStatus != currentStatus) {
+                dao.upsertFavorite(entity.copy(favoriteStatus = inferredStatus.name))
+            }
         }
     }
 
@@ -681,6 +737,7 @@ class LibraryStore(context: Context) {
         appLanguage: String = AppLanguage.EN.name,
         hasSeenProviderPicker: Boolean = false,
         legacyPrefsMigrated: Boolean = false,
+        favoriteStatusBackfillDone: Boolean = false,
     ): AppSettingsEntity {
         return AppSettingsEntity(
             id = 0,
@@ -691,7 +748,15 @@ class LibraryStore(context: Context) {
             appLanguage = appLanguage,
             hasSeenProviderPicker = hasSeenProviderPicker,
             legacyPrefsMigrated = legacyPrefsMigrated,
+            favoriteStatusBackfillDone = favoriteStatusBackfillDone,
         )
+    }
+
+    private fun runFavoriteStatusBackfillIfNeeded() {
+        val settings = dao.readSettings() ?: return
+        if (settings.favoriteStatusBackfillDone) return
+        reconcileImportedFavoriteStatuses(legacyBackup = true)
+        dao.upsertSettings(settings.copy(favoriteStatusBackfillDone = true))
     }
 
     private fun serializeQualifiedChapterPaths(items: List<String>): String {
@@ -755,6 +820,7 @@ class LibraryStore(context: Context) {
             detailPath = normalizeStoredPath(detailPath),
             title = title,
             coverUrl = coverUrl,
+            favoriteStatus = favoriteStatus.name,
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
             lastProgressChapterNumber = lastProgressChapterNumber,
@@ -785,6 +851,7 @@ class LibraryStore(context: Context) {
             title = title,
             detailPath = detailPath,
             coverUrl = coverUrl,
+            favoriteStatus = FavoriteMangaStatus.fromStored(favoriteStatus),
             lastChapterTitle = lastChapterTitle,
             lastChapterPath = lastChapterPath,
             lastProgressChapterNumber = lastProgressChapterNumber,

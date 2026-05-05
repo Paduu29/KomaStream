@@ -1,6 +1,7 @@
 package com.paudinc.komastream.data.repository
 
 import com.paudinc.komastream.data.model.SavedManga
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
@@ -10,6 +11,14 @@ class LibraryJsonCodec(
     private val defaultProviderId: String,
 ) {
     fun parseSavedMangaList(value: String, fallbackProviderId: String = defaultProviderId): List<SavedManga> {
+        return parseSavedMangaList(value, fallbackProviderId, missingFavoriteStatus = FavoriteMangaStatus.READING)
+    }
+
+    fun parseSavedMangaList(
+        value: String,
+        fallbackProviderId: String = defaultProviderId,
+        missingFavoriteStatus: FavoriteMangaStatus,
+    ): List<SavedManga> {
         val json = JSONArray(value)
         val items = buildList(json.length()) {
             for (index in 0 until json.length()) {
@@ -35,12 +44,18 @@ class LibraryJsonCodec(
                     .ifBlank { item.optString("imageUrl") }
                     .ifBlank { item.optString("thumbnailUrl") }
                 if (detailPath.isBlank() || title.isBlank()) continue
+                val favoriteStatus = if (item.has("favoriteStatus")) {
+                    FavoriteMangaStatus.fromStored(item.optString("favoriteStatus"))
+                } else {
+                    missingFavoriteStatus
+                }
                 add(
                     SavedManga(
                         providerId = providerId,
                         title = title,
                         detailPath = detailPath,
                         coverUrl = coverUrl,
+                        favoriteStatus = favoriteStatus,
                         lastChapterTitle = item.optString("lastChapterTitle"),
                         lastChapterPath = rawLastChapterPath.ifBlank { rawChapterPath },
                         lastProgressChapterNumber = item.optDoubleOrNull("lastProgressChapterNumber"),
@@ -62,6 +77,7 @@ class LibraryJsonCodec(
                     .put("title", item.title)
                     .put("detailPath", item.detailPath)
                     .put("coverUrl", item.coverUrl)
+                    .put("favoriteStatus", item.favoriteStatus.name)
                     .put("lastChapterTitle", item.lastChapterTitle)
                     .put("lastChapterPath", item.lastChapterPath)
                     .put("lastProgressChapterNumber", item.lastProgressChapterNumber ?: JSONObject.NULL)

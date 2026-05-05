@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import com.paudinc.komastream.data.model.AppLanguage
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.SavedManga
@@ -292,6 +293,10 @@ val currentProvider
 
     fun addToReading(manga: SavedManga) {
         libraryController.addToReading(manga)
+    }
+
+    fun setFavoriteStatus(manga: SavedManga, status: FavoriteMangaStatus) {
+        libraryController.setFavoriteStatus(manga, status)
     }
 
     fun beginMalConnect(): String =

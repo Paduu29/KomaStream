@@ -1,6 +1,7 @@
 package com.paudinc.komastream.data.model
 
 import java.util.Locale
+import com.paudinc.komastream.utils.AppStrings
 
 enum class AppLanguage {
     EN,
@@ -201,12 +202,33 @@ data class SavedManga(
     val title: String,
     val detailPath: String,
     val coverUrl: String,
+    val favoriteStatus: FavoriteMangaStatus = FavoriteMangaStatus.COMPLETED,
     val lastChapterTitle: String = "",
     val lastChapterPath: String = "",
     val lastProgressChapterNumber: Double? = null,
     val malMangaId: Long? = null,
     val lastReadChapterNumber: Int? = null,
 )
+
+enum class FavoriteMangaStatus {
+    COMPLETED,
+    READING,
+    PAUSED,
+    DROPPED,
+    ;
+
+    fun label(strings: AppStrings): String = when (this) {
+        COMPLETED -> strings.completedStatus
+        READING -> strings.favoriteStatusReading
+        PAUSED -> strings.favoriteStatusPaused
+        DROPPED -> strings.favoriteStatusDropped
+    }
+
+    companion object {
+        fun fromStored(value: String?): FavoriteMangaStatus =
+            entries.firstOrNull { it.name == value?.trim()?.uppercase(Locale.ROOT) } ?: COMPLETED
+    }
+}
 
 data class LibraryState(
     val favorites: List<SavedManga>,

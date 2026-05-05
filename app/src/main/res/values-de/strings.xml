@@ -33,6 +33,10 @@
     <string name="season_picks">Saison-Highlights</string>
     <string name="favorites">Favoriten</string>
     <string name="continue_reading">Weiterlesen</string>
+    <string name="favorite_status_all">Alle</string>
+    <string name="favorite_status_reading">Lesen</string>
+    <string name="favorite_status_paused">Pausiert</string>
+    <string name="favorite_status_dropped">Abgebrochen</string>
     <string name="search_available_mangas">Verfügbare Mangas suchen</string>
     <string name="search_library">Bibliothekstitel suchen</string>
     <string name="search">Suchen</string>

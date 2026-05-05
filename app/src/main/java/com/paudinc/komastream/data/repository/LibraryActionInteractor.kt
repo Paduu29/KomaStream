@@ -2,6 +2,7 @@ package com.paudinc.komastream.data.repository
 
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.SavedManga
+import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.utils.sameMangaPath
 
 class LibraryActionInteractor {
@@ -9,13 +10,15 @@ class LibraryActionInteractor {
         libraryState: LibraryState,
         manga: SavedManga,
     ): SavedManga {
-        val existing = libraryState.reading.find { it.providerId == manga.providerId && sameMangaPath(manga.providerId, it.detailPath, manga.detailPath) }
-            ?: libraryState.favorites.find { it.providerId == manga.providerId && sameMangaPath(manga.providerId, it.detailPath, manga.detailPath) }
+        val existingFavorite = libraryState.favorites.find { it.providerId == manga.providerId && sameMangaPath(manga.providerId, it.detailPath, manga.detailPath) }
+        val existingReading = libraryState.reading.find { it.providerId == manga.providerId && sameMangaPath(manga.providerId, it.detailPath, manga.detailPath) }
         return manga.copy(
-            lastChapterTitle = manga.lastChapterTitle.ifBlank { existing?.lastChapterTitle.orEmpty() },
-            lastChapterPath = manga.lastChapterPath.ifBlank { existing?.lastChapterPath.orEmpty() },
-            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existing?.lastProgressChapterNumber,
-            lastReadChapterNumber = manga.lastReadChapterNumber ?: existing?.lastReadChapterNumber,
+            favoriteStatus = existingFavorite?.favoriteStatus
+                ?: if (existingReading != null) FavoriteMangaStatus.READING else FavoriteMangaStatus.COMPLETED,
+            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle ?: existingReading?.lastChapterTitle.orEmpty() },
+            lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath ?: existingReading?.lastChapterPath.orEmpty() },
+            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber,
+            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
         )
     }
 }
