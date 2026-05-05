@@ -44,7 +44,7 @@ KomaStream is an Android app for browsing catalogs, tracking progress, and readi
 - Browse provider catalogs with search and filtering
 - Track favorites, library entries, history, and chapter progress locally
 - Backup export and import for local data
-- English and Spanish localization
+- English, Spanish and German localization
 - In-app updater for GitHub release builds
 - No account system and no project-operated backend
 
