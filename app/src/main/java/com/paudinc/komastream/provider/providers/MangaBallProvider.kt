@@ -267,19 +267,12 @@ class MangaBallProvider(
             .orEmpty()
         val allChapters = fetchChapterListing(titleId, detailRequest.basePath)
         val chapterSources = buildLanguageOptions(detailRequest.basePath, allChapters)
-        val selectedLanguageId = chapterSources
-            .firstOrNull { it.id == detailRequest.selectedLanguageId }
-            ?.id
-            ?: LANGUAGE_ALL
-        val chapters = parseChapters(
-            chapters = allChapters,
-            selectedLanguageId = selectedLanguageId,
-        )
+        val chapters = parseChapters(allChapters)
         return MangaDetail(
             providerId = id,
             identification = titleId.ifBlank { detailRequest.basePath.substringAfterLast('-').trimEnd('/') },
             title = title,
-            detailPath = withLanguageFilter(detailRequest.basePath, selectedLanguageId),
+            detailPath = detailRequest.basePath,
             coverUrl = coverUrl,
             bannerUrl = coverUrl,
             description = description,
@@ -288,7 +281,7 @@ class MangaBallProvider(
             periodicity = "",
             chapters = chapters,
             chapterSources = chapterSources,
-            selectedChapterSourceId = selectedLanguageId,
+            selectedChapterSourceId = LANGUAGE_ALL,
         )
     }
 
@@ -627,7 +620,6 @@ class MangaBallProvider(
 
     private fun parseChapters(
         chapters: JSONArray,
-        selectedLanguageId: String,
     ): List<MangaChapter> = buildList {
         for (index in 0 until chapters.length()) {
             val chapter = chapters.optJSONObject(index) ?: continue
@@ -637,16 +629,16 @@ class MangaBallProvider(
             val visibleTranslations = buildList {
                 for (translationIndex in 0 until translations.length()) {
                     val translation = translations.optJSONObject(translationIndex) ?: continue
-                    val languageCode = translation.optString("language").trim().lowercase()
-                    if (selectedLanguageId == LANGUAGE_ALL || languageCode == selectedLanguageId) {
-                        add(translation)
-                    }
+                    add(translation)
                 }
             }.sortedByDescending { it.optString("date") }
             visibleTranslations.forEach { translation ->
                 val path = normalizePath(translation.optString("url"))
                 val group = translation.optJSONObject("group")?.optString("name").orEmpty()
-                val languageCode = translation.optString("language").trim().lowercase()
+                val languageCode = canonicalLanguageId(
+                    code = translation.optString("language"),
+                    label = translation.optString("languageName"),
+                )
                 val languageLabel = languageDisplayLabel(
                     code = languageCode,
                     label = translation.optString("languageName").trim(),
@@ -681,7 +673,10 @@ class MangaBallProvider(
             val translations = chapter.optJSONArray("translations") ?: continue
             for (translationIndex in 0 until translations.length()) {
                 val translation = translations.optJSONObject(translationIndex) ?: continue
-                val languageCode = translation.optString("language").trim().lowercase()
+                val languageCode = canonicalLanguageId(
+                    code = translation.optString("language"),
+                    label = translation.optString("languageName"),
+                )
                 if (languageCode.isBlank()) continue
                 languages.putIfAbsent(
                     languageCode,
@@ -694,12 +689,12 @@ class MangaBallProvider(
         }
         if (languages.isEmpty()) return emptyList()
         return buildList {
-            add(ChapterSourceOption(LANGUAGE_ALL, "All languages", withLanguageFilter(detailPath, LANGUAGE_ALL)))
+            add(ChapterSourceOption(LANGUAGE_ALL, "All languages", detailPath))
             languages
                 .toList()
                 .sortedBy { (_, label) -> label.lowercase() }
                 .forEach { (languageCode, label) ->
-                    add(ChapterSourceOption(languageCode, label, withLanguageFilter(detailPath, languageCode)))
+                    add(ChapterSourceOption(languageCode, label, detailPath))
                 }
         }
     }
@@ -718,7 +713,7 @@ class MangaBallProvider(
                 val key = part.substringBefore("=")
                 val value = part.substringAfter("=", "")
                 if (key == DETAIL_LANGUAGE_QUERY && value.isNotBlank()) {
-                    selectedLanguageId = value.lowercase()
+                    selectedLanguageId = canonicalLanguageId(value)
                 } else {
                     remainingQueryParts += part
                 }
@@ -731,17 +726,24 @@ class MangaBallProvider(
         return DetailRequest(basePath, selectedLanguageId)
     }
 
-    private fun withLanguageFilter(detailPath: String, languageId: String): String {
-        val basePath = parseDetailRequest(detailPath).basePath
-        if (languageId == LANGUAGE_ALL) return basePath
-        val separator = if ("?" in basePath) "&" else "?"
-        return "$basePath${separator}$DETAIL_LANGUAGE_QUERY=$languageId"
-    }
-
     private fun languageDisplayLabel(code: String, label: String): String {
         if (label.isNotBlank()) return label
         if (code.isBlank()) return ""
         return if (code.length <= 3) code.uppercase() else code.replaceFirstChar { it.uppercase() }
+    }
+
+    private fun canonicalLanguageId(code: String, label: String = ""): String {
+        val normalizedCode = code.trim().lowercase()
+        val normalizedLabel = label.trim().lowercase()
+        return when {
+            normalizedCode.isBlank() -> ""
+            normalizedCode in setOf("en", "eng", "english") || normalizedLabel in setOf("en", "eng", "english") -> "en"
+            normalizedCode in setOf("es", "spa", "spanish", "espanol", "español") ||
+                normalizedLabel in setOf("es", "spa", "spanish", "espanol", "español") -> "es"
+            normalizedCode in setOf("de", "ger", "german", "deutsch") ||
+                normalizedLabel in setOf("de", "ger", "german", "deutsch") -> "de"
+            else -> normalizedCode
+        }
     }
 
     private fun formatChapterNumber(value: Double): String {

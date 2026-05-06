@@ -133,6 +133,8 @@ val currentProvider
             is Screen.Detail -> readerController.restoreDetail(
                 providerId = screen.providerId,
                 path = screen.detailPath,
+                navigationController = navigationController,
+                screen = screen,
                 onLoadingChange = ::updateLoadingState,
                 onError = { showError(it.ifBlank { strings.couldNotOpenManga }) },
             )
@@ -201,6 +203,10 @@ val currentProvider
             onLoadingChange = ::updateLoadingState,
             onError = { showError(it.ifBlank { strings.couldNotOpenChapter }) },
         )
+    }
+
+    fun selectChapterSource(providerId: String, detailPath: String, sourceId: String) {
+        readerController.selectChapterSource(providerId, detailPath, sourceId)
     }
 
     fun downloadChapter(providerId: String, path: String) {
@@ -352,6 +358,10 @@ val currentProvider
             homeController.refreshHome(currentProvider, ::showError)
             catalogController.refreshFilterOptions(currentProvider)
         }
+    }
+
+    fun changePreferredChapterLanguage(language: AppLanguage) {
+        libraryController.changePreferredChapterLanguage(language)
     }
 
     fun exportBackup(uri: Uri) {

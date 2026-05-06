@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,11 +17,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
@@ -31,6 +36,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +58,7 @@ import com.paudinc.komastream.utils.groupLibrarySeries
 import com.paudinc.komastream.utils.librarySeriesSortTitle
 import com.paudinc.komastream.utils.preferredLibrarySeriesEntry
 import kotlin.math.ceil
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -68,18 +77,31 @@ fun LibraryScreen(
     onSetFavoriteStatus: (SavedManga, FavoriteMangaStatus) -> Unit,
 ) {
     val readingSeries = remember(libraryState.reading) { groupLibrarySeries(libraryState.reading) }
+    val favoriteTabs = remember {
+        listOf(
+            FavoriteLibraryTabSpec("all", FavoriteLibraryStatusFilter.All),
+            FavoriteLibraryTabSpec("completed", FavoriteLibraryStatusFilter.Completed),
+            FavoriteLibraryTabSpec("reading", FavoriteLibraryStatusFilter.Reading),
+            FavoriteLibraryTabSpec("paused", FavoriteLibraryStatusFilter.Paused),
+            FavoriteLibraryTabSpec("dropped", FavoriteLibraryStatusFilter.Dropped),
+        )
+    }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var favoritesQuery by rememberSaveable { mutableStateOf("") }
     var favoritesSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.TitleAscending.name) }
-    var favoritesStatusFilter by rememberSaveable { mutableStateOf(FavoriteLibraryStatusFilter.All.name) }
     var readingQuery by rememberSaveable { mutableStateOf("") }
     var readingSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.TitleAscending.name) }
-    val selectedFavoriteStatusFilter = FavoriteLibraryStatusFilter.fromName(favoritesStatusFilter)
-    val favoriteFilteredSeries = remember(libraryState.favorites, selectedFavoriteStatusFilter) {
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { favoriteTabs.size },
+    )
+    val coroutineScope = rememberCoroutineScope()
+    val currentFavoriteTab = favoriteTabs.getOrNull(pagerState.currentPage) ?: favoriteTabs.first()
+    val favoriteFilteredSeries = remember(libraryState.favorites, currentFavoriteTab) {
         groupLibrarySeries(
             libraryState.favorites.filter {
-                selectedFavoriteStatusFilter == FavoriteLibraryStatusFilter.All ||
-                    it.favoriteStatus == selectedFavoriteStatusFilter.status
+                currentFavoriteTab.filter.status == null ||
+                    it.favoriteStatus == currentFavoriteTab.filter.status
             }
         )
     }
@@ -97,10 +119,27 @@ fun LibraryScreen(
             LibraryTab.ContinueReading -> readingSortOption
         }
     )
+    val preferredProviderId = libraryState.selectedProviderId
+    val currentFavoriteSeries = remember(
+        libraryState.favorites,
+        currentFavoriteTab,
+        favoritesQuery,
+        favoritesSortOption,
+        preferredProviderId,
+        chapterCountForManga,
+    ) {
+        favoriteLibrarySeries(
+            favorites = libraryState.favorites,
+            statusFilter = currentFavoriteTab.filter.status,
+            query = favoritesQuery,
+            sortOption = LibrarySortOption.fromName(favoritesSortOption),
+            preferredProviderId = preferredProviderId,
+            chapterCountForManga = chapterCountForManga,
+        )
+    }
     val filteredSeries = remember(selectedSeries, selectedQuery) {
         filterLibrarySeriesByTitle(selectedSeries, selectedQuery)
     }
-    val preferredProviderId = libraryState.selectedProviderId
     val sortedSeries = remember(filteredSeries, selectedSortOption, preferredProviderId, chapterCountForManga) {
         sortLibrarySeries(
             series = filteredSeries,
@@ -117,65 +156,42 @@ fun LibraryScreen(
         LibraryTab.Favorites -> if (libraryState.favorites.isEmpty()) emptyHint else strings.noLibraryResults
         LibraryTab.ContinueReading -> if (readingSeries.isEmpty()) emptyHint else strings.noLibraryResults
     }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            SectionTitle(strings.library)
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (selectedTab == LibraryTab.Favorites) {
-                    ScrollableTabRow(
-                        selectedTabIndex = selectedFavoriteStatusFilter.ordinal,
-                        edgePadding = 0.dp,
-                        divider = {},
-                    ) {
-                        FavoriteLibraryStatusFilter.entries.forEach { filter ->
-                            Tab(
-                                selected = selectedFavoriteStatusFilter == filter,
-                                onClick = { favoritesStatusFilter = filter.name },
-                                text = {
-                                    Text(
-                                        filter.label(strings),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
+    if (selectedTab == LibraryTab.Favorites) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                SectionTitle(strings.library)
+                Text(
+                    strings.favoritesCount(currentFavoriteSeries.size),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 OutlinedTextField(
                     value = selectedQuery,
-                    onValueChange = { query ->
-                        when (selectedTab) {
-                            LibraryTab.Favorites -> favoritesQuery = query
-                            LibraryTab.ContinueReading -> readingQuery = query
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(strings.searchLibrary) },
+                    onValueChange = { query -> favoritesQuery = query },
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    placeholder = { Text(strings.search) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
+                    maxLines = 1,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedButton(
-                        onClick = { sortMenuExpanded = true },
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                    ) {
+                Box {
+                    IconButton(onClick = { sortMenuExpanded = true }) {
                         Icon(Icons.Default.Sort, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = selectedSortOption.label(strings),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                     }
                     DropdownMenu(
                         expanded = sortMenuExpanded,
@@ -190,74 +206,206 @@ fun LibraryScreen(
                                 } else null,
                                 onClick = {
                                     sortMenuExpanded = false
-                                    when (selectedTab) {
-                                        LibraryTab.Favorites -> favoritesSortOption = option.name
-                                        LibraryTab.ContinueReading -> readingSortOption = option.name
-                                    }
+                                    favoritesSortOption = option.name
                                 },
                             )
                         }
                     }
-                    if (
-                        selectedQuery.isNotBlank() ||
-                        selectedSortOption != LibrarySortOption.TitleAscending ||
-                        (selectedTab == LibraryTab.Favorites && selectedFavoriteStatusFilter != FavoriteLibraryStatusFilter.All)
+                }
+                if (
+                    selectedQuery.isNotBlank() ||
+                    selectedSortOption != LibrarySortOption.TitleAscending ||
+                    currentFavoriteTab.filter != FavoriteLibraryStatusFilter.All
+                ) {
+                    TextButton(
+                        onClick = {
+                            favoritesQuery = ""
+                            favoritesSortOption = LibrarySortOption.TitleAscending.name
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(0)
+                            }
+                        }
                     ) {
-                        TextButton(
-                            onClick = {
-                                when (selectedTab) {
-                                    LibraryTab.Favorites -> {
-                                        favoritesQuery = ""
-                                        favoritesSortOption = LibrarySortOption.TitleAscending.name
-                                        favoritesStatusFilter = FavoriteLibraryStatusFilter.All.name
+                        Text(strings.clearFilters)
+                    }
+                }
+            }
+            ScrollableTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                edgePadding = 0.dp,
+                divider = {},
+            ) {
+                favoriteTabs.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = {
+                            Text(
+                                tab.label(strings),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
+                }
+            }
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) { page ->
+                val pageTab = favoriteTabs[page]
+                key(pageTab.key) {
+                    val pageSeries = remember(
+                        libraryState.favorites,
+                        pageTab,
+                        favoritesQuery,
+                        favoritesSortOption,
+                        preferredProviderId,
+                        chapterCountForManga,
+                    ) {
+                        favoriteLibrarySeries(
+                            favorites = libraryState.favorites,
+                            statusFilter = pageTab.filter.status,
+                            query = favoritesQuery,
+                            sortOption = LibrarySortOption.fromName(favoritesSortOption),
+                            preferredProviderId = preferredProviderId,
+                            chapterCountForManga = chapterCountForManga,
+                        )
+                    }
+                    val listState = rememberSaveable(pageTab.key, saver = LazyListState.Saver) {
+                        LazyListState()
+                    }
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (pageSeries.isEmpty()) {
+                            EmptyCard(emptyMessage)
+                        } else {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                            ) {
+                                items(pageSeries, key = { it.key }) { series ->
+                                    val preferred = remember(series.key, preferredProviderId) {
+                                        preferredLibrarySeriesEntry(series, preferredProviderId)
                                     }
-                                    LibraryTab.ContinueReading -> {
-                                        readingQuery = ""
-                                        readingSortOption = LibrarySortOption.TitleAscending.name
+                                    var activeProviderId by rememberSaveable(series.key, preferredProviderId) {
+                                        mutableStateOf(preferred.providerId)
                                     }
+                                    val activeEntry = series.entries.firstOrNull { it.providerId == activeProviderId } ?: preferred
+                                    GroupedFavoriteMangaCard(
+                                        manga = activeEntry,
+                                        availableProviders = series.entries,
+                                        strings = strings,
+                                        providerNameForId = providerNameForId,
+                                        chapterCount = seriesChapterCount(series.entries, chapterCountForManga),
+                                        onProviderSelected = { activeProviderId = it },
+                                        onOpen = { onOpenManga(activeEntry.providerId, activeEntry.detailPath) },
+                                        onRemove = { onRemoveFromFavorites(activeEntry) },
+                                        onSetStatus = { status -> onSetFavoriteStatus(activeEntry, status) },
+                                    )
                                 }
                             }
-                        ) {
-                            Text(strings.clearFilters)
                         }
                     }
                 }
             }
         }
-        item {
-            Text(
-                when (selectedTab) {
-                    LibraryTab.Favorites -> strings.favoritesCount(sortedSeries.size)
-                    LibraryTab.ContinueReading -> strings.activeSeriesCount(sortedSeries.size)
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        if (sortedSeries.isEmpty()) {
-            item { EmptyCard(emptyMessage) }
-        } else {
-            items(sortedSeries, key = { it.key }) { series ->
-                val preferred = remember(series.key, preferredProviderId) {
-                    preferredLibrarySeriesEntry(series, preferredProviderId)
-                }
-                var activeProviderId by rememberSaveable(series.key, preferredProviderId) {
-                    mutableStateOf(preferred.providerId)
-                }
-                val activeEntry = series.entries.firstOrNull { it.providerId == activeProviderId } ?: preferred
-                when (selectedTab) {
-                    LibraryTab.Favorites -> GroupedFavoriteMangaCard(
-                        manga = activeEntry,
-                        availableProviders = series.entries,
-                        strings = strings,
-                        providerNameForId = providerNameForId,
-                        chapterCount = seriesChapterCount(series.entries, chapterCountForManga),
-                        onProviderSelected = { activeProviderId = it },
-                        onOpen = { onOpenManga(activeEntry.providerId, activeEntry.detailPath) },
-                        onRemove = { onRemoveFromFavorites(activeEntry) },
-                        onSetStatus = { status -> onSetFavoriteStatus(activeEntry, status) },
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                SectionTitle(strings.library)
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = selectedQuery,
+                        onValueChange = { query -> readingQuery = query },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        placeholder = { Text(strings.search) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
+                        maxLines = 1,
                     )
-                    LibraryTab.ContinueReading -> GroupedContinueReadingCard(
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = { sortMenuExpanded = true },
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        ) {
+                            Icon(Icons.Default.Sort, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = selectedSortOption.label(strings),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuExpanded,
+                            onDismissRequest = { sortMenuExpanded = false },
+                        ) {
+                            LibrarySortOption.entries.forEach { option ->
+                                val selected = option == selectedSortOption
+                                DropdownMenuItem(
+                                    text = { Text(option.label(strings)) },
+                                    leadingIcon = if (selected) {
+                                        { Icon(Icons.Default.Check, contentDescription = null) }
+                                    } else null,
+                                    onClick = {
+                                        sortMenuExpanded = false
+                                        readingSortOption = option.name
+                                    },
+                                )
+                            }
+                        }
+                        if (
+                            selectedQuery.isNotBlank() ||
+                            selectedSortOption != LibrarySortOption.TitleAscending
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    readingQuery = ""
+                                    readingSortOption = LibrarySortOption.TitleAscending.name
+                                }
+                            ) {
+                                Text(strings.clearFilters)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Text(
+                    strings.activeSeriesCount(sortedSeries.size),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (sortedSeries.isEmpty()) {
+                item { EmptyCard(emptyMessage) }
+            } else {
+                items(sortedSeries, key = { it.key }) { series ->
+                    val preferred = remember(series.key, preferredProviderId) {
+                        preferredLibrarySeriesEntry(series, preferredProviderId)
+                    }
+                    var activeProviderId by rememberSaveable(series.key, preferredProviderId) {
+                        mutableStateOf(preferred.providerId)
+                    }
+                    val activeEntry = series.entries.firstOrNull { it.providerId == activeProviderId } ?: preferred
+                    GroupedContinueReadingCard(
                         manga = activeEntry,
                         availableProviders = series.entries,
                         strings = strings,
@@ -288,6 +436,27 @@ fun LibraryScreen(
             }
         }
     }
+}
+
+private fun favoriteLibrarySeries(
+    favorites: List<SavedManga>,
+    statusFilter: FavoriteMangaStatus?,
+    query: String,
+    sortOption: LibrarySortOption,
+    preferredProviderId: String,
+    chapterCountForManga: (String, String) -> Int?,
+): List<com.paudinc.komastream.utils.LibrarySeriesGroup> {
+    val filteredByStatus = favorites.filter {
+        statusFilter == null || it.favoriteStatus == statusFilter
+    }
+    val grouped = groupLibrarySeries(filteredByStatus)
+    val filteredByQuery = filterLibrarySeriesByTitle(grouped, query)
+    return sortLibrarySeries(
+        series = filteredByQuery,
+        sortOption = sortOption,
+        preferredProviderId = preferredProviderId,
+        chapterCountForManga = chapterCountForManga,
+    )
 }
 
 private enum class LibrarySortOption {
@@ -401,6 +570,7 @@ private fun GroupedContinueReadingCard(
         onProviderSelected = onProviderSelected,
         onOpen = onOpen,
         onRemove = onRemove,
+        removeLabel = strings.removeFromContinueReading,
     ) {
         val progressText = libraryProgressText(strings, manga, chapterCount)
         if (progressText.isNotBlank()) {
@@ -461,6 +631,7 @@ private fun GroupedFavoriteMangaCard(
         onProviderSelected = onProviderSelected,
         onOpen = onOpen,
         onRemove = onRemove,
+        removeLabel = strings.removeFromFavorites,
         onSetStatus = onSetStatus,
     ) {
         TagChip(
@@ -500,115 +671,112 @@ private fun CompactSeriesCardShell(
     onProviderSelected: (String) -> Unit,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
+    removeLabel: String,
     onSetStatus: ((FavoriteMangaStatus) -> Unit)? = null,
     body: @Composable () -> Unit,
 ) {
     var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
 
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(cardBorder(), RoundedCornerShape(18.dp))
-            .combinedClickable(
-                onClick = onOpen,
-                onLongClick = { menuExpanded = true },
-            ),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
-        ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
+    Box {
+        ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.Top,
+                .border(cardBorder(), RoundedCornerShape(18.dp))
+                .combinedClickable(
+                    onClick = onOpen,
+                    onLongClick = { menuExpanded = true },
+                ),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+            ),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp),
         ) {
-            AsyncImage(
-                model = manga.coverUrl,
-                contentDescription = manga.title,
+            Row(
                 modifier = Modifier
-                    .size(width = 60.dp, height = 84.dp)
-                    .clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.Crop,
-                placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
-            )
-            Spacer(Modifier.width(8.dp))
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    manga.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                AsyncImage(
+                    model = manga.coverUrl,
+                    contentDescription = manga.title,
+                    modifier = Modifier
+                        .size(width = 60.dp, height = 84.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Crop,
+                    placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                    error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_report_image),
                 )
-                body()
-                if (availableProviders.size > 1) {
-                    ProviderMenu(
-                        selectedProviderId = manga.providerId,
-                        availableProviders = availableProviders,
-                        providerNameForId = providerNameForId,
-                        onProviderSelected = onProviderSelected,
-                    )
-                } else {
+                Spacer(Modifier.width(8.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
-                        providerNameForId(manga.providerId),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        manga.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                    body()
+                    if (availableProviders.size > 1) {
+                        ProviderMenu(
+                            selectedProviderId = manga.providerId,
+                            availableProviders = availableProviders,
+                            providerNameForId = providerNameForId,
+                            onProviderSelected = onProviderSelected,
+                        )
+                    } else {
+                        Text(
+                            providerNameForId(manga.providerId),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = null)
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(strings.openManga) },
+                onClick = {
+                    menuExpanded = false
+                    onOpen()
+                },
+            )
+            if (onSetStatus != null) {
+                FavoriteMangaStatus.entries.forEach { status ->
+                    DropdownMenuItem(
+                        text = { Text(status.label(strings)) },
+                        leadingIcon = if (manga.favoriteStatus == status) {
+                            { Icon(Icons.Default.Check, contentDescription = null) }
+                        } else null,
+                        onClick = {
+                            menuExpanded = false
+                            onSetStatus(status)
+                        },
                     )
                 }
             }
-            FilledTonalIconButton(
-                onClick = onRemove,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    contentColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = strings.removeFromFavorites)
-            }
+            DropdownMenuItem(
+                text = { Text(removeLabel) },
+                onClick = {
+                    menuExpanded = false
+                    onRemove()
+                },
+            )
         }
-    }
-
-    DropdownMenu(
-        expanded = menuExpanded,
-        onDismissRequest = { menuExpanded = false },
-    ) {
-        DropdownMenuItem(
-            text = { Text(strings.openManga) },
-            onClick = {
-                menuExpanded = false
-                onOpen()
-            },
-        )
-        if (onSetStatus != null) {
-            FavoriteMangaStatus.entries.forEach { status ->
-                DropdownMenuItem(
-                    text = { Text(status.label(strings)) },
-                    leadingIcon = if (manga.favoriteStatus == status) {
-                        { Icon(Icons.Default.Check, contentDescription = null) }
-                    } else null,
-                    onClick = {
-                        menuExpanded = false
-                        onSetStatus(status)
-                    },
-                )
-            }
-        }
-        DropdownMenuItem(
-            text = { Text(strings.removeFromFavorites) },
-            onClick = {
-                menuExpanded = false
-                onRemove()
-            },
-        )
     }
 }
 
@@ -622,18 +790,24 @@ private fun ProviderMenu(
     var expanded by rememberSaveable(selectedProviderId) { mutableStateOf(false) }
     val selectedLabel = providerNameForId(selectedProviderId)
     Box {
-        TextButton(
+        AssistChip(
             onClick = { expanded = true },
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-        ) {
-            Text(
-                selectedLabel,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-        }
+            label = {
+                Text(
+                    selectedLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) },
+            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
@@ -715,6 +889,13 @@ private enum class FavoriteLibraryStatusFilter(
         fun fromName(value: String?): FavoriteLibraryStatusFilter =
             entries.firstOrNull { it.name == value } ?: All
     }
+}
+
+private data class FavoriteLibraryTabSpec(
+    val key: String,
+    val filter: FavoriteLibraryStatusFilter,
+) {
+    fun label(strings: AppStrings): String = filter.label(strings)
 }
 
 @Composable

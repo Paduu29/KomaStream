@@ -21,6 +21,11 @@ import com.paudinc.komastream.utils.toProgressChapterNumber
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class CachedMangaDetailSnapshot(
+    val detail: MangaDetail,
+    val updatedAt: Long,
+)
+
 class LibraryStore(context: Context) {
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
     private val database = LibraryDatabase.getInstance(context)
@@ -48,6 +53,9 @@ class LibraryStore(context: Context) {
             useDarkTheme = settings.useDarkTheme,
             autoJumpToUnread = settings.autoJumpToUnread,
             mangaBallAdultContentEnabled = settings.mangaBallAdultContentEnabled,
+            preferredChapterLanguage = AppLanguage.fromStored(settings.preferredChapterLanguage).takeIf {
+                it != AppLanguage.MULTI
+            } ?: AppLanguage.EN,
             selectedProviderId = selectedProviderId,
             appLanguage = AppLanguage.fromStored(settings.appLanguage),
         )
@@ -258,18 +266,30 @@ class LibraryStore(context: Context) {
         val existing = dao.readMangaDetailCache(detail.providerId, detailKey)
             ?: dao.readMangaDetailCacheByPath(detail.providerId, normalizeStoredPath(detail.detailPath))
         val storedDetail = existing?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
-        if (storedDetail != null && mangaDetailCacheCodec.sameChapterSignature(storedDetail, detail)) {
-            return false
-        }
         val canonicalDetailPath = when {
             existing?.detailPath.isNullOrBlank() -> normalizeStoredPath(detail.detailPath)
             detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> normalizeStoredPath(detail.detailPath)
             else -> normalizeStoredPath(existing.detailPath)
         }
-        val detailJson = mangaDetailCacheCodec.serialize(detail.copy(detailPath = canonicalDetailPath))
+        val canonicalDetail = detail.copy(detailPath = canonicalDetailPath)
+        val detailJson = mangaDetailCacheCodec.serialize(canonicalDetail)
         if (detailJson.length > MAX_CACHED_DETAIL_PAYLOAD_SIZE) {
             dao.deleteMangaDetailCache(detail.providerId, detailKey)
             dao.deleteMangaDetailCacheByPath(detail.providerId, canonicalDetailPath)
+            return false
+        }
+        val now = System.currentTimeMillis()
+        if (storedDetail != null && mangaDetailCacheCodec.sameChapterSignature(storedDetail, canonicalDetail)) {
+            dao.upsertMangaDetailCache(
+                MangaDetailCacheEntity(
+                    providerId = detail.providerId,
+                    detailKey = detailKey,
+                    detailPath = canonicalDetailPath,
+                    detailJson = detailJson,
+                    chapterCount = canonicalDetail.chapters.size,
+                    updatedAt = now,
+                )
+            )
             return false
         }
         dao.upsertMangaDetailCache(
@@ -278,19 +298,27 @@ class LibraryStore(context: Context) {
                 detailKey = detailKey,
                 detailPath = canonicalDetailPath,
                 detailJson = detailJson,
-                chapterCount = detail.chapters.size,
-                updatedAt = System.currentTimeMillis(),
+                chapterCount = canonicalDetail.chapters.size,
+                updatedAt = now,
             )
         )
         return true
     }
 
-    fun getCachedMangaDetail(providerId: String, detailPath: String): MangaDetail? {
+    fun getCachedMangaDetailSnapshot(providerId: String, detailPath: String): CachedMangaDetailSnapshot? {
         ensureInitialized()
         val detailKey = mangaKey(providerId, detailPath)
         val cached = dao.readMangaDetailCache(providerId, detailKey)
             ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
-        return cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
+        val detail = cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() } ?: return null
+        return CachedMangaDetailSnapshot(
+            detail = detail,
+            updatedAt = cached.updatedAt,
+        )
+    }
+
+    fun getCachedMangaDetail(providerId: String, detailPath: String): MangaDetail? {
+        return getCachedMangaDetailSnapshot(providerId, detailPath)?.detail
     }
 
     fun getCachedMangaChapterCount(providerId: String, detailPath: String): Int? {
@@ -332,6 +360,16 @@ class LibraryStore(context: Context) {
 
     fun setMangaBallAdultContentEnabled(enabled: Boolean) {
         updateSettings { it.copy(mangaBallAdultContentEnabled = enabled) }
+    }
+
+    fun setPreferredChapterLanguage(language: AppLanguage) {
+        updateSettings { it.copy(preferredChapterLanguage = language.name) }
+    }
+
+    fun preferredChapterLanguage(): AppLanguage {
+        return AppLanguage.fromStored(readSettings().preferredChapterLanguage).takeIf {
+            it != AppLanguage.MULTI
+        } ?: AppLanguage.EN
     }
 
     fun isMangaBallAdultContentEnabled(): Boolean = readSettings().mangaBallAdultContentEnabled
@@ -380,6 +418,7 @@ class LibraryStore(context: Context) {
                 useDarkTheme = importedSettings?.optBoolean("useDarkTheme", it.useDarkTheme) ?: it.useDarkTheme,
                 autoJumpToUnread = importedSettings?.optBoolean("autoJumpToUnread", it.autoJumpToUnread) ?: it.autoJumpToUnread,
                 mangaBallAdultContentEnabled = importedSettings?.optBoolean("mangaBallAdultContentEnabled", it.mangaBallAdultContentEnabled) ?: it.mangaBallAdultContentEnabled,
+                preferredChapterLanguage = importedSettings?.optString("preferredChapterLanguage").orEmpty().ifBlank { it.preferredChapterLanguage },
                 appLanguage = importedSettings?.optString("appLanguage").orEmpty().ifBlank { it.appLanguage },
                 hasSeenProviderPicker = importedSettings?.optBoolean("hasSeenProviderPicker", it.hasSeenProviderPicker) ?: it.hasSeenProviderPicker,
                 legacyPrefsMigrated = true,
@@ -457,6 +496,7 @@ class LibraryStore(context: Context) {
             .put("useDarkTheme", legacyPrefs.getBoolean("useDarkTheme", false))
             .put("autoJumpToUnread", legacyPrefs.getBoolean("autoJumpToUnread", true))
             .put("mangaBallAdultContentEnabled", legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false))
+            .put("preferredChapterLanguage", AppLanguage.EN.name)
             .put("appLanguage", legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty())
             .put("hasSeenProviderPicker", legacyPrefs.getBoolean("hasSeenProviderPicker", false))
         val payload = backupPayloadCodec.exportPayload(
@@ -476,6 +516,7 @@ class LibraryStore(context: Context) {
                 useDarkTheme = legacyPrefs.getBoolean("useDarkTheme", false),
                 autoJumpToUnread = legacyPrefs.getBoolean("autoJumpToUnread", true),
                 mangaBallAdultContentEnabled = legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
+                preferredChapterLanguage = AppLanguage.EN.name,
                 appLanguage = legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty(),
                 hasSeenProviderPicker = legacyPrefs.getBoolean("hasSeenProviderPicker", false),
                 legacyPrefsMigrated = true,
@@ -734,6 +775,7 @@ class LibraryStore(context: Context) {
         useDarkTheme: Boolean = false,
         autoJumpToUnread: Boolean = true,
         mangaBallAdultContentEnabled: Boolean = false,
+        preferredChapterLanguage: String = AppLanguage.EN.name,
         appLanguage: String = AppLanguage.EN.name,
         hasSeenProviderPicker: Boolean = false,
         legacyPrefsMigrated: Boolean = false,
@@ -745,6 +787,7 @@ class LibraryStore(context: Context) {
             useDarkTheme = useDarkTheme,
             autoJumpToUnread = autoJumpToUnread,
             mangaBallAdultContentEnabled = mangaBallAdultContentEnabled,
+            preferredChapterLanguage = preferredChapterLanguage,
             appLanguage = appLanguage,
             hasSeenProviderPicker = hasSeenProviderPicker,
             legacyPrefsMigrated = legacyPrefsMigrated,
@@ -787,6 +830,7 @@ class LibraryStore(context: Context) {
             .put("useDarkTheme", settings.useDarkTheme)
             .put("autoJumpToUnread", settings.autoJumpToUnread)
             .put("mangaBallAdultContentEnabled", settings.mangaBallAdultContentEnabled)
+            .put("preferredChapterLanguage", settings.preferredChapterLanguage)
             .put("appLanguage", settings.appLanguage)
             .put("hasSeenProviderPicker", settings.hasSeenProviderPicker)
             .toString()

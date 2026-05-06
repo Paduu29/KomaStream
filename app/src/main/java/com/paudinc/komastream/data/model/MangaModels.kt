@@ -16,6 +16,13 @@ enum class AppLanguage {
         else -> "en"
     }
 
+    fun toChapterLanguageCode(): String? = when (this) {
+        EN -> "en"
+        ES -> "es"
+        DE -> "de"
+        MULTI -> null
+    }
+
     companion object {
         fun fromStored(value: String?): AppLanguage =
             entries.firstOrNull { it.name == value } ?: EN
@@ -237,6 +244,7 @@ data class LibraryState(
     val useDarkTheme: Boolean,
     val autoJumpToUnread: Boolean,
     val mangaBallAdultContentEnabled: Boolean,
+    val preferredChapterLanguage: AppLanguage,
     val selectedProviderId: String,
     val appLanguage: AppLanguage,
 )

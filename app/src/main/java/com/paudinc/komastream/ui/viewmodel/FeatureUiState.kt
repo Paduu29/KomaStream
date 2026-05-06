@@ -35,6 +35,7 @@ data class LibraryUiState(
 
 data class ReaderUiState(
     val selectedDetail: MangaDetail? = null,
+    val requestedDetailPath: String = "",
     val readerData: ReaderData? = null,
     val initialPageIndex: Int = 0,
     val currentPageIndex: Int = 0,

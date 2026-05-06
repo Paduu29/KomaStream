@@ -111,6 +111,8 @@ data class AppSettingsEntity(
     val mangaBallAdultContentEnabled: Boolean = false,
     @ColumnInfo(name = "app_language")
     val appLanguage: String = "EN",
+    @ColumnInfo(name = "preferred_chapter_language")
+    val preferredChapterLanguage: String = "EN",
     @ColumnInfo(name = "has_seen_provider_picker")
     val hasSeenProviderPicker: Boolean = false,
     @ColumnInfo(name = "legacy_prefs_migrated")

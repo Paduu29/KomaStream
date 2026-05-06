@@ -83,12 +83,25 @@ fun DetailScreen(
         onCloseMalIdEditor()
     }
 
-    val filteredChapters = remember(detail.chapters, chapterQuery) {
-        val normalizedQuery = chapterQuery.trim().replace(",", ".")
-        if (normalizedQuery.isBlank()) {
+    val selectedChapterSourceId = detail.selectedChapterSourceId
+    val sourceFilteredChapters = remember(detail.chapters, selectedChapterSourceId) {
+        if (selectedChapterSourceId.isBlank() || selectedChapterSourceId == "all") {
             detail.chapters
         } else {
-            detail.chapters.filter { chapter ->
+            detail.chapters.filter { chapter -> chapter.languageCode == selectedChapterSourceId }
+        }
+    }
+    val uniqueChapters = remember(sourceFilteredChapters) {
+        sourceFilteredChapters.distinctBy { chapter ->
+            chapterDedupeKey(chapter)
+        }
+    }
+    val filteredChapters = remember(uniqueChapters, chapterQuery) {
+        val normalizedQuery = chapterQuery.trim().replace(",", ".")
+        if (normalizedQuery.isBlank()) {
+            uniqueChapters
+        } else {
+            uniqueChapters.filter { chapter ->
                 chapter.chapterLabel.contains(chapterQuery.trim(), ignoreCase = true) ||
                     chapter.chapterNumberUrl.contains(chapterQuery.trim(), ignoreCase = true)
             }
@@ -97,7 +110,7 @@ fun DetailScreen(
     val targetUnreadChapterPath = remember(
         detail.providerId,
         detail.detailPath,
-        detail.chapters,
+        filteredChapters,
         readChapters,
         lastOpenedChapterPath,
         autoJumpToUnread,
@@ -105,7 +118,7 @@ fun DetailScreen(
         resolveTargetUnreadChapterPath(
             providerId = detail.providerId,
             detailPath = detail.detailPath,
-            chapters = detail.chapters,
+            chapters = filteredChapters,
             readChapters = readChapters,
             lastOpenedChapterPath = lastOpenedChapterPath,
             autoJumpToUnread = autoJumpToUnread,
@@ -125,20 +138,20 @@ fun DetailScreen(
             chapterPathsByLabel[path] !in canonicalReadChapterKeys
         }.takeIf { it >= 0 }
     }
-    val lastOpenedChapterLabel = remember(detail.chapters, lastOpenedChapterPath, detail.detailPath) {
-        detail.chapters.firstOrNull { chapter ->
+    val lastOpenedChapterLabel = remember(filteredChapters, lastOpenedChapterPath, detail.detailPath) {
+        filteredChapters.firstOrNull { chapter ->
             buildChapterPath(detail.detailPath, chapter) == lastOpenedChapterPath
         }?.chapterLabel.orEmpty()
     }
-    val unreadCount = remember(detail.chapters, canonicalReadChapterKeys, detail.detailPath, detail.providerId) {
-        detail.chapters.count { chapter ->
+    val unreadCount = remember(filteredChapters, canonicalReadChapterKeys, detail.detailPath, detail.providerId) {
+        filteredChapters.count { chapter ->
             val path = buildChapterPath(detail.detailPath, chapter)
             chapterPathsByLabel[path] !in canonicalReadChapterKeys
         }
     }
     var sourceMenuExpanded by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
 
-    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex, autoJumpToUnread) {
+    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex, autoJumpToUnread, selectedChapterSourceId) {
         if (chapterQuery.isNotBlank()) return@LaunchedEffect
         if (suppressAutoPositioning) {
             suppressAutoPositioning = false
@@ -292,7 +305,7 @@ fun DetailScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 DetailStatCard(
                                     modifier = Modifier.weight(1f),
-                                    value = detail.chapters.size.toString(),
+                                    value = uniqueChapters.size.toString(),
                                     label = strings.chapters,
                                     leadingIcon = Icons.AutoMirrored.Filled.MenuBook,
                                 )
@@ -337,7 +350,7 @@ fun DetailScreen(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        strings.chaptersCount(detail.chapters.size),
+                                        strings.chaptersCount(uniqueChapters.size),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                     )
@@ -411,48 +424,54 @@ fun DetailScreen(
                                 }
                             }
                             if (detail.chapterSources.isNotEmpty()) {
-                                ExposedDropdownMenuBox(
-                                    expanded = sourceMenuExpanded,
-                                    onExpandedChange = { sourceMenuExpanded = it },
-                                ) {
-                                    OutlinedTextField(
-                                        value = detail.chapterSources
-                                            .firstOrNull { it.id == detail.selectedChapterSourceId }
-                                            ?.name
-                                            .orEmpty(),
-                                        onValueChange = {},
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                                        readOnly = true,
-                                        label = {
-                                            Text(
-                                                if (detail.providerId == MangaBallProvider.PROVIDER_ID) {
-                                                    strings.languageLabel
-                                                } else {
-                                                    strings.chapterSource
-                                                }
-                                            )
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = if (detail.providerId == MangaBallProvider.PROVIDER_ID) {
+                                            strings.languageLabel
+                                        } else {
+                                            strings.chapterSource
                                         },
-                                        trailingIcon = {
-                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceMenuExpanded)
-                                        },
-                                        shape = RoundedCornerShape(16.dp),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    ExposedDropdownMenu(
-                                        expanded = sourceMenuExpanded,
-                                        onDismissRequest = { sourceMenuExpanded = false },
-                                    ) {
-                                        detail.chapterSources.forEach { source ->
-                                            DropdownMenuItem(
-                                                text = { Text(source.name) },
-                                                onClick = {
-                                                    sourceMenuExpanded = false
-                                                    if (source.detailPath != detail.detailPath) {
-                                                        onSelectChapterSource(source.detailPath)
-                                                    }
-                                                },
+                                    Box {
+                                        OutlinedButton(
+                                            onClick = { sourceMenuExpanded = true },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                                        ) {
+                                            Text(
+                                                detail.chapterSources
+                                                    .firstOrNull { it.id == selectedChapterSourceId }
+                                                    ?.name
+                                                    .orEmpty()
+                                                    .ifBlank { strings.chapterSource },
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
                                             )
+                                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                        }
+                                        DropdownMenu(
+                                            expanded = sourceMenuExpanded,
+                                            onDismissRequest = { sourceMenuExpanded = false },
+                                        ) {
+                                            detail.chapterSources.forEach { source ->
+                                                DropdownMenuItem(
+                                                    text = { Text(source.name) },
+                                                    leadingIcon = if (source.id == selectedChapterSourceId) {
+                                                        { Icon(Icons.Default.Check, contentDescription = null) }
+                                                    } else null,
+                                                    onClick = {
+                                                        sourceMenuExpanded = false
+                                                        onSelectChapterSource(source.id)
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -850,6 +869,15 @@ private fun periodicityTagColor(periodicity: String): Color {
         "diar" in normalized || "day" in normalized -> Color(0xFFB85C38)
         "irreg" in normalized -> Color(0xFF8A6B2F)
         else -> Color(0xFF5D6B82)
+    }
+}
+
+private fun chapterDedupeKey(chapter: com.paudinc.komastream.data.model.MangaChapter): String {
+    val numericValue = chapterValue(chapter)
+    return when {
+        numericValue.isFinite() && numericValue != Double.MAX_VALUE -> "num:${numericValue}"
+        chapter.chapterNumberUrl.isNotBlank() -> "url:${chapter.chapterNumberUrl.trim().lowercase()}"
+        else -> "label:${chapter.chapterLabel.trim().lowercase()}"
     }
 }
 

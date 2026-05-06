@@ -453,18 +453,6 @@ fun FavoriteMangaCard(
                         )
                     }
                 }
-                FilledTonalIconButton(
-                    onClick = onRemove,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = strings.removeFromFavorites,
-                    )
-                }
             }
         }
 

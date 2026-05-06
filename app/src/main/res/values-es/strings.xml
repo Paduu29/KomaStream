@@ -127,6 +127,8 @@
     <string name="scroll_to_top">Ir arriba</string>
     <string name="scroll_to_bottom">Ir abajo</string>
     <string name="language">Idioma</string>
+    <string name="preferred_chapter_language">Idioma preferido de capítulos</string>
+    <string name="preferred_chapter_language_description">Usa primero este idioma cuando un manga tenga varias traducciones de capítulos. Aun así puedes cambiar la fuente desde la pantalla de detalle.</string>
     <string name="provider">Proveedor</string>
     <string name="choose_provider">Elegir proveedor</string>
     <string name="choose_provider_description">Elige la fuente de manga que quieres usar. Puedes cambiarla luego desde el logo en la barra superior.</string>

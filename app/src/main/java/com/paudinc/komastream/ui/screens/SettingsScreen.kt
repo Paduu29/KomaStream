@@ -34,6 +34,7 @@ fun SettingsScreen(
     strings: AppStrings,
     selectedProviderId: String,
     appLanguage: AppLanguage,
+    preferredChapterLanguage: AppLanguage,
     useDarkTheme: Boolean,
     autoJumpToUnread: Boolean,
     mangaBallAdultContentEnabled: Boolean,
@@ -41,6 +42,7 @@ fun SettingsScreen(
     versionName: String,
     updateState: AppUpdateUiState,
     onLanguageChange: (AppLanguage) -> Unit,
+    onPreferredChapterLanguageChange: (AppLanguage) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onAutoJumpToUnreadChange: (Boolean) -> Unit,
     onMangaBallAdultContentChange: (Boolean) -> Unit,
@@ -61,6 +63,61 @@ fun SettingsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            ElevatedCard(
+                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.updates, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(strings.currentVersionLabel(versionName), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (updateState != AppUpdateUiState.Disabled) {
+                        Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
+                    }
+                    when (val state = updateState) {
+                        AppUpdateUiState.Disabled -> {
+                            Text(strings.updaterNotConfigured, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
+                        }
+                        AppUpdateUiState.Idle -> {
+                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
+                        }
+                        AppUpdateUiState.Checking -> {
+                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
+                            CircularProgressIndicator()
+                        }
+                        is AppUpdateUiState.UpToDate -> {
+                            Text(strings.noUpdateAvailable, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
+                        }
+                        is AppUpdateUiState.Error -> {
+                            Text(state.message, color = MaterialTheme.colorScheme.error)
+                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
+                        }
+                        is AppUpdateUiState.Available -> {
+                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
+                            Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
+                            if (state.release.body.isNotBlank()) {
+                                Text(strings.releaseNotes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                MarkdownReleaseNotes(
+                                    markdown = state.release.body,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        is AppUpdateUiState.Downloading -> {
+                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
+                            Text("${state.progressPercent}% ${strings.downloading.lowercase()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            CircularProgressIndicator(progress = { state.progressPercent / 100f })
+                        }
+                        is AppUpdateUiState.Downloaded -> {
+                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
+                            Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
+                        }
+                    }
+                }
+            }
+        }
         item {
             ElevatedCard(
                 modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
@@ -174,88 +231,6 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.updates, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(strings.currentVersionLabel(versionName), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (updateState != AppUpdateUiState.Disabled) {
-                        Button(onClick = onOpenReleasePage) { Text(strings.releasePage) }
-                    }
-                    when (val state = updateState) {
-                        AppUpdateUiState.Disabled -> {
-                            Text(strings.updaterNotConfigured, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
-                        }
-                        AppUpdateUiState.Idle -> {
-                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
-                        }
-                        AppUpdateUiState.Checking -> {
-                            Button(onClick = onCheckForUpdates, enabled = false) { Text(strings.checkForUpdates) }
-                            CircularProgressIndicator()
-                        }
-                        is AppUpdateUiState.UpToDate -> {
-                            Text(strings.noUpdateAvailable, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
-                        }
-                        is AppUpdateUiState.Error -> {
-                            Text(state.message, color = MaterialTheme.colorScheme.error)
-                            Button(onClick = onCheckForUpdates) { Text(strings.checkForUpdates) }
-                        }
-                        is AppUpdateUiState.Available -> {
-                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
-                            Button(onClick = onDownloadUpdate) { Text(strings.downloadUpdate) }
-                            if (state.release.body.isNotBlank()) {
-                                Text(strings.releaseNotes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                MarkdownReleaseNotes(
-                                    markdown = state.release.body,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        is AppUpdateUiState.Downloading -> {
-                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
-                            Text("${state.progressPercent}% ${strings.downloading.lowercase()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            CircularProgressIndicator(progress = { state.progressPercent / 100f })
-                        }
-                        is AppUpdateUiState.Downloaded -> {
-                            Text(strings.updateAvailableLabel(state.release.versionLabel), color = MaterialTheme.colorScheme.primary)
-                            Button(onClick = onInstallUpdate) { Text(strings.installUpdate) }
-                        }
-                    }
-                }
-            }
-        }
-        if (selectedProviderId == MangaBallProvider.PROVIDER_ID) {
-            item {
-                ElevatedCard(
-                    modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                    shape = RoundedCornerShape(24.dp),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(strings.mangaBallAdultContentLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(strings.mangaBallAdultContentDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Switch(
-                                checked = mangaBallAdultContentEnabled,
-                                onCheckedChange = { enabled ->
-                                    if (enabled) {
-                                        showAdultContentDialog = true
-                                    } else {
-                                        onMangaBallAdultContentChange(false)
-                                    }
-                                }
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(if (mangaBallAdultContentEnabled) strings.on else strings.off)
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            ElevatedCard(
-                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(strings.languageLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
@@ -323,6 +298,59 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.preferredChapterLanguage, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(strings.preferredChapterLanguageDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        preferredLanguageButtons.forEach { option ->
+                            val selected = preferredChapterLanguage == option
+                            Button(
+                                onClick = { onPreferredChapterLanguageChange(option) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) {
+                                Text(preferredLanguageLabel(strings, option), maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (selectedProviderId == MangaBallProvider.PROVIDER_ID) {
+            item {
+                ElevatedCard(
+                    modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                    shape = RoundedCornerShape(24.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(strings.mangaBallAdultContentLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(strings.mangaBallAdultContentDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Switch(
+                                checked = mangaBallAdultContentEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (enabled) {
+                                        showAdultContentDialog = true
+                                    } else {
+                                        onMangaBallAdultContentChange(false)
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(if (mangaBallAdultContentEnabled) strings.on else strings.off)
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            ElevatedCard(
+                modifier = Modifier.border(cardBorder(), RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(strings.reader, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Checkbox(checked = autoJumpToUnread, onCheckedChange = onAutoJumpToUnreadChange)
@@ -370,6 +398,15 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+private val preferredLanguageButtons = listOf(AppLanguage.EN, AppLanguage.ES, AppLanguage.DE)
+
+private fun preferredLanguageLabel(strings: AppStrings, language: AppLanguage): String = when (language) {
+    AppLanguage.EN -> strings.english
+    AppLanguage.ES -> strings.spanish
+    AppLanguage.DE -> strings.german
+    AppLanguage.MULTI -> strings.multilingual
 }
 
 private fun buildMalSyncProgressDetail(

@@ -127,6 +127,8 @@
     <string name="scroll_to_top">Nach oben scrollen</string>
     <string name="scroll_to_bottom">Nach unten scrollen</string>
     <string name="language">Sprache</string>
+    <string name="preferred_chapter_language">Bevorzugte Kapitelsprache</string>
+    <string name="preferred_chapter_language_description">Diese Sprache wird zuerst verwendet, wenn ein Manga mehrere Kapitelübersetzungen hat. Du kannst die Quelle in der Detailansicht trotzdem wechseln.</string>
     <string name="provider">Provider</string>
     <string name="choose_provider">Provider auswählen</string>
     <string name="choose_provider_description">Wähle die Manga-Quelle aus, die du durchsuchen möchtest. Du kannst sie später über das Logo in der oberen Leiste ändern.</string>

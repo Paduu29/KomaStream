@@ -316,6 +316,11 @@ class LibraryController(
         refreshState()
     }
 
+    fun changePreferredChapterLanguage(language: com.paudinc.komastream.data.model.AppLanguage) {
+        libraryStore.setPreferredChapterLanguage(language)
+        refreshState()
+    }
+
     fun updateProgressSnapshot(
         providerId: String,
         detailPath: String,

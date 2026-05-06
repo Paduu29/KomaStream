@@ -135,6 +135,8 @@
     <string name="scroll_to_top">Scroll to top</string>
     <string name="scroll_to_bottom">Scroll to bottom</string>
     <string name="language">Language</string>
+    <string name="preferred_chapter_language">Preferred chapter language</string>
+    <string name="preferred_chapter_language_description">Use this language first when a manga has multiple chapter translations. You can still switch sources from the detail screen.</string>
     <string name="provider">Provider</string>
     <string name="choose_provider">Choose provider</string>
     <string name="choose_provider_description">Pick the manga source you want to browse. You can change it later from the logo in the top bar.</string>

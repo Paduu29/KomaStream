@@ -11,10 +11,13 @@ import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.ReaderActionInteractor
 import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.utils.AppStrings
+import com.paudinc.komastream.utils.CachedMangaDetailSnapshot
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
+import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.utils.buildChapterPath
+import com.paudinc.komastream.utils.canonicalChapterKey
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.toProgressChapterNumber
@@ -22,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 class ReaderController(
     private val scope: CoroutineScope,
@@ -34,6 +38,8 @@ class ReaderController(
     var uiState by mutableStateOf(ReaderUiState())
         private set
 
+    private val readerDataCache = ConcurrentHashMap<String, CachedReaderData>()
+
     fun openDetail(
         providerId: String,
         path: String,
@@ -42,11 +48,16 @@ class ReaderController(
         onError: (String) -> Unit,
     ) {
         scope.launch {
-            uiState = uiState.copy(selectedDetail = null)
-            navigationController.pushScreen(Screen.Detail(providerId, path))
+            val resolvedPath = resolvePreferredDetailPath(providerId, path)
+            uiState = uiState.copy(
+                selectedDetail = null,
+                requestedDetailPath = resolvedPath,
+                isChapterLoading = false,
+            )
+            navigationController.pushScreen(Screen.Detail(providerId, resolvedPath))
             loadDetail(
                 providerId = providerId,
-                path = path,
+                path = resolvedPath,
                 onSuccess = {},
                 onError = {
                     navigationController.goBack()
@@ -59,15 +70,26 @@ class ReaderController(
     fun restoreDetail(
         providerId: String,
         path: String,
+        navigationController: NavigationController,
+        screen: Screen.Detail,
         onLoadingChange: (Boolean) -> Unit,
         onError: (String) -> Unit,
     ) {
-        if (uiState.selectedDetail?.let { it.providerId == providerId && it.detailPath == path } == true) return
+        val resolvedPath = resolvePreferredDetailPath(providerId, path)
+        if (screen.detailPath != resolvedPath) {
+            navigationController.replaceTop(screen.copy(detailPath = resolvedPath))
+        }
+        if (uiState.selectedDetail?.let { it.providerId == providerId && it.detailPath == resolvedPath } == true) return
+        if (uiState.requestedDetailPath == resolvedPath && uiState.selectedDetail?.detailPath != resolvedPath) return
         scope.launch {
-            uiState = uiState.copy(selectedDetail = null)
+            uiState = uiState.copy(
+                selectedDetail = null,
+                requestedDetailPath = resolvedPath,
+                isChapterLoading = false,
+            )
             loadDetail(
                 providerId = providerId,
-                path = path,
+                path = resolvedPath,
                 onSuccess = {},
                 onError = onError,
             )
@@ -82,11 +104,18 @@ class ReaderController(
         val provider = providerRegistry.get(providerId)
         runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
             .onSuccess { detail ->
+                val currentSourceId = uiState.selectedDetail
+                    ?.takeIf { it.providerId == providerId && it.detailPath == path }
+                    ?.selectedChapterSourceId
+                val resolvedDetail = detail.withSelectedChapterSource(
+                    preferredSourceId = preferredChapterSourceId(providerId),
+                    currentSourceId = currentSourceId,
+                )
                 val changed = withContext(Dispatchers.IO) {
-                    libraryStore.cacheMangaDetail(detail)
+                    libraryStore.cacheMangaDetail(resolvedDetail)
                 }
                 if (changed || uiState.selectedDetail == null || uiState.selectedDetail?.detailPath == cachedDetail.detailPath) {
-                    uiState = uiState.copy(selectedDetail = detail)
+                    uiState = uiState.copy(selectedDetail = resolvedDetail)
                 }
             }
             .onFailure {
@@ -128,6 +157,20 @@ class ReaderController(
             )
             onLoadingChange(false)
         }
+    }
+
+    fun selectChapterSource(
+        providerId: String,
+        detailPath: String,
+        sourceId: String,
+    ) {
+        val selectedDetail = uiState.selectedDetail ?: return
+        if (selectedDetail.providerId != providerId || selectedDetail.detailPath != detailPath) return
+        if (selectedDetail.selectedChapterSourceId == sourceId) return
+        if (selectedDetail.chapterSources.isNotEmpty() && selectedDetail.chapterSources.none { it.id == sourceId }) return
+        uiState = uiState.copy(
+            selectedDetail = selectedDetail.copy(selectedChapterSourceId = sourceId),
+        )
     }
 
     fun restoreReader(
@@ -230,29 +273,58 @@ class ReaderController(
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     ) {
-        val cachedDetail = withContext(Dispatchers.IO) {
-            libraryStore.getCachedMangaDetail(providerId, path)
+        val detailPath = resolvePreferredDetailPath(providerId, path)
+        val preferredSourceId = preferredChapterSourceId(providerId)
+        val currentSourceId = uiState.selectedDetail
+            ?.takeIf { it.providerId == providerId && it.detailPath == detailPath }
+            ?.selectedChapterSourceId
+        uiState = uiState.copy(
+            requestedDetailPath = detailPath,
+            isChapterLoading = false,
+        )
+        val cachedSnapshot = withContext(Dispatchers.IO) {
+            libraryStore.getCachedMangaDetailSnapshot(providerId, detailPath)
         }
-        if (cachedDetail != null) {
-            uiState = uiState.copy(selectedDetail = cachedDetail)
+        if (cachedSnapshot != null) {
+            val detail = cachedSnapshot.detail.withSelectedChapterSource(
+                preferredSourceId = preferredSourceId,
+                currentSourceId = currentSourceId,
+            )
+            uiState = uiState.copy(
+                selectedDetail = detail,
+                requestedDetailPath = detailPath,
+            )
             onSuccess()
-            scope.launch {
-                refreshDetailCache(providerId, path, cachedDetail)
+            if (isDetailSnapshotStale(cachedSnapshot)) {
+                scope.launch {
+                    refreshDetailCache(providerId, detailPath, detail)
+                }
             }
             return
         }
 
         val provider = providerRegistry.get(providerId)
-        runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
+        runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(detailPath) } }
             .onSuccess { detail ->
+                val resolvedDetail = detail.withSelectedChapterSource(
+                    preferredSourceId = preferredSourceId,
+                    currentSourceId = currentSourceId,
+                )
                 withContext(Dispatchers.IO) {
-                    libraryStore.cacheMangaDetail(detail)
+                    libraryStore.cacheMangaDetail(resolvedDetail)
                 }
-                uiState = uiState.copy(selectedDetail = detail)
+                uiState = uiState.copy(
+                    selectedDetail = resolvedDetail,
+                    requestedDetailPath = detailPath,
+                )
                 onSuccess()
             }
             .onFailure {
                 Log.e("KomaStream", "Could not fetch manga detail", it)
+                uiState = uiState.copy(
+                    requestedDetailPath = detailPath,
+                    isChapterLoading = false,
+                )
                 onError(it.message ?: "Could not open manga")
             }
     }
@@ -267,10 +339,14 @@ class ReaderController(
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
     ) {
+        val cacheKey = readerCacheKey(providerId, path)
         val offlineReader = withContext(Dispatchers.IO) {
             offlineStore.loadChapter(providerId, path)
         }
-        val readerResult = offlineReader ?: runCatching {
+        val cachedReader = readerDataCache[cacheKey]
+            ?.takeIf { System.currentTimeMillis() - it.cachedAtMillis <= READER_DATA_CACHE_TTL_MS }
+            ?.readerData
+        val readerResult = offlineReader ?: cachedReader ?: runCatching {
             val provider = providerRegistry.get(providerId)
             withContext(Dispatchers.IO) { provider.fetchReaderData(path) }
         }.getOrElse {
@@ -279,6 +355,10 @@ class ReaderController(
             onError(it.message ?: "Could not open chapter")
             return
         }
+        readerDataCache[cacheKey] = CachedReaderData(
+            readerData = readerResult,
+            cachedAtMillis = System.currentTimeMillis(),
+        )
 
         val currentManga = readerActionInteractor.resolveCurrentManga(
             providerId = providerId,
@@ -315,5 +395,53 @@ class ReaderController(
         )
         onLibraryChanged()
         onSuccess()
+    }
+
+    private fun resolvePreferredDetailPath(providerId: String, path: String): String {
+        return path.trim()
+    }
+
+    private fun preferredChapterSourceId(providerId: String): String {
+        return when (providerId) {
+            MangaBallProvider.PROVIDER_ID -> libraryStore.preferredChapterLanguage().toChapterLanguageCode().orEmpty()
+            else -> ""
+        }
+    }
+
+    private fun MangaDetail.withSelectedChapterSource(
+        preferredSourceId: String,
+        currentSourceId: String?,
+    ): MangaDetail {
+        if (chapterSources.isEmpty()) return this
+        val currentSelection = currentSourceId?.takeIf { sourceId ->
+            chapterSources.any { it.id == sourceId }
+        }
+        val preferredSelection = preferredSourceId.takeIf { sourceId ->
+            chapterSources.any { it.id == sourceId }
+        }
+        val fallbackSelection = chapterSources.firstOrNull { it.id != "all" }?.id
+            ?: chapterSources.firstOrNull()?.id
+            ?: selectedChapterSourceId
+        val resolvedSelection = currentSelection ?: preferredSelection ?: fallbackSelection
+        if (resolvedSelection.isBlank() || resolvedSelection == selectedChapterSourceId) return this
+        return copy(selectedChapterSourceId = resolvedSelection)
+    }
+
+    private fun isDetailSnapshotStale(snapshot: CachedMangaDetailSnapshot): Boolean {
+        return System.currentTimeMillis() - snapshot.updatedAt >= DETAIL_REVALIDATE_AFTER_MS
+    }
+
+    private fun readerCacheKey(providerId: String, path: String): String {
+        return "$providerId::${canonicalChapterKey(providerId, path)}"
+    }
+
+    private data class CachedReaderData(
+        val readerData: com.paudinc.komastream.data.model.ReaderData,
+        val cachedAtMillis: Long,
+    )
+
+    private companion object {
+        private const val DETAIL_REVALIDATE_AFTER_MS = 30L * 60L * 1000L
+        private const val READER_DATA_CACHE_TTL_MS = 2L * 60L * 1000L
     }
 }

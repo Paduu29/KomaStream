@@ -169,22 +169,25 @@ fun KomaStream() {
         savedNavigationStack = viewModel.navigationController.navigationStack
     }
 
-    LaunchedEffect(screen, readerUiState.readerData, readerUiState.selectedDetail) {
-        when (screen) {
-            is Screen.Reader -> {
-                val activeReader = readerUiState.readerData
-                if (activeReader?.providerId != screen.providerId || activeReader.chapterPath != screen.chapterPath) {
-                    viewModel.restoreScreenStateIfNeeded(screen)
+        LaunchedEffect(screen, readerUiState.readerData, readerUiState.selectedDetail) {
+            when (screen) {
+                is Screen.Reader -> {
+                    val activeReader = readerUiState.readerData
+                    if (activeReader?.providerId != screen.providerId || activeReader.chapterPath != screen.chapterPath) {
+                        viewModel.restoreScreenStateIfNeeded(screen)
+                    }
                 }
-            }
-            is Screen.Detail -> {
-                val activeDetail = readerUiState.selectedDetail
-                if (activeDetail?.providerId != screen.providerId || activeDetail.detailPath != screen.detailPath) {
-                    viewModel.restoreScreenStateIfNeeded(screen)
+                is Screen.Detail -> {
+                    val activeDetail = readerUiState.selectedDetail
+                    if (
+                        (activeDetail?.providerId != screen.providerId || activeDetail.detailPath != screen.detailPath) &&
+                        readerUiState.requestedDetailPath != screen.detailPath
+                    ) {
+                        viewModel.restoreScreenStateIfNeeded(screen)
+                    }
                 }
+                else -> Unit
             }
-            else -> Unit
-        }
     }
 
     val colorScheme = if (libraryState.useDarkTheme) komaDarkColorScheme() else komaLightColorScheme()
@@ -197,13 +200,15 @@ fun KomaStream() {
         Surface(color = MaterialTheme.colorScheme.background) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Scaffold(
+                contentWindowInsets = WindowInsets.safeDrawing,
                 containerColor = Color.Transparent,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = {
                     if (screen is Screen.Root) {
                         NavigationBar(
                             modifier = Modifier
-                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .navigationBarsPadding()
+                                .padding(horizontal = 14.dp, vertical = 4.dp)
                                 .clip(RoundedCornerShape(26.dp)),
                             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                             tonalElevation = 0.dp,
@@ -500,6 +505,7 @@ fun KomaStream() {
                                         strings = strings,
                                         selectedProviderId = libraryState.selectedProviderId,
                                         appLanguage = libraryState.appLanguage,
+                                        preferredChapterLanguage = libraryState.preferredChapterLanguage,
                                         useDarkTheme = libraryState.useDarkTheme,
                                         autoJumpToUnread = libraryState.autoJumpToUnread,
                                         mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
@@ -507,6 +513,7 @@ fun KomaStream() {
                                         versionName = BuildConfig.VERSION_NAME,
                                         updateState = updateController.updateState,
                                         onLanguageChange = { viewModel.changeLanguage(it) },
+                                        onPreferredChapterLanguageChange = { viewModel.changePreferredChapterLanguage(it) },
                                         onThemeChange = { viewModel.changeTheme(it) },
                                         onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
                                         onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
@@ -574,7 +581,7 @@ fun KomaStream() {
                                             else viewModel.downloadChapter(detail.providerId, path)
                                         },
                                         onReadChapter = { path -> viewModel.openReader(detail.providerId, path) },
-                                        onSelectChapterSource = { path -> viewModel.openDetail(detail.providerId, path) },
+                                        onSelectChapterSource = { sourceId -> viewModel.selectChapterSource(detail.providerId, detail.detailPath, sourceId) },
                                         onSolveCloudflare = null,
                                     )
                                 } ?: DetailLoadingPlaceholder(strings)
@@ -631,6 +638,7 @@ fun KomaStream() {
                                 strings = strings,
                                 selectedProviderId = libraryState.selectedProviderId,
                                 appLanguage = libraryState.appLanguage,
+                                preferredChapterLanguage = libraryState.preferredChapterLanguage,
                                 useDarkTheme = libraryState.useDarkTheme,
                                 autoJumpToUnread = libraryState.autoJumpToUnread,
                                 mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
@@ -638,6 +646,7 @@ fun KomaStream() {
                                 versionName = BuildConfig.VERSION_NAME,
                                 updateState = updateController.updateState,
                                 onLanguageChange = { viewModel.changeLanguage(it) },
+                                onPreferredChapterLanguageChange = { viewModel.changePreferredChapterLanguage(it) },
                                 onThemeChange = { viewModel.changeTheme(it) },
                                 onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
                                 onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
