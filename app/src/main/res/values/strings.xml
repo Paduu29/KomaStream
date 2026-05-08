@@ -189,6 +189,8 @@
     <string name="backup_imported">Backup imported</string>
     <string name="invalid_backup">Invalid backup</string>
     <string name="export_backup_error">Could not export backup</string>
+    <string name="backup_reading_file">Reading backup file</string>
+    <string name="backup_preparing_restore">Preparing restore</string>
     <string name="result_count">%1$d results</string>
     <string name="item_count_singular">%1$d item</string>
     <string name="item_count_plural">%1$d items</string>

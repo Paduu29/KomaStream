@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 class BackupController(
     private val scope: CoroutineScope,
@@ -24,19 +25,31 @@ class BackupController(
     private val _operationState = MutableStateFlow<BackupOperationUiState>(BackupOperationUiState.Idle)
     val operationState: StateFlow<BackupOperationUiState> = _operationState.asStateFlow()
 
+    private fun buildEtaSeconds(startedAtMillis: Long, progressPercent: Int): Int? {
+        if (progressPercent <= 0) return null
+        val elapsedSeconds = ((System.currentTimeMillis() - startedAtMillis).coerceAtLeast(0L) / 1000.0)
+        if (elapsedSeconds <= 0.5) return null
+        val remaining = elapsedSeconds * (100.0 - progressPercent.toDouble()) / progressPercent.toDouble()
+        return remaining.roundToInt().coerceAtLeast(0)
+    }
+
     fun exportBackup(uri: Uri) {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
+                    val startedAt = System.currentTimeMillis()
                     _operationState.value = BackupOperationUiState.InProgress(
                         type = BackupOperationType.EXPORT,
                         progressPercent = 0,
+                        stageMessage = strings.backupExporting,
                     )
                     val bytes = libraryStore.exportBackup().toByteArray()
                     backupFileInteractor.exportBackup(uri, bytes) { progress ->
                         _operationState.value = BackupOperationUiState.InProgress(
                             type = BackupOperationType.EXPORT,
                             progressPercent = progress,
+                            stageMessage = strings.backupExporting,
+                            etaSeconds = buildEtaSeconds(startedAt, progress),
                         )
                     }
                 }
@@ -64,24 +77,39 @@ class BackupController(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
+                    val startedAt = System.currentTimeMillis()
                     _operationState.value = BackupOperationUiState.InProgress(
                         type = BackupOperationType.IMPORT,
                         progressPercent = 0,
+                        stageMessage = strings.backupImporting,
                     )
                     val payloadBytes = backupFileInteractor.importBackup(uri) { progress ->
+                        val adjusted = (progress.coerceIn(0, 100) * 6) / 10
                         _operationState.value = BackupOperationUiState.InProgress(
                             type = BackupOperationType.IMPORT,
-                            progressPercent = progress.coerceIn(0, 95),
+                            progressPercent = adjusted.coerceIn(0, 60),
+                            stageMessage = strings.backupReadingFile,
+                            etaSeconds = buildEtaSeconds(startedAt, adjusted.coerceAtLeast(1)),
                         )
                     }
+                    val restoredPayload = payloadBytes.toString(Charsets.UTF_8)
                     _operationState.value = BackupOperationUiState.InProgress(
                         type = BackupOperationType.IMPORT,
-                        progressPercent = 98,
+                        progressPercent = 62,
+                        stageMessage = strings.backupPreparingRestore,
+                        etaSeconds = buildEtaSeconds(startedAt, 62),
                     )
-                    val json = payloadBytes.toString(Charsets.UTF_8)
                     libraryStore.importBackup(
-                        payload = json,
+                        payload = restoredPayload,
                         selectedProviderIdFallback = selectedProviderIdFallback,
+                        onProgress = { progress, stage ->
+                            _operationState.value = BackupOperationUiState.InProgress(
+                                type = BackupOperationType.IMPORT,
+                                progressPercent = progress.coerceIn(62, 100),
+                                stageMessage = stage,
+                                etaSeconds = buildEtaSeconds(startedAt, progress.coerceIn(1, 100)),
+                            )
+                        },
                     )
                 }
                 onImported()

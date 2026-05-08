@@ -210,6 +210,7 @@ class ReaderController(
         providerId: String,
         path: String,
         index: Int,
+        allowAutoReadMark: Boolean,
         onChapterMarkedRead: () -> Unit,
     ) {
         uiState = uiState.copy(currentPageIndex = index.coerceAtLeast(0))
@@ -219,7 +220,7 @@ class ReaderController(
             ?.pages
             ?.size
             ?: 0
-        if (totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
+        if (allowAutoReadMark && totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
             val detail = uiState.selectedDetail?.takeIf {
                 it.providerId == providerId && it.detailPath == uiState.readerData?.mangaDetailPath
             }

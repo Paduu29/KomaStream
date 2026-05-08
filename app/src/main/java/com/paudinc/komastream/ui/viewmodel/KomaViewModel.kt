@@ -403,11 +403,12 @@ val currentProvider
         refreshHome()
     }
 
-    fun updatePageProgress(providerId: String, path: String, index: Int) {
+    fun updatePageProgress(providerId: String, path: String, index: Int, allowAutoReadMark: Boolean = true) {
         readerController.updatePageProgress(
             providerId = providerId,
             path = path,
             index = index,
+            allowAutoReadMark = allowAutoReadMark,
             onChapterMarkedRead = { libraryController.refreshState() },
         )
     }

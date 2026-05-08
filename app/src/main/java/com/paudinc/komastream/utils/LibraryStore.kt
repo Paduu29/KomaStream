@@ -407,11 +407,13 @@ class LibraryStore(context: Context) {
     fun importBackup(
         payload: String,
         selectedProviderIdFallback: String = selectedProviderId(),
+        onProgress: (Int, String) -> Unit = { _, _ -> },
     ) {
         ensureInitialized()
         val importedPayload = backupPayloadCodec.importPayload(payload, selectedProviderIdFallback)
-        replaceFromImportedPayload(importedPayload)
+        replaceFromImportedPayload(importedPayload, onProgress)
         val importedSettings = importedPayload.settings?.let(::JSONObject)
+        onProgress(99, "Applying settings")
         updateSettings {
             it.copy(
                 selectedProviderId = importedPayload.selectedProviderId,
@@ -424,6 +426,7 @@ class LibraryStore(context: Context) {
                 legacyPrefsMigrated = true,
             )
         }
+        onProgress(100, "Backup restored")
     }
 
     fun saveChapterProgress(providerId: String, chapterPath: String, pageIndex: Int) {
@@ -509,7 +512,10 @@ class LibraryStore(context: Context) {
             settings = settingsJson.toString(),
             mangaDetailCache = "[]",
         )
-        replaceFromImportedPayload(backupPayloadCodec.importPayload(payload, defaultProviderId))
+        replaceFromImportedPayload(
+            backupPayloadCodec.importPayload(payload, defaultProviderId),
+            onProgress = { _, _ -> },
+        )
         dao.upsertSettings(
             defaultSettings(
                 selectedProviderId = legacyPrefs.getString("selectedProviderId", "").orEmpty(),
@@ -524,7 +530,11 @@ class LibraryStore(context: Context) {
         )
     }
 
-    private fun replaceFromImportedPayload(importedPayload: com.paudinc.komastream.data.repository.ImportedLibraryPayload) {
+    private fun replaceFromImportedPayload(
+        importedPayload: com.paudinc.komastream.data.repository.ImportedLibraryPayload,
+        onProgress: (Int, String) -> Unit,
+    ) {
+        onProgress(10, "Clearing existing data")
         dao.clearFavorites()
         dao.clearReading()
         dao.clearReadChapters()
@@ -545,19 +555,27 @@ class LibraryStore(context: Context) {
         val legacyBackup = importedPayload.backupVersion < 2
         val (favorites, reading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
 
+        onProgress(20, "Importing favorites")
         favorites.mapIndexed { index, manga ->
             manga.toFavoriteEntity(orderIndex = (favorites.size - index).toLong())
         }.forEach(dao::upsertFavorite)
+        onProgress(30, "Importing reading list")
         reading.mapIndexed { index, manga ->
             manga.toReadingEntity(orderIndex = (reading.size - index).toLong())
         }.forEach(dao::upsertReading)
 
+        onProgress(40, "Restoring linked progress")
         (favorites + reading).forEach(::synchronizeLinkedProgress)
 
+        onProgress(50, "Importing read chapters")
         importQualifiedChapterPaths(importedPayload.readChapters)
+        onProgress(60, "Importing chapter progress")
         importProgressMap(importedPayload.readProgress)
+        onProgress(70, "Importing page counts")
         importPageCountMap(importedPayload.chapterPageCounts)
+        onProgress(85, "Importing cached details")
         importMangaDetailCache(importedPayload.mangaDetailCache)
+        onProgress(95, "Reconciling statuses")
         reconcileImportedFavoriteStatuses(legacyBackup)
     }
 

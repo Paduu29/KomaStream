@@ -595,7 +595,14 @@ fun KomaStream() {
                                         initialPageIndex = readerUiState.initialPageIndex,
                                         isDownloaded = offlineStore.isChapterDownloaded(data.providerId, data.chapterPath),
                                         downloadPercent = libraryController.downloadProgress[data.chapterPath],
-                                        onPagePositionChanged = { index -> viewModel.updatePageProgress(data.providerId, data.chapterPath, index) },
+                                        onPagePositionChanged = { index, allowAutoReadMark ->
+                                            viewModel.updatePageProgress(
+                                                data.providerId,
+                                                data.chapterPath,
+                                                index,
+                                                allowAutoReadMark,
+                                            )
+                                        },
                                         onToggleDownload = {
                                             if (offlineStore.isChapterDownloaded(data.providerId, data.chapterPath)) {
                                                 viewModel.removeDownloadedChapter(data.providerId, data.chapterPath)

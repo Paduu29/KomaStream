@@ -181,6 +181,8 @@
     <string name="backup_imported">Copia importada</string>
     <string name="invalid_backup">Copia no válida</string>
     <string name="export_backup_error">No se pudo exportar la copia</string>
+    <string name="backup_reading_file">Leyendo archivo de copia</string>
+    <string name="backup_preparing_restore">Preparando restauración</string>
     <string name="result_count">%1$d resultados</string>
     <string name="item_count_singular">%1$d elemento</string>
     <string name="item_count_plural">%1$d elementos</string>

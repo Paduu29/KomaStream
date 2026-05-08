@@ -260,6 +260,8 @@ sealed interface BackupOperationUiState {
     data class InProgress(
         val type: BackupOperationType,
         val progressPercent: Int,
+        val stageMessage: String? = null,
+        val etaSeconds: Int? = null,
     ) : BackupOperationUiState
 
     data class Completed(

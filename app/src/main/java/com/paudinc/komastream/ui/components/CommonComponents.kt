@@ -1063,11 +1063,24 @@ fun BackupOperationDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (state) {
                     is BackupOperationUiState.InProgress -> {
+                        state.stageMessage?.let { stage ->
+                            Text(
+                                text = stage,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                         Text(
                             text = "${state.progressPercent}%",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
+                        state.etaSeconds?.let { eta ->
+                            Text(
+                                text = "ETA ${formatDuration(eta)}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         LinearProgressIndicator(
                             progress = { state.progressPercent / 100f },
                             modifier = Modifier.fillMaxWidth(),
@@ -1090,6 +1103,17 @@ fun BackupOperationDialog(
         },
         dismissButton = {},
     )
+}
+
+private fun formatDuration(totalSeconds: Int): String {
+    val safe = totalSeconds.coerceAtLeast(0)
+    val minutes = safe / 60
+    val seconds = safe % 60
+    return if (minutes > 0) {
+        "%dm %02ds".format(minutes, seconds)
+    } else {
+        "%ds".format(seconds)
+    }
 }
 
 @Composable

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,10 +69,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
@@ -96,7 +100,7 @@ fun ReaderScreen(
     initialPageIndex: Int,
     isDownloaded: Boolean,
     downloadPercent: Int?,
-    onPagePositionChanged: (Int) -> Unit,
+    onPagePositionChanged: (Int, Boolean) -> Unit,
     onToggleDownload: () -> Unit,
     isRead: Boolean,
     onToggleRead: () -> Unit,
@@ -122,6 +126,8 @@ fun ReaderScreen(
     val previousChapterPath by rememberUpdatedState(reader.previousChapterPath)
     val nextChapterPath by rememberUpdatedState(reader.nextChapterPath)
     var sliderPage by remember(reader.chapterPath) { mutableIntStateOf(restoredPageIndex) }
+    var pageTrackingReady by remember(reader.chapterPath) { mutableStateOf(false) }
+    var allowAutoReadMark by remember(reader.chapterPath) { mutableStateOf(false) }
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
@@ -131,23 +137,33 @@ fun ReaderScreen(
     }
 
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
+        pageTrackingReady = false
+        allowAutoReadMark = false
         listState.scrollToItem((restoredPageIndex + 1).coerceAtMost(reader.pages.size))
+        pageTrackingReady = true
     }
 
-    LaunchedEffect(reader.chapterPath, listState) {
+    LaunchedEffect(reader.chapterPath, listState, pageTrackingReady) {
         snapshotFlow {
-            currentReaderPageIndex(listState, reader.pages.size)
+            if (pageTrackingReady) currentReaderPageIndex(listState, reader.pages.size) else Int.MIN_VALUE
         }
+        .filter { it != Int.MIN_VALUE }
         .distinctUntilChanged()
         .collect { pageIndex ->
             sliderPage = pageIndex
-            latestOnPagePositionChanged(pageIndex)
+            latestOnPagePositionChanged(pageIndex, allowAutoReadMark)
+            allowAutoReadMark = true
         }
     }
 
     DisposableEffect(reader.chapterPath, listState) {
         onDispose {
-            latestOnPagePositionChanged(currentReaderPageIndex(listState, reader.pages.size, sliderPage))
+            if (pageTrackingReady) {
+                latestOnPagePositionChanged(
+                    currentReaderPageIndex(listState, reader.pages.size, sliderPage),
+                    allowAutoReadMark,
+                )
+            }
         }
     }
 
@@ -468,12 +484,8 @@ private fun currentReaderPageIndex(
         return fallbackPageIndex.coerceIn(0, pageCount - 1)
     }
 
-    val lastVisible = visibleItems.lastOrNull()
     val firstVisible = visibleItems.firstOrNull()
     return when {
-        lastVisible != null && lastVisible.index > 1 -> {
-            (lastVisible.index - 2).coerceIn(0, pageCount - 1)
-        }
         firstVisible != null && firstVisible.index > 0 -> {
             (firstVisible.index - 1).coerceIn(0, pageCount - 1)
         }
@@ -539,6 +551,7 @@ fun ZoomableReaderPage(
     val useLightReaderChrome = colorScheme.background.luminance() > 0.5f
     val pageSurfaceColor = if (useLightReaderChrome) colorScheme.surfaceContainerLow else Color.Black
     val zoomBorderColor = if (useLightReaderChrome) colorScheme.primary else colorScheme.tertiary
+    val configuration = LocalConfiguration.current
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val pageKey = remember(providerId, chapterPath, page.id) { "$providerId:$chapterPath:${page.id}" }
@@ -650,16 +663,22 @@ fun ZoomableReaderPage(
             }
         }
 
-    val imageRequest = remember(providerId, chapterPath, page.imageUrl, context) {
+    val imageSource = remember(providerId, chapterPath, page.imageUrl, offlineFile) {
+        offlineFile?.takeIf { it.exists() } ?: page.imageUrl
+    }
+    val imageRequest = remember(providerId, chapterPath, page.imageUrl, context, imageSource) {
         ImageRequest.Builder(context)
-            .data(page.imageUrl)
+            .data(imageSource)
             .apply {
                 readerRequestHeaders(providerId, chapterPath)?.let { headers(it) }
             }
             .crossfade(false)
             .build()
     }
-    Box(modifier = pageZoomModifier) {
+    val minPageHeight = remember(configuration.screenHeightDp) {
+        (configuration.screenHeightDp.dp * 0.82f).coerceAtLeast(280.dp)
+    }
+    Box(modifier = pageZoomModifier.heightIn(min = minPageHeight)) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
@@ -669,34 +688,17 @@ fun ZoomableReaderPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = minPageHeight)
                     .background(pageSurfaceColor),
                 contentAlignment = Alignment.Center
             ) {
-                if (offlineFile != null && offlineFile.exists()) {
-                    val bitmap = remember(offlineFile) {
-                        BitmapFactory.decodeFile(offlineFile.absolutePath)?.asImageBitmap()
-                    }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = "Page ${page.numberLabel}",
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth,
-                        )
-                    } else {
-                        ReaderNetworkImage(
-                            pageNumberLabel = page.numberLabel,
-                            imageModifier = Modifier.fillMaxWidth(),
-                            imageRequest = imageRequest,
-                        )
-                    }
-                } else {
-                    ReaderNetworkImage(
-                        pageNumberLabel = page.numberLabel,
-                        imageModifier = Modifier.fillMaxWidth(),
-                        imageRequest = imageRequest,
-                    )
-                }
+                ReaderNetworkImage(
+                    pageNumberLabel = page.numberLabel,
+                    imageModifier = Modifier.fillMaxWidth(),
+                    imageRequest = imageRequest,
+                    minPageHeight = minPageHeight,
+                    pageSurfaceColor = pageSurfaceColor,
+                )
             }
         }
     }
@@ -707,12 +709,16 @@ private fun ReaderNetworkImage(
     pageNumberLabel: String,
     imageModifier: Modifier,
     imageRequest: ImageRequest,
+    minPageHeight: Dp,
+    pageSurfaceColor: Color,
 ) {
     AsyncImage(
         model = imageRequest,
         contentDescription = "Page $pageNumberLabel",
-        modifier = imageModifier,
+        modifier = imageModifier.heightIn(min = minPageHeight),
         contentScale = ContentScale.FillWidth,
+        placeholder = ColorPainter(pageSurfaceColor),
+        error = ColorPainter(pageSurfaceColor),
     )
 }
 
