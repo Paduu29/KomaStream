@@ -71,6 +71,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.paudinc.komastream.data.model.ReaderData
@@ -111,6 +113,7 @@ fun ReaderScreen(
 ) {
     val listState = rememberLazyListState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val useLightReaderChrome = colorScheme.background.luminance() > 0.5f
     val outerBackgroundTop = if (useLightReaderChrome) colorScheme.surfaceVariant.copy(alpha = 0.55f) else Color(0xFF06040D)
@@ -130,6 +133,7 @@ fun ReaderScreen(
     var allowAutoReadMark by remember(reader.chapterPath) { mutableStateOf(false) }
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
+    var prefetchedPageKeys by remember(reader.chapterPath) { mutableStateOf(emptySet<String>()) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
 
     LaunchedEffect(zoomedPageKey) {
@@ -152,8 +156,27 @@ fun ReaderScreen(
         .collect { pageIndex ->
             sliderPage = pageIndex
             latestOnPagePositionChanged(pageIndex, allowAutoReadMark)
+            prefetchedPageKeys = prefetchReaderPages(
+                context = context,
+                providerId = reader.providerId,
+                chapterPath = reader.chapterPath,
+                pages = reader.pages,
+                startIndex = pageIndex + 1,
+                alreadyPrefetchedKeys = prefetchedPageKeys,
+            )
             allowAutoReadMark = true
         }
+    }
+
+    LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages) {
+        prefetchedPageKeys = prefetchReaderPages(
+            context = context,
+            providerId = reader.providerId,
+            chapterPath = reader.chapterPath,
+            pages = reader.pages,
+            startIndex = restoredPageIndex + 1,
+            alreadyPrefetchedKeys = prefetchedPageKeys,
+        )
     }
 
     DisposableEffect(reader.chapterPath, listState) {
@@ -497,6 +520,7 @@ private const val DOUBLE_TAP_ZOOM_SCALE = 2f
 private const val ZOOM_PAN_SPEED_MULTIPLIER = 1.6f
 private const val READER_GESTURE_TAG = "KomaReaderGesture"
 private const val HORIZONTAL_DRAG_THRESHOLD_DP = 100f
+private const val READER_PREFETCH_AHEAD_PAGES = 6
 
 @Composable
 fun ReaderChapterNavigationButtons(
@@ -560,12 +584,7 @@ fun ZoomableReaderPage(
     }
 
     val offlineFile = remember(providerId, chapterPath, page.offlineFileName) {
-        if (page.offlineFileName.isBlank()) null else {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-                .digest(com.paudinc.komastream.utils.qualifyProviderValue(providerId, chapterPath).toByteArray(java.nio.charset.StandardCharsets.UTF_8))
-            val name = digest.joinToString("") { "%02x".format(it) }
-            File(File(offlineStore.context.filesDir, "offline_chapters"), "$name/${page.offlineFileName}")
-        }
+        offlineReaderFile(offlineStore.context, providerId, chapterPath, page.offlineFileName)
     }
 
     val pageZoomModifier = Modifier
@@ -663,18 +682,13 @@ fun ZoomableReaderPage(
             }
         }
 
-    val imageSource = remember(providerId, chapterPath, page.imageUrl, offlineFile) {
-        offlineFile?.takeIf { it.exists() } ?: page.imageUrl
-    }
-    val imageRequest = remember(providerId, chapterPath, page.imageUrl, context, imageSource) {
-        ImageRequest.Builder(context)
-            .data(imageSource)
-            .apply {
-                readerRequestHeaders(providerId, chapterPath)?.let { headers(it) }
-            }
-            .crossfade(false)
-            .build()
-    }
+    val imageRequest = rememberReaderImageRequest(
+        context = context,
+        providerId = providerId,
+        chapterPath = chapterPath,
+        page = page,
+        offlineFile = offlineFile,
+    )
     val minPageHeight = remember(configuration.screenHeightDp) {
         (configuration.screenHeightDp.dp * 0.82f).coerceAtLeast(280.dp)
     }
@@ -720,6 +734,69 @@ private fun ReaderNetworkImage(
         placeholder = ColorPainter(pageSurfaceColor),
         error = ColorPainter(pageSurfaceColor),
     )
+}
+
+private fun rememberReaderImageRequest(
+    context: android.content.Context,
+    providerId: String,
+    chapterPath: String,
+    page: ReaderPage,
+    offlineFile: File?,
+): ImageRequest {
+    val imageSource = offlineFile?.takeIf { it.exists() } ?: page.imageUrl
+    return ImageRequest.Builder(context)
+        .data(imageSource)
+        .apply {
+            readerRequestHeaders(providerId, chapterPath)?.let { headers(it) }
+        }
+        .crossfade(false)
+        .build()
+}
+
+private fun prefetchReaderPages(
+    context: android.content.Context,
+    providerId: String,
+    chapterPath: String,
+    pages: List<ReaderPage>,
+    startIndex: Int,
+    alreadyPrefetchedKeys: Set<String> = emptySet(),
+): Set<String> {
+    if (pages.isEmpty()) return alreadyPrefetchedKeys
+    val fromIndex = startIndex.coerceAtLeast(0)
+    val toIndex = (fromIndex + READER_PREFETCH_AHEAD_PAGES - 1).coerceAtMost(pages.lastIndex)
+    if (fromIndex > toIndex) return alreadyPrefetchedKeys
+
+    val loader = context.imageLoader
+    val updatedPrefetchedKeys = alreadyPrefetchedKeys.toMutableSet()
+    for (index in fromIndex..toIndex) {
+        val page = pages[index]
+        val pageKey = "$providerId:$chapterPath:${page.id}"
+        if (!updatedPrefetchedKeys.add(pageKey)) continue
+        val offlineFile = offlineReaderFile(context, providerId, chapterPath, page.offlineFileName)
+        val imageSource = offlineFile?.takeIf { it.exists() } ?: page.imageUrl
+        val request = ImageRequest.Builder(context)
+            .data(imageSource)
+            .apply {
+                readerRequestHeaders(providerId, chapterPath)?.let { headers(it) }
+            }
+            .crossfade(false)
+            .build()
+        loader.enqueue(request)
+    }
+    return updatedPrefetchedKeys
+}
+
+private fun offlineReaderFile(
+    context: android.content.Context,
+    providerId: String,
+    chapterPath: String,
+    offlineFileName: String,
+): File? {
+    if (offlineFileName.isBlank()) return null
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(com.paudinc.komastream.utils.qualifyProviderValue(providerId, chapterPath).toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+    val name = digest.joinToString("") { "%02x".format(it) }
+    return File(File(context.filesDir, "offline_chapters"), "$name/$offlineFileName")
 }
 
 private fun readerRequestHeaders(providerId: String, chapterPath: String): Headers? {
