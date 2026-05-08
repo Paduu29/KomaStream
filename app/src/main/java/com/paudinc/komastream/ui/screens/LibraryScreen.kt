@@ -506,13 +506,14 @@ private fun sortLibrarySeries(
     fun completionScore(group: com.paudinc.komastream.utils.LibrarySeriesGroup): Double {
         val chapterCount = seriesChapterCount(group.entries, chapterCountForManga)?.takeIf { it > 0 } ?: return Double.NaN
         val entry = preferredEntry(group)
-        val readCount = displayReadCount(entry)?.takeIf { it > 0 } ?: return Double.NaN
+        val readCount = displayReadCount(entry, chapterCount)?.takeIf { it > 0 } ?: return Double.NaN
         return (readCount.toDouble() / chapterCount.toDouble()).coerceIn(0.0, 1.0)
     }
 
     fun progressScore(group: com.paudinc.komastream.utils.LibrarySeriesGroup): Double {
         val entry = preferredEntry(group)
-        return displayReadCount(entry)?.toDouble()
+        val chapterCount = seriesChapterCount(group.entries, chapterCountForManga)
+        return displayReadCount(entry, chapterCount)?.toDouble()
             ?: entry.lastReadChapterNumber?.takeIf { it > 0 }?.toDouble()
             ?: 0.0
     }
@@ -837,8 +838,8 @@ private fun libraryProgressText(
     manga: SavedManga,
     chapterCount: Int?,
 ): String {
-    val readCount = displayReadCount(manga)
     val total = chapterCount?.takeIf { it > 0 }
+    val readCount = displayReadCount(manga, total)
     return when {
         readCount != null && total != null -> {
             val percent = ((readCount.toDouble() / total.toDouble()) * 100).toInt().coerceIn(0, 100)
@@ -850,10 +851,10 @@ private fun libraryProgressText(
     }
 }
 
-private fun displayReadCount(manga: SavedManga): Int? {
+private fun displayReadCount(manga: SavedManga, chapterCount: Int? = null): Int? {
     manga.lastProgressChapterNumber?.let { progressNumber ->
         val completed = ceil(progressNumber).toInt() - 1
-        if (completed >= 0) return completed
+        if (completed >= 0 && (chapterCount == null || completed <= chapterCount)) return completed
     }
     return manga.lastReadChapterNumber?.takeIf { it > 0 }
 }

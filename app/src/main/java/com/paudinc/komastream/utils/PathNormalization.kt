@@ -21,18 +21,30 @@ fun canonicalChapterPathKey(providerId: String, chapterPath: String): String {
     val normalized = normalizeStoredPath(chapterPath).substringBefore('?').substringBefore('#').trim('/')
     if (normalized.isBlank()) return ""
     val parts = normalized.split("/").filter { it.isNotBlank() }.toMutableList()
-    if (parts.size >= 2) {
-        val chapterIndex = parts.lastIndex - 1
-        normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
-    }
     return when (providerId) {
+        "leermangaesp-es" -> {
+            if (parts.isNotEmpty()) {
+                normalizeChapterPathToken(parts.last())?.let { parts[parts.lastIndex] = it }
+            }
+            parts.joinToString("/")
+        }
         "inmanga-es" -> {
+            if (parts.size >= 2) {
+                val chapterIndex = parts.lastIndex - 1
+                normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
+            }
             when {
                 parts.size >= 6 && isUuid(parts[3]) -> listOf(parts[0], parts[1], parts[2], parts[4], parts[5]).joinToString("/")
                 else -> parts.joinToString("/")
             }
         }
-        else -> parts.joinToString("/")
+        else -> {
+            if (parts.size >= 2) {
+                val chapterIndex = parts.lastIndex - 1
+                normalizeChapterPathToken(parts[chapterIndex])?.let { parts[chapterIndex] = it }
+            }
+            parts.joinToString("/")
+        }
     }
 }
 

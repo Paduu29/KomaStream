@@ -43,6 +43,7 @@ import com.paudinc.komastream.data.model.BackupOperationType
 import com.paudinc.komastream.data.model.BackupOperationUiState
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.utils.AppStrings
+import com.paudinc.komastream.utils.chapterPathProgressNumber
 import com.paudinc.komastream.utils.parseChapterInput
 
 @Composable
@@ -507,13 +508,8 @@ private fun favoriteStatusLabelColor(status: FavoriteMangaStatus): Color = when 
 }
 
 fun SavedManga.localizedLastChapterTitle(strings: AppStrings): String {
-    val chapterNumber = parseChapterInput(lastChapterTitle)
-        ?: lastChapterPath
-            .split("/")
-            .filter { it.isNotBlank() }
-            .takeLast(2)
-            .asReversed()
-            .firstNotNullOfOrNull(::parseChapterInput)
+    val chapterNumber = chapterPathProgressNumber(providerId, lastChapterPath)
+        ?: parseChapterInput(lastChapterTitle)
         ?: lastReadChapterNumber?.takeIf { it > 0 }?.toDouble()
     return when {
         chapterNumber != null -> strings.chapterNumberPrefix.format(chapterNumber)

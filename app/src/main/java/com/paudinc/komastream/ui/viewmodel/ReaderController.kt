@@ -18,6 +18,7 @@ import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.canonicalChapterKey
+import com.paudinc.komastream.utils.chapterPathProgressNumber
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.toProgressChapterNumber
@@ -243,8 +244,12 @@ class ReaderController(
         chapterTitle: String,
     ) {
         val readChapters = libraryStore.readChaptersForProvider(providerId)
+        val progressChapterPath = detail.chapters.firstOrNull { chapter ->
+            canonicalChapterKey(providerId, buildChapterPath(detail.detailPath, chapter)) ==
+                canonicalChapterKey(providerId, chapterPath)
+        }?.let { buildChapterPath(detail.detailPath, it) } ?: return
         val progressChapter = detail.chapters.firstOrNull { chapter ->
-            buildChapterPath(detail.detailPath, chapter) == chapterPath
+            buildChapterPath(detail.detailPath, chapter) == progressChapterPath
         } ?: return
         val lastReadChapterNumber = resolveMalReadCountForReadChapters(
             providerId = providerId,
@@ -259,9 +264,11 @@ class ReaderController(
                 detailPath = detail.detailPath,
                 coverUrl = detail.coverUrl,
                 lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
-                lastChapterPath = chapterPath,
-                lastProgressChapterNumber = chapterTitle.toProgressChapterNumber()
-                    ?: progressChapter.chapterNumberUrl.toProgressChapterNumber(),
+                lastChapterPath = progressChapterPath,
+                lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
+                    ?: progressChapter.chapterLabel.toProgressChapterNumber()
+                    ?: chapterPathProgressNumber(providerId, progressChapterPath)
+                    ?: chapterTitle.toProgressChapterNumber(),
                 lastReadChapterNumber = lastReadChapterNumber,
             )
         )

@@ -152,6 +152,20 @@ fun chapterValue(chapter: MangaChapter): Double {
 
 fun String.toProgressChapterNumber(): Double? = parseChapterInput(this)
 
+fun chapterPathProgressNumber(providerId: String, chapterPath: String): Double? {
+    val segments = canonicalChapterKey(providerId, chapterPath)
+        .split("/")
+        .filter { it.isNotBlank() }
+    val candidates = when (providerId) {
+        "leermangaesp-es" -> listOfNotNull(segments.lastOrNull())
+        else -> listOfNotNull(
+            segments.getOrNull(segments.lastIndex - 1),
+            segments.lastOrNull(),
+        )
+    }
+    return candidates.firstNotNullOfOrNull { parseChapterInput(it) }
+}
+
 fun resolveChapterPathForProgressReference(
     providerId: String,
     detailPath: String,

@@ -49,6 +49,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -121,7 +122,6 @@ fun ReaderScreen(
     val previousChapterPath by rememberUpdatedState(reader.previousChapterPath)
     val nextChapterPath by rememberUpdatedState(reader.nextChapterPath)
     var sliderPage by remember(reader.chapterPath) { mutableIntStateOf(restoredPageIndex) }
-    var hasEmittedPagePosition by remember(reader.chapterPath) { mutableStateOf(false) }
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
@@ -136,38 +136,18 @@ fun ReaderScreen(
 
     LaunchedEffect(reader.chapterPath, listState) {
         snapshotFlow {
-            val layoutInfo = listState.layoutInfo
-            val visibleItems = layoutInfo.visibleItemsInfo
-            val totalItems = layoutInfo.totalItemsCount
-            val pageCount = reader.pages.size
-
-            if (visibleItems.isEmpty() || totalItems < 2) {
-                return@snapshotFlow 0
-            }
-
-            val lastVisible = visibleItems.lastOrNull()
-            val firstVisible = visibleItems.firstOrNull()
-
-            val targetIndex = when {
-                lastVisible != null && lastVisible.index > 1 -> {
-                    (lastVisible.index - 2).coerceIn(0, pageCount - 1)
-                }
-                firstVisible != null && firstVisible.index > 0 -> {
-                    (firstVisible.index - 1).coerceIn(0, pageCount - 1)
-                }
-                else -> 0
-            }
-
-            targetIndex
+            currentReaderPageIndex(listState, reader.pages.size)
         }
         .distinctUntilChanged()
         .collect { pageIndex ->
-            if (!hasEmittedPagePosition) {
-                hasEmittedPagePosition = true
-                return@collect
-            }
             sliderPage = pageIndex
             latestOnPagePositionChanged(pageIndex)
+        }
+    }
+
+    DisposableEffect(reader.chapterPath, listState) {
+        onDispose {
+            latestOnPagePositionChanged(currentReaderPageIndex(listState, reader.pages.size, sliderPage))
         }
     }
 
@@ -474,6 +454,31 @@ private fun readerChapterSubtitle(chapterTitle: String): String {
     if (explicit != null) return "Chapter ${explicit.groupValues[2]}"
     val numeric = Regex("([0-9]+(?:\\.[0-9]+)?)").find(normalized)
     return if (numeric != null) "Chapter ${numeric.groupValues[1]}" else normalized
+}
+
+private fun currentReaderPageIndex(
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    pageCount: Int,
+    fallbackPageIndex: Int = 0,
+): Int {
+    if (pageCount <= 0) return 0
+    val layoutInfo = listState.layoutInfo
+    val visibleItems = layoutInfo.visibleItemsInfo
+    if (visibleItems.isEmpty() || layoutInfo.totalItemsCount < 2) {
+        return fallbackPageIndex.coerceIn(0, pageCount - 1)
+    }
+
+    val lastVisible = visibleItems.lastOrNull()
+    val firstVisible = visibleItems.firstOrNull()
+    return when {
+        lastVisible != null && lastVisible.index > 1 -> {
+            (lastVisible.index - 2).coerceIn(0, pageCount - 1)
+        }
+        firstVisible != null && firstVisible.index > 0 -> {
+            (firstVisible.index - 1).coerceIn(0, pageCount - 1)
+        }
+        else -> 0
+    }
 }
 
 private const val DOUBLE_TAP_ZOOM_SCALE = 2f

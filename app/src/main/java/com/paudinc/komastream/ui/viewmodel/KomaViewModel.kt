@@ -190,7 +190,7 @@ val currentProvider
         )
     }
 
-    fun openReader(providerId: String, path: String, replace: Boolean = false, resumeProgress: Boolean = false) {
+    fun openReader(providerId: String, path: String, replace: Boolean = false, resumeProgress: Boolean = true) {
         readerController.openReader(
             providerId = providerId,
             path = path,
@@ -421,6 +421,7 @@ val currentProvider
         val activeDetail = readerController.uiState.selectedDetail?.takeIf {
             it.providerId == providerId && sameMangaPath(providerId, it.detailPath, readerController.uiState.readerData?.mangaDetailPath.orEmpty())
         }
+        readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
         if (markCurrentRead && activeDetail != null) {
             readerController.syncReadingSnapshot(
                 providerId = providerId,
@@ -429,7 +430,6 @@ val currentProvider
                 chapterTitle = readerController.uiState.readerData?.chapterTitle.orEmpty(),
             )
         }
-        readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
         libraryController.refreshState()
         openReader(providerId, targetPath, replace = true, resumeProgress = false)
     }

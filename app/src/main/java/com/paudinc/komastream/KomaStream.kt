@@ -538,7 +538,7 @@ fun KomaStream() {
                                 readerUiState.selectedDetail?.let { detail ->
                                         val detailReadChapters = libraryStore.readChaptersForProvider(detail.providerId)
                                         val detailReading = allProvidersLibraryState.reading.firstOrNull {
-                                            it.providerId == detail.providerId && it.detailPath == detail.detailPath
+                                            it.providerId == detail.providerId && sameMangaPath(detail.providerId, it.detailPath, detail.detailPath)
                                         }
                                         val detailSavedManga = allProvidersLibraryState.reading.firstOrNull {
                                             it.providerId == detail.providerId && sameMangaPath(detail.providerId, it.detailPath, detail.detailPath)
