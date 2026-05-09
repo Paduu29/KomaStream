@@ -2,6 +2,11 @@ package com.paudinc.komastream.ui.screens
 
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -134,6 +139,7 @@ fun ReaderScreen(
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
     var prefetchedPageKeys by remember(reader.chapterPath) { mutableStateOf(emptySet<String>()) }
+    var showFloatingHeader by remember(reader.chapterPath) { mutableStateOf(false) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
 
     LaunchedEffect(zoomedPageKey) {
@@ -143,7 +149,7 @@ fun ReaderScreen(
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
         pageTrackingReady = false
         allowAutoReadMark = false
-        listState.scrollToItem((restoredPageIndex + 1).coerceAtMost(reader.pages.size))
+        listState.scrollToItem(initialReaderItemIndex(restoredPageIndex, reader.pages.size))
         pageTrackingReady = true
     }
 
@@ -177,6 +183,27 @@ fun ReaderScreen(
             startIndex = restoredPageIndex + 1,
             alreadyPrefetchedKeys = prefetchedPageKeys,
         )
+    }
+
+    LaunchedEffect(reader.chapterPath, listState) {
+        var previousScrollPosition = 0
+        snapshotFlow {
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+            val absolutePosition = (firstVisibleIndex * 100000) + firstVisibleOffset
+            val isNearTop = firstVisibleIndex == 0 && firstVisibleOffset < FLOATING_HEADER_TOP_THRESHOLD_PX
+            absolutePosition to isNearTop
+        }
+            .distinctUntilChanged()
+            .collect { (scrollPosition, isNearTop) ->
+                showFloatingHeader = when {
+                    isNearTop -> false
+                    scrollPosition < previousScrollPosition -> true
+                    scrollPosition > previousScrollPosition -> false
+                    else -> showFloatingHeader
+                }
+                previousScrollPosition = scrollPosition
+            }
     }
 
     DisposableEffect(reader.chapterPath, listState) {
@@ -227,129 +254,21 @@ fun ReaderScreen(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     item {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 6.dp),
-                            shape = RoundedCornerShape(22.dp),
-                            color = readerHeaderColor,
-                            border = cardBorder(),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier = Modifier.width(36.dp),
-                                    contentAlignment = Alignment.CenterStart,
-                                ) {
-                                    ReaderHeaderActionButton(
-                                        icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = strings.back,
-                                        onClick = onBack,
-                                    )
-                                }
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(1.dp),
-                                ) {
-                                    Text(
-                                        text = reader.mangaTitle,
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                    Text(
-                                        text = chapterSubtitle,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.width(72.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    ReaderHeaderActionButton(
-                                        icon = if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                        contentDescription = strings.chapterReadAction,
-                                        onClick = onToggleRead,
-                                    )
-                                    Box {
-                                        ReaderHeaderActionButton(
-                                            icon = Icons.Default.MoreVert,
-                                            contentDescription = strings.settings,
-                                            onClick = { overflowExpanded = true },
-                                        )
-                                        DropdownMenu(
-                                            expanded = overflowExpanded,
-                                            onDismissRequest = { overflowExpanded = false },
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text(strings.manga) },
-                                                onClick = {
-                                                    overflowExpanded = false
-                                                    onOpenManga(reader.mangaDetailPath)
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null)
-                                                },
-                                            )
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Text(
-                                                        if (isRead) strings.markAllUnread else strings.chapterReadAction
-                                                    )
-                                                },
-                                                onClick = {
-                                                    overflowExpanded = false
-                                                    onToggleRead()
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                                        contentDescription = null,
-                                                    )
-                                                },
-                                            )
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Text(
-                                                        when {
-                                                            downloadPercent != null -> strings.cancel
-                                                            isDownloaded -> strings.removeDownload
-                                                            else -> strings.download
-                                                        }
-                                                    )
-                                                },
-                                                onClick = {
-                                                    overflowExpanded = false
-                                                    onToggleDownload()
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
-                                                        contentDescription = null,
-                                                    )
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        ReaderHeaderCard(
+                            strings = strings,
+                            mangaTitle = reader.mangaTitle,
+                            chapterSubtitle = chapterSubtitle,
+                            readerHeaderColor = readerHeaderColor,
+                            isRead = isRead,
+                            downloadPercent = downloadPercent,
+                            isDownloaded = isDownloaded,
+                            overflowExpanded = overflowExpanded,
+                            onOverflowExpandedChange = { overflowExpanded = it },
+                            onBack = onBack,
+                            onToggleRead = onToggleRead,
+                            onOpenManga = { onOpenManga(reader.mangaDetailPath) },
+                            onToggleDownload = onToggleDownload,
+                        )
                     }
                     itemsIndexed(
                         items = reader.pages,
@@ -384,6 +303,31 @@ fun ReaderScreen(
                             )
                         }
                     }
+                }
+
+                AnimatedVisibility(
+                    visible = showFloatingHeader,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 }),
+                ) {
+                    ReaderHeaderCard(
+                        strings = strings,
+                        mangaTitle = reader.mangaTitle,
+                        chapterSubtitle = chapterSubtitle,
+                        readerHeaderColor = readerHeaderColor.copy(alpha = 0.97f),
+                        isRead = isRead,
+                        downloadPercent = downloadPercent,
+                        isDownloaded = isDownloaded,
+                        overflowExpanded = overflowExpanded,
+                        onOverflowExpandedChange = { overflowExpanded = it },
+                        onBack = onBack,
+                        onToggleRead = onToggleRead,
+                        onOpenManga = { onOpenManga(reader.mangaDetailPath) },
+                        onToggleDownload = onToggleDownload,
+                    )
                 }
 
                 Surface(
@@ -442,6 +386,147 @@ fun ReaderScreen(
                         backgroundColor = readerSurfaceColor.copy(alpha = 0.85f),
                         text = strings.loadingChapter,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderHeaderCard(
+    strings: AppStrings,
+    mangaTitle: String,
+    chapterSubtitle: String,
+    readerHeaderColor: Color,
+    isRead: Boolean,
+    downloadPercent: Int?,
+    isDownloaded: Boolean,
+    overflowExpanded: Boolean,
+    onOverflowExpandedChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    onToggleRead: () -> Unit,
+    onOpenManga: () -> Unit,
+    onToggleDownload: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = readerHeaderColor,
+        border = cardBorder(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.width(36.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                ReaderHeaderActionButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = strings.back,
+                    onClick = onBack,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(
+                    text = mangaTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = chapterSubtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Row(
+                modifier = Modifier.width(72.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ReaderHeaderActionButton(
+                    icon = if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = strings.chapterReadAction,
+                    onClick = onToggleRead,
+                )
+                Box {
+                    ReaderHeaderActionButton(
+                        icon = Icons.Default.MoreVert,
+                        contentDescription = strings.settings,
+                        onClick = { onOverflowExpandedChange(true) },
+                    )
+                    DropdownMenu(
+                        expanded = overflowExpanded,
+                        onDismissRequest = { onOverflowExpandedChange(false) },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(strings.manga) },
+                            onClick = {
+                                onOverflowExpandedChange(false)
+                                onOpenManga()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isRead) strings.markAllUnread else strings.chapterReadAction
+                                )
+                            },
+                            onClick = {
+                                onOverflowExpandedChange(false)
+                                onToggleRead()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isRead) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = null,
+                                )
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    when {
+                                        downloadPercent != null -> strings.cancel
+                                        isDownloaded -> strings.removeDownload
+                                        else -> strings.download
+                                    }
+                                )
+                            },
+                            onClick = {
+                                onOverflowExpandedChange(false)
+                                onToggleDownload()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (downloadPercent != null || !isDownloaded) Icons.Default.Download else Icons.Default.Delete,
+                                    contentDescription = null,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -516,11 +601,20 @@ private fun currentReaderPageIndex(
     }
 }
 
+private fun initialReaderItemIndex(
+    pageIndex: Int,
+    pageCount: Int,
+): Int {
+    if (pageCount <= 0) return 0
+    return if (pageIndex <= 0) 0 else (pageIndex + 1).coerceAtMost(pageCount)
+}
+
 private const val DOUBLE_TAP_ZOOM_SCALE = 2f
 private const val ZOOM_PAN_SPEED_MULTIPLIER = 1.6f
 private const val READER_GESTURE_TAG = "KomaReaderGesture"
 private const val HORIZONTAL_DRAG_THRESHOLD_DP = 100f
 private const val READER_PREFETCH_AHEAD_PAGES = 6
+private const val FLOATING_HEADER_TOP_THRESHOLD_PX = 48
 
 @Composable
 fun ReaderChapterNavigationButtons(

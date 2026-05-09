@@ -159,7 +159,7 @@ fun DetailScreen(
         }
         if (hasAutoPositionedChapterList) return@LaunchedEffect
         if (autoJumpToUnread && targetUnreadIndex != null) {
-            val chapterStartIndex = 1
+            val chapterStartIndex = DETAIL_CHAPTER_LIST_START_INDEX
             listState.scrollToItem((targetUnreadIndex + chapterStartIndex).coerceAtLeast(0))
             hasAutoPositionedChapterList = true
         } else if (!autoJumpToUnread) {
@@ -697,7 +697,7 @@ fun DetailScreen(
                     suppressAutoPositioning = true
                     hasAutoPositionedChapterList = true
                     scope.launch {
-                        val chapterStartIndex = 1
+                        val chapterStartIndex = DETAIL_CHAPTER_LIST_START_INDEX
                         val targetIndex = lastUnreadIndex?.let { chapterStartIndex + it }
                             ?: (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
                         listState.scrollToItem(targetIndex)
@@ -880,6 +880,8 @@ private fun chapterDedupeKey(chapter: com.paudinc.komastream.data.model.MangaCha
         else -> "label:${chapter.chapterLabel.trim().lowercase()}"
     }
 }
+
+private const val DETAIL_CHAPTER_LIST_START_INDEX = 2
 
 @Composable
 private fun DetailStatCard(
