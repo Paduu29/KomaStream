@@ -209,7 +209,7 @@ data class SavedManga(
     val title: String,
     val detailPath: String,
     val coverUrl: String,
-    val favoriteStatus: FavoriteMangaStatus = FavoriteMangaStatus.COMPLETED,
+    val favoriteStatus: FavoriteMangaStatus = FavoriteMangaStatus.READING,
     val lastChapterTitle: String = "",
     val lastChapterPath: String = "",
     val lastProgressChapterNumber: Double? = null,

@@ -180,8 +180,11 @@ class LibraryJsonCodec(
         return when {
             host.contains("inmanga.com") || host.contains("intomanga.com") -> "inmanga-es"
             host.contains("mangafire.to") || host.contains("mfcdn.nl") -> "mangafire-en"
+            host.contains("mangadot.net") -> "mangadotnet-en"
             "/ver/manga/" in path -> "inmanga-es"
             "/read/" in path -> "mangafire-en"
+            "/manga/" in path -> "mangadotnet-en"
+            "/chapter/" in path -> "mangadotnet-en"
             else -> ""
         }
     }
@@ -202,6 +205,7 @@ class LibraryJsonCodec(
                 .takeIf { it.isNotBlank() }
                 ?.let { if (it.startsWith("/")) it else "/$it" }
                 .orEmpty()
+            "mangadotnet-en" -> normalizedPath
             else -> normalizedPath
         }
     }

@@ -140,6 +140,7 @@ fun ReaderScreen(
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
     var prefetchedPageKeys by remember(reader.chapterPath) { mutableStateOf(emptySet<String>()) }
     var showFloatingHeader by remember(reader.chapterPath) { mutableStateOf(false) }
+    var showChapterNavigationBar by remember(reader.chapterPath) { mutableStateOf(true) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
 
     LaunchedEffect(zoomedPageKey) {
@@ -192,15 +193,23 @@ fun ReaderScreen(
             val firstVisibleOffset = listState.firstVisibleItemScrollOffset
             val absolutePosition = (firstVisibleIndex * 100000) + firstVisibleOffset
             val isNearTop = firstVisibleIndex == 0 && firstVisibleOffset < FLOATING_HEADER_TOP_THRESHOLD_PX
-            absolutePosition to isNearTop
+            val currentPageIndex = currentReaderPageIndex(listState, reader.pages.size, sliderPage)
+            val isAtLastPage = reader.pages.isNotEmpty() && currentPageIndex == reader.pages.lastIndex
+            Triple(absolutePosition, isNearTop, isAtLastPage)
         }
             .distinctUntilChanged()
-            .collect { (scrollPosition, isNearTop) ->
+            .collect { (scrollPosition, isNearTop, isAtLastPage) ->
                 showFloatingHeader = when {
                     isNearTop -> false
                     scrollPosition < previousScrollPosition -> true
                     scrollPosition > previousScrollPosition -> false
                     else -> showFloatingHeader
+                }
+                showChapterNavigationBar = when {
+                    isAtLastPage -> true
+                    scrollPosition < previousScrollPosition -> true
+                    scrollPosition > previousScrollPosition -> false
+                    else -> showChapterNavigationBar
                 }
                 previousScrollPosition = scrollPosition
             }
@@ -330,53 +339,59 @@ fun ReaderScreen(
                     )
                 }
 
-                Surface(
+                AnimatedVisibility(
+                    visible = showChapterNavigationBar,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 14.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    border = cardBorder(),
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                        border = cardBorder(),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            SmallReaderNavButton(
-                                onClick = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
-                                enabled = reader.previousChapterPath != null,
-                                icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                contentDescription = strings.previous,
-                            )
-                            Text(
-                                text = "${sliderPage + 1} / ${reader.pages.size}",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            SmallReaderNavButton(
-                                onClick = { reader.nextChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
-                                enabled = reader.nextChapterPath != null,
-                                icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = strings.next,
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                SmallReaderNavButton(
+                                    onClick = { reader.previousChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
+                                    enabled = reader.previousChapterPath != null,
+                                    icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                    contentDescription = strings.previous,
+                                )
+                                Text(
+                                    text = "${sliderPage + 1} / ${reader.pages.size}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                SmallReaderNavButton(
+                                    onClick = { reader.nextChapterPath?.let { onOpenChapter(reader.chapterPath, it, true) } },
+                                    enabled = reader.nextChapterPath != null,
+                                    icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = strings.next,
+                                )
+                            }
+                            Slider(
+                                value = sliderPage.toFloat(),
+                                onValueChange = { sliderPage = it.toInt() },
+                                onValueChangeFinished = {
+                                    scope.launch {
+                                        listState.animateScrollToItem((sliderPage + 1).coerceAtMost(reader.pages.size))
+                                    }
+                                },
+                                valueRange = 0f..(reader.pages.lastIndex.coerceAtLeast(0)).toFloat(),
+                                modifier = Modifier.height(22.dp),
                             )
                         }
-                        Slider(
-                            value = sliderPage.toFloat(),
-                            onValueChange = { sliderPage = it.toInt() },
-                            onValueChangeFinished = {
-                                scope.launch {
-                                    listState.animateScrollToItem((sliderPage + 1).coerceAtMost(reader.pages.size))
-                                }
-                            },
-                            valueRange = 0f..(reader.pages.lastIndex.coerceAtLeast(0)).toFloat(),
-                            modifier = Modifier.height(22.dp),
-                        )
                     }
                 }
 
@@ -796,15 +811,13 @@ fun ZoomableReaderPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = minPageHeight)
                     .background(pageSurfaceColor),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.TopCenter
             ) {
                 ReaderNetworkImage(
                     pageNumberLabel = page.numberLabel,
                     imageModifier = Modifier.fillMaxWidth(),
                     imageRequest = imageRequest,
-                    minPageHeight = minPageHeight,
                     pageSurfaceColor = pageSurfaceColor,
                 )
             }
@@ -817,13 +830,12 @@ private fun ReaderNetworkImage(
     pageNumberLabel: String,
     imageModifier: Modifier,
     imageRequest: ImageRequest,
-    minPageHeight: Dp,
     pageSurfaceColor: Color,
 ) {
     AsyncImage(
         model = imageRequest,
         contentDescription = "Page $pageNumberLabel",
-        modifier = imageModifier.heightIn(min = minPageHeight),
+        modifier = imageModifier,
         contentScale = ContentScale.FillWidth,
         placeholder = ColorPainter(pageSurfaceColor),
         error = ColorPainter(pageSurfaceColor),

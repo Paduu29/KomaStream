@@ -264,7 +264,7 @@ val currentProvider
                     coverUrl = it.coverUrl,
                     chapters = it.chapters,
                 )
-                libraryController.refreshState()
+                libraryController.refreshStateAsync()
             }
             syncMalChapterReadState(providerId)
         }
@@ -391,6 +391,8 @@ val currentProvider
         navigationController.replaceRoot(RootTab.Home)
         if (previousProviderId != providerId) {
             refreshHome()
+        } else {
+            homeController.refreshHome(currentProvider, ::showError, force = true)
         }
     }
 

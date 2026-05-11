@@ -29,11 +29,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -68,14 +71,6 @@ fun DetailScreen(
     var suppressAutoPositioning by remember(detail.providerId, detail.detailPath) { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val canonicalReadChapterKeys = remember(detail.providerId, readChapters) {
-        canonicalChapterKeys(detail.providerId, readChapters)
-    }
-    val chapterPathsByLabel = remember(detail.providerId, detail.detailPath, detail.chapters) {
-        detail.chapters.associate { chapter ->
-            buildChapterPath(detail.detailPath, chapter) to canonicalChapterKey(detail.providerId, buildChapterPath(detail.detailPath, chapter))
-        }
-    }
     LaunchedEffect(malMangaId) {
         malIdInput = malMangaId?.toString().orEmpty()
     }
@@ -84,74 +79,44 @@ fun DetailScreen(
     }
 
     val selectedChapterSourceId = detail.selectedChapterSourceId
-    val sourceFilteredChapters = remember(detail.chapters, selectedChapterSourceId) {
-        if (selectedChapterSourceId.isBlank() || selectedChapterSourceId == "all") {
-            detail.chapters
-        } else {
-            detail.chapters.filter { chapter -> chapter.languageCode == selectedChapterSourceId }
-        }
-    }
-    val uniqueChapters = remember(sourceFilteredChapters) {
-        sourceFilteredChapters.distinctBy { chapter ->
-            chapterDedupeKey(chapter)
-        }
-    }
-    val filteredChapters = remember(uniqueChapters, chapterQuery) {
-        val normalizedQuery = chapterQuery.trim().replace(",", ".")
-        if (normalizedQuery.isBlank()) {
-            uniqueChapters
-        } else {
-            uniqueChapters.filter { chapter ->
-                chapter.chapterLabel.contains(chapterQuery.trim(), ignoreCase = true) ||
-                    chapter.chapterNumberUrl.contains(chapterQuery.trim(), ignoreCase = true)
-            }
-        }
-    }
-    val targetUnreadChapterPath = remember(
+    val chapterUiData by produceState(
+        initialValue = DetailChapterUiData.empty(detail.chapters),
         detail.providerId,
         detail.detailPath,
-        filteredChapters,
+        detail.chapters,
+        selectedChapterSourceId,
+        chapterQuery,
         readChapters,
         lastOpenedChapterPath,
         autoJumpToUnread,
     ) {
-        resolveTargetUnreadChapterPath(
-            providerId = detail.providerId,
-            detailPath = detail.detailPath,
-            chapters = filteredChapters,
-            readChapters = readChapters,
-            lastOpenedChapterPath = lastOpenedChapterPath,
-            autoJumpToUnread = autoJumpToUnread,
-        )
-    }
-    val targetUnreadIndex = remember(filteredChapters, targetUnreadChapterPath, detail.detailPath) {
-        targetUnreadChapterPath?.let { path ->
-            filteredChapters
-                .indexOfFirst { chapter -> buildChapterPath(detail.detailPath, chapter) == path }
-                .takeIf { it >= 0 }
+        value = withContext(Dispatchers.Default) {
+            computeDetailChapterUiData(
+                providerId = detail.providerId,
+                detailPath = detail.detailPath,
+                chapters = detail.chapters,
+                selectedChapterSourceId = selectedChapterSourceId,
+                chapterQuery = chapterQuery,
+                readChapters = readChapters,
+                lastOpenedChapterPath = lastOpenedChapterPath,
+                autoJumpToUnread = autoJumpToUnread,
+            )
         }
     }
-
-    val lastUnreadIndex = remember(filteredChapters, canonicalReadChapterKeys, detail.detailPath, detail.providerId) {
-        filteredChapters.indexOfLast { chapter ->
-            val path = buildChapterPath(detail.detailPath, chapter)
-            chapterPathsByLabel[path] !in canonicalReadChapterKeys
-        }.takeIf { it >= 0 }
-    }
-    val lastOpenedChapterLabel = remember(filteredChapters, lastOpenedChapterPath, detail.detailPath) {
-        filteredChapters.firstOrNull { chapter ->
-            buildChapterPath(detail.detailPath, chapter) == lastOpenedChapterPath
-        }?.chapterLabel.orEmpty()
-    }
-    val unreadCount = remember(filteredChapters, canonicalReadChapterKeys, detail.detailPath, detail.providerId) {
-        filteredChapters.count { chapter ->
-            val path = buildChapterPath(detail.detailPath, chapter)
-            chapterPathsByLabel[path] !in canonicalReadChapterKeys
-        }
-    }
+    val canonicalReadChapterKeys = chapterUiData.canonicalReadChapterKeys
+    val chapterPathsByLabel = chapterUiData.chapterPathsByLabel
+    val sourceFilteredChapters = chapterUiData.sourceFilteredChapters
+    val uniqueChapters = chapterUiData.uniqueChapters
+    val filteredChapters = chapterUiData.filteredChapters
+    val targetUnreadChapterPath = chapterUiData.targetUnreadChapterPath
+    val targetUnreadIndex = chapterUiData.targetUnreadIndex
+    val lastUnreadIndex = chapterUiData.lastUnreadIndex
+    val lastOpenedChapterLabel = chapterUiData.lastOpenedChapterLabel
+    val unreadCount = chapterUiData.unreadCount
     var sourceMenuExpanded by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(false) }
 
-    LaunchedEffect(detail.providerId, detail.detailPath, chapterQuery, targetUnreadIndex, autoJumpToUnread, selectedChapterSourceId) {
+    LaunchedEffect(detail.providerId, detail.detailPath, chapterUiData.ready, chapterQuery, targetUnreadIndex, autoJumpToUnread, selectedChapterSourceId) {
+        if (!chapterUiData.ready) return@LaunchedEffect
         if (chapterQuery.isNotBlank()) return@LaunchedEffect
         if (suppressAutoPositioning) {
             suppressAutoPositioning = false
@@ -882,6 +847,109 @@ private fun chapterDedupeKey(chapter: com.paudinc.komastream.data.model.MangaCha
 }
 
 private const val DETAIL_CHAPTER_LIST_START_INDEX = 2
+
+private data class DetailChapterUiData(
+    val canonicalReadChapterKeys: Set<String>,
+    val chapterPathsByLabel: Map<String, String>,
+    val sourceFilteredChapters: List<MangaChapter>,
+    val uniqueChapters: List<MangaChapter>,
+    val filteredChapters: List<MangaChapter>,
+    val targetUnreadChapterPath: String?,
+    val targetUnreadIndex: Int?,
+    val lastUnreadIndex: Int?,
+    val lastOpenedChapterLabel: String,
+    val unreadCount: Int,
+    val ready: Boolean,
+) {
+    companion object {
+        fun empty(chapters: List<MangaChapter>) = DetailChapterUiData(
+            canonicalReadChapterKeys = emptySet(),
+            chapterPathsByLabel = emptyMap(),
+            sourceFilteredChapters = chapters,
+            uniqueChapters = chapters,
+            filteredChapters = chapters,
+            targetUnreadChapterPath = null,
+            targetUnreadIndex = null,
+            lastUnreadIndex = null,
+            lastOpenedChapterLabel = "",
+            unreadCount = chapters.size,
+            ready = chapters.isEmpty(),
+        )
+    }
+}
+
+private fun computeDetailChapterUiData(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    selectedChapterSourceId: String,
+    chapterQuery: String,
+    readChapters: Set<String>,
+    lastOpenedChapterPath: String,
+    autoJumpToUnread: Boolean,
+): DetailChapterUiData {
+    val canonicalReadChapterKeys = canonicalChapterKeys(providerId, readChapters)
+    val sourceFilteredChapters = if (selectedChapterSourceId.isBlank() || selectedChapterSourceId == "all") {
+        chapters
+    } else {
+        chapters.filter { chapter -> chapter.languageCode == selectedChapterSourceId }
+    }
+    val uniqueChapters = sourceFilteredChapters.distinctBy { chapterDedupeKey(it) }
+    val normalizedQuery = chapterQuery.trim().replace(",", ".")
+    val trimmedQuery = chapterQuery.trim()
+    val filteredChapters = if (normalizedQuery.isBlank()) {
+        uniqueChapters
+    } else {
+        uniqueChapters.filter { chapter ->
+            chapter.chapterLabel.contains(trimmedQuery, ignoreCase = true) ||
+                chapter.chapterNumberUrl.contains(trimmedQuery, ignoreCase = true)
+        }
+    }
+    val chapterPathsByLabel = filteredChapters.associate { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        path to canonicalChapterKey(providerId, path)
+    }
+    val targetUnreadChapterPath = if (autoJumpToUnread) {
+        resolveTargetUnreadChapterPath(
+            providerId = providerId,
+            detailPath = detailPath,
+            chapters = filteredChapters,
+            readChapters = readChapters,
+            lastOpenedChapterPath = lastOpenedChapterPath,
+            autoJumpToUnread = true,
+        )
+    } else {
+        null
+    }
+    val targetUnreadIndex = targetUnreadChapterPath?.let { path ->
+        filteredChapters.indexOfFirst { chapter -> buildChapterPath(detailPath, chapter) == path }
+            .takeIf { it >= 0 }
+    }
+    val lastUnreadIndex = filteredChapters.indexOfLast { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        chapterPathsByLabel[path] !in canonicalReadChapterKeys
+    }.takeIf { it >= 0 }
+    val lastOpenedChapterLabel = filteredChapters.firstOrNull { chapter ->
+        buildChapterPath(detailPath, chapter) == lastOpenedChapterPath
+    }?.chapterLabel.orEmpty()
+    val unreadCount = filteredChapters.count { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        chapterPathsByLabel[path] !in canonicalReadChapterKeys
+    }
+    return DetailChapterUiData(
+        canonicalReadChapterKeys = canonicalReadChapterKeys,
+        chapterPathsByLabel = chapterPathsByLabel,
+        sourceFilteredChapters = sourceFilteredChapters,
+        uniqueChapters = uniqueChapters,
+        filteredChapters = filteredChapters,
+        targetUnreadChapterPath = targetUnreadChapterPath,
+        targetUnreadIndex = targetUnreadIndex,
+        lastUnreadIndex = lastUnreadIndex,
+        lastOpenedChapterLabel = lastOpenedChapterLabel,
+        unreadCount = unreadCount,
+        ready = true,
+    )
+}
 
 @Composable
 private fun DetailStatCard(

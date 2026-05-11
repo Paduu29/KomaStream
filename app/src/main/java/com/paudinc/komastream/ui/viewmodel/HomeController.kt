@@ -19,8 +19,9 @@ class HomeController(
     fun refreshHome(
         provider: MangaProvider,
         onError: (String) -> Unit,
+        force: Boolean = false,
     ) {
-        if (uiState.isRefreshing) return
+        if (uiState.isRefreshing && !force) return
 
         scope.launch {
             uiState = uiState.copy(isRefreshing = true)

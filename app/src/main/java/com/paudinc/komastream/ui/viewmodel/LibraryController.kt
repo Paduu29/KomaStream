@@ -69,6 +69,24 @@ class LibraryController(
         )
     }
 
+    fun refreshStateAsync(filterBySelectedProvider: Boolean = true) {
+        scope.launch {
+            val (state, allProvidersState) = withContext(Dispatchers.Default) {
+                val currentState = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider)
+                val currentAllProvidersState = if (filterBySelectedProvider) {
+                    libraryStore.read(filterBySelectedProvider = false)
+                } else {
+                    currentState
+                }
+                currentState to currentAllProvidersState
+            }
+            uiState = uiState.copy(
+                state = state,
+                allProvidersState = allProvidersState,
+            )
+        }
+    }
+
     fun refreshOfflineDownloads() {
         uiState = uiState.copy(
             downloadedChapterPaths = offlineStore.getDownloadedChapterPaths()
@@ -182,8 +200,8 @@ class LibraryController(
                     } ?: listOf(path)
                     libraryStore.setChaptersRead(providerId, pathsToMark, true)
                 }
-            }
-            refreshState()
+        }
+            refreshStateAsync()
             uiState = uiState.copy(isBulkUpdatingChapters = false)
             onCompleted?.invoke()
             Toast.makeText(context, strings.updatedReadStatus, Toast.LENGTH_SHORT).show()
@@ -222,7 +240,7 @@ class LibraryController(
                 coverUrl = coverUrl,
                 chapters = chapters,
             )
-            refreshState()
+            refreshStateAsync()
             uiState = uiState.copy(isBulkUpdatingChapters = false)
             Toast.makeText(
                 context,
@@ -269,7 +287,7 @@ class LibraryController(
                 coverUrl = coverUrl,
                 chapters = chapters,
             )
-            refreshState()
+            refreshStateAsync()
             uiState = uiState.copy(isBulkUpdatingChapters = false)
             Toast.makeText(context, strings.markedUntilChapter(targetValue, read), Toast.LENGTH_SHORT).show()
         }

@@ -7,6 +7,7 @@ import androidx.core.os.LocaleListCompat
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
+import coil.decode.SvgDecoder
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.utils.AppCacheMaintenance
 import java.io.File
@@ -41,6 +42,9 @@ class KomaStreamApp : Application(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
+            .components {
+                add(SvgDecoder.Factory())
+            }
             .diskCache {
                 DiskCache.Builder()
                     .directory(File(cacheDir, "image_cache"))
