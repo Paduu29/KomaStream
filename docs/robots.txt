@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://paduu29.github.io/KomaStream/sitemap.xml
