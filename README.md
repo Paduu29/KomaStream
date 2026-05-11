@@ -14,6 +14,8 @@
 <p align="center">
   <a href="https://github.com/Paduu29/KomaStream/releases">Download latest release</a>
   ·
+  <a href="docs/index.html">Website source</a>
+  ·
   <a href="#features">Features</a>
   ·
   <a href="#building-from-source">Build from source</a>
@@ -98,6 +100,10 @@ Output:
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## GitHub Pages
+
+The static site for this repository lives in [`docs/`](docs/). To publish it on GitHub Pages, point the repository's Pages source at the `docs` folder.
 
 ### Open in Android Studio
 

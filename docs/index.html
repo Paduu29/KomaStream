@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="KomaStream is an Android manga reader focused on a clean native UI, local-first tracking, and user-controlled provider access.">
+  <meta name="theme-color" content="#0b0a13">
+  <meta property="og:title" content="KomaStream">
+  <meta property="og:description" content="Android manga reader with local progress tracking, provider support, and a clean native UI.">
+  <meta property="og:image" content="readme/banner.png">
+  <title>KomaStream</title>
+  <link rel="icon" href="readme/logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="KomaStream home">
+      <img src="readme/logo.png" alt="" width="40" height="40">
+      <span>KomaStream</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#screenshots">Screenshots</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/Paduu29/KomaStream" rel="noreferrer">Source</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-media" role="img" aria-label="KomaStream banner art"></div>
+      <div class="hero-overlay"></div>
+      <div class="hero-content">
+        <p class="eyebrow">Android manga reader</p>
+        <h1 id="hero-title">KomaStream</h1>
+        <p class="lede">
+          A clean native client for browsing catalogs, tracking progress, and reading chapters from third-party providers on your device.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://github.com/Paduu29/KomaStream/releases" rel="noreferrer">Latest release</a>
+          <a class="button button-secondary" href="https://github.com/Paduu29/KomaStream" rel="noreferrer">Repository</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="content narrow">
+        <p class="intro">
+          KomaStream is built as a client application only. It does not host, mirror, or distribute manga content.
+          Favorites, reading progress, and preferences stay local to the device.
+        </p>
+      </div>
+    </section>
+
+    <section id="features" class="band">
+      <div class="content">
+        <h2>Features</h2>
+        <div class="feature-grid">
+          <article>
+            <h3>Native Android UI</h3>
+            <p>Jetpack Compose interface with light and dark themes built for quick browsing.</p>
+          </article>
+          <article>
+            <h3>Provider browsing</h3>
+            <p>Search, filter, and open catalogs from supported third-party providers.</p>
+          </article>
+          <article>
+            <h3>Local progress tracking</h3>
+            <p>Keep favorites, library entries, and read chapter history on the device.</p>
+          </article>
+          <article>
+            <h3>Offline support</h3>
+            <p>Export and import backups, and keep downloaded chapters available offline.</p>
+          </article>
+          <article>
+            <h3>Language support</h3>
+            <p>English, Spanish, and German localization with provider-aware chapter handling.</p>
+          </article>
+          <article>
+            <h3>GitHub release updater</h3>
+            <p>Built-in update flow for release builds published on GitHub.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots" class="band">
+      <div class="content">
+        <h2>Screenshots</h2>
+        <div class="screenshot-grid">
+          <figure>
+            <img src="readme/home-sanitized.png" alt="Home screen">
+            <figcaption>Home</figcaption>
+          </figure>
+          <figure>
+            <img src="readme/catalog-search.png" alt="Catalog screen">
+            <figcaption>Catalog</figcaption>
+          </figure>
+          <figure>
+            <img src="readme/provider-picker.png" alt="Provider picker">
+            <figcaption>Provider picker</figcaption>
+          </figure>
+          <figure>
+            <img src="readme/details-sanitized.png" alt="Detail screen">
+            <figcaption>Detail</figcaption>
+          </figure>
+          <figure>
+            <img src="readme/chapters-list.png" alt="Chapter list">
+            <figcaption>Chapters</figcaption>
+          </figure>
+          <figure>
+            <img src="readme/reader-sanitized.png" alt="Reader screen">
+            <figcaption>Reader</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="band split">
+      <div class="content">
+        <div>
+          <h2>Build and runtime</h2>
+          <ul class="clean-list">
+            <li>Android 7.0 or newer</li>
+            <li>Kotlin and Jetpack Compose</li>
+            <li>Local storage only for user data</li>
+          </ul>
+        </div>
+        <div>
+          <h2 id="privacy">Privacy and use</h2>
+          <ul class="clean-list">
+            <li>No account system or project backend</li>
+            <li>No personal data collection by the app</li>
+            <li>Third-party sources are used at the user's discretion</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="content footer-inner">
+      <span>GPL-3.0 licensed</span>
+      <a href="https://github.com/Paduu29/KomaStream/blob/main/LICENSE" rel="noreferrer">License</a>
+      <a href="https://github.com/Paduu29/KomaStream" rel="noreferrer">GitHub</a>
+    </div>
+  </footer>
+</body>
+</html>
