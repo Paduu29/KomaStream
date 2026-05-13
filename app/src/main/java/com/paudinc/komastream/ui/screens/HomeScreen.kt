@@ -83,6 +83,9 @@ fun HomeScreen(
             val listState = rememberSaveable(providerId, saver = LazyListState.Saver) {
                 LazyListState()
             }
+            LaunchedEffect(providerId) {
+                listState.scrollToItem(0)
+            }
 
             LazyColumn(
                 state = listState,
@@ -139,11 +142,14 @@ fun HomeScreen(
                                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                                     contentPadding = PaddingValues(end = 4.dp),
                                 ) {
+                                    val railCardHeight = mangaRailCardHeight(section.mangas) +
+                                        if (providerId == "mangadotnet-en" && section.id == "top-rated") 20.dp else 0.dp
                                     items(section.mangas.take(10), key = { "${it.providerId}:${it.detailPath}" }) { manga ->
                                         MangaCoverCard(
                                             manga = manga,
                                             strings = strings,
                                             constrained = true,
+                                            constrainedHeight = railCardHeight,
                                             favoriteActionLabel = if (isFavorite(
                                                     manga.providerId,
                                                     manga.detailPath

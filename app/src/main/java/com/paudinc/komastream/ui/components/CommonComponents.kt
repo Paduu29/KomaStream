@@ -51,16 +51,26 @@ fun MangaCoverCard(
     manga: MangaSummary,
     strings: AppStrings,
     constrained: Boolean = false,
+    constrainedHeight: Dp = 408.dp,
     favoriteActionLabel: String = strings.addToFavorites,
     onClick: () -> Unit,
     onFavoriteAction: (() -> Unit)? = null,
     onOpenMangaAction: (() -> Unit)? = null,
 ) {
     var menuExpanded by rememberSaveable(manga.providerId, manga.detailPath) { mutableStateOf(false) }
+    val cardModifier = if (constrained) {
+        Modifier
+            .width(160.dp)
+            .height(constrainedHeight)
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .height(176.dp)
+    }
 
     Box {
         ElevatedCard(
-            modifier = (if (constrained) Modifier.width(160.dp) else Modifier.fillMaxWidth())
+            modifier = cardModifier
                 .border(cardBorder(), RoundedCornerShape(24.dp))
                 .combinedClickable(
                     onClick = onClick,
@@ -287,6 +297,22 @@ fun MangaCoverCard(
     }
 }
 
+fun mangaRailCardHeight(mangas: List<MangaSummary>): Dp {
+    val maxExtraMetadataLines = mangas.maxOfOrNull { manga ->
+        listOf(
+            manga.periodicity,
+            manga.latestPublication,
+            manga.views,
+        ).count { it.isNotBlank() }
+    } ?: 0
+
+    return when {
+        maxExtraMetadataLines >= 2 -> 408.dp
+        maxExtraMetadataLines == 1 -> 372.dp
+        else -> 336.dp
+    }
+}
+
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -332,8 +358,9 @@ fun ContinueReadingCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 152.dp)
                     .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 AsyncImage(
                     model = manga.coverUrl,
@@ -440,6 +467,7 @@ fun FavoriteMangaCard(
         ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 152.dp)
                 .border(cardBorder(), RoundedCornerShape(24.dp))
                 .combinedClickable(
                     onClick = onOpen,
@@ -454,8 +482,9 @@ fun FavoriteMangaCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 152.dp)
                     .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 AsyncImage(
                     model = manga.coverUrl,

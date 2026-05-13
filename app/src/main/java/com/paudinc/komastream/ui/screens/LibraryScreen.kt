@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -682,6 +683,7 @@ private fun CompactSeriesCardShell(
         ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 120.dp)
                 .border(cardBorder(), RoundedCornerShape(18.dp))
                 .combinedClickable(
                     onClick = onOpen,
