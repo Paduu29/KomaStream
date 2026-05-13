@@ -31,19 +31,19 @@ fun resolveTargetUnreadChapterPath(
     autoJumpToUnread: Boolean,
 ): String? {
     if (!autoJumpToUnread) return null
-    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    val readKeys = chapterReadKeys(providerId, detailPath, chapters, readChapters)
 
     val chapterEntries = chapters.map { chapter ->
         val path = buildChapterPath(detailPath, chapter)
         Triple(path, chapter, chapterValue(chapter))
     }
-    val hasReadProgress = lastOpenedChapterPath.isNotBlank() || chapterEntries.any { (path, _, _) ->
-        canonicalChapterKey(providerId, path) in canonicalReadKeys
+    val hasReadProgress = lastOpenedChapterPath.isNotBlank() || chapterEntries.any { (_, chapter, _) ->
+        chapterReadKey(providerId, detailPath, chapter) in readKeys
     }
     if (!hasReadProgress) return null
 
-    val unreadEntries = chapterEntries.filter { (path, _, _) ->
-        canonicalChapterKey(providerId, path) !in canonicalReadKeys
+    val unreadEntries = chapterEntries.filter { (_, chapter, _) ->
+        chapterReadKey(providerId, detailPath, chapter) !in readKeys
     }
     if (unreadEntries.isEmpty()) return null
 
@@ -71,19 +71,19 @@ fun resolveProgressChapterPath(
     chapters: List<MangaChapter>,
     readChapters: Set<String>,
 ): String? {
-    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    val readKeys = chapterReadKeys(providerId, detailPath, chapters, readChapters)
     val chapterEntries = chapters.map { chapter ->
         Triple(buildChapterPath(detailPath, chapter), chapter, chapterValue(chapter))
     }
-    val readEntries = chapterEntries.filter { (path, _, _) ->
-        canonicalChapterKey(providerId, path) in canonicalReadKeys
+    val readEntries = chapterEntries.filter { (_, chapter, _) ->
+        chapterReadKey(providerId, detailPath, chapter) in readKeys
     }
     if (readEntries.isEmpty()) return null
 
     val lastReadValue = readEntries.maxOf { it.third }
     chapterEntries
-        .filter { (path, _, value) ->
-            value > lastReadValue && canonicalChapterKey(providerId, path) !in canonicalReadKeys
+        .filter { (_, chapter, value) ->
+            value > lastReadValue && chapterReadKey(providerId, detailPath, chapter) !in readKeys
         }
         .minByOrNull { it.third }
         ?.first
@@ -98,10 +98,10 @@ fun resolveLatestReadChapterPath(
     chapters: List<MangaChapter>,
     readChapters: Set<String>,
 ): String? {
-    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    val readKeys = chapterReadKeys(providerId, detailPath, chapters, readChapters)
     return chapters.mapNotNull { chapter ->
         val path = buildChapterPath(detailPath, chapter)
-        if (canonicalChapterKey(providerId, path) in canonicalReadKeys) {
+        if (chapterReadKey(providerId, detailPath, chapter) in readKeys) {
             path to chapterValue(chapter)
         } else {
             null
@@ -142,6 +142,48 @@ fun canonicalChapterKeys(providerId: String, chapterPaths: Iterable<String>): Se
 
 fun canonicalChapterKey(providerId: String, chapterPath: String): String {
     return canonicalChapterPathKey(providerId, chapterPath)
+}
+
+fun chapterReadKey(providerId: String, detailPath: String, chapter: MangaChapter): String {
+    return when (providerId) {
+        MANGA_BALL_PROVIDER_ID -> {
+            val value = chapterValue(chapter)
+            if (value.isFinite() && value != Double.MAX_VALUE) {
+                "num:${normalizeMalChapterNumber(value)}"
+            } else {
+                canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter))
+            }
+        }
+        else -> canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter))
+    }
+}
+
+fun chapterReadKeys(
+    providerId: String,
+    detailPath: String,
+    chapters: List<MangaChapter>,
+    readChapters: Set<String>,
+): Set<String> {
+    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    return chapters.asSequence()
+        .filter { chapter ->
+            canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) in canonicalReadKeys
+        }
+        .map { chapterReadKey(providerId, detailPath, it) }
+        .toSet()
+}
+
+fun chapterCountForProvider(providerId: String, chapters: List<MangaChapter>): Int {
+    return when (providerId) {
+        MANGA_BALL_PROVIDER_ID -> {
+            val uniqueValues = chapters.asSequence()
+                .map(::chapterValue)
+                .filter { it.isFinite() && it != Double.MAX_VALUE }
+                .toSet()
+            if (uniqueValues.isNotEmpty()) uniqueValues.size else chapters.size
+        }
+        else -> chapters.size
+    }
 }
 
 fun chapterValue(chapter: MangaChapter): Double {
@@ -203,10 +245,10 @@ fun resolveMalReadCountForReadChapters(
     chapters: List<MangaChapter>,
     readChapters: Set<String>,
 ): Int {
-    val canonicalReadKeys = canonicalChapterKeys(providerId, readChapters)
+    val readKeys = chapterReadKeys(providerId, detailPath, chapters, readChapters)
     val normalizedReadNumbers = chapters.asSequence()
         .filter { chapter ->
-            canonicalChapterKey(providerId, buildChapterPath(detailPath, chapter)) in canonicalReadKeys
+            chapterReadKey(providerId, detailPath, chapter) in readKeys
         }
         .map(::chapterValue)
         .filter { it.isFinite() && it != Double.MAX_VALUE }
@@ -239,8 +281,8 @@ fun resolveMalReadCountFromProgressPointer(
     val progressValue = chapterValue(progressChapter)
     if (!progressValue.isFinite() || progressValue == Double.MAX_VALUE) return null
 
-    val pointedChapterIsRead = canonicalChapterKey(providerId, buildChapterPath(detailPath, progressChapter)) in
-        canonicalChapterKeys(providerId, readChapters)
+    val pointedChapterIsRead = chapterReadKey(providerId, detailPath, progressChapter) in
+        chapterReadKeys(providerId, detailPath, chapters, readChapters)
     val normalized = normalizeMalChapterNumber(progressValue)
     val isWholeNumber = kotlin.math.abs(progressValue - progressValue.toInt().toDouble()) < 0.0001
 
@@ -298,3 +340,5 @@ private fun normalizeChapterNumberToken(value: String): String? {
         else -> "$left.$right"
     }
 }
+
+private const val MANGA_BALL_PROVIDER_ID = "mangaball-multi"

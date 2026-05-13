@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -16,9 +17,11 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,8 +65,6 @@ fun HomeScreen(
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize()
         ) {
-
-
             val sections = remember(feed) { feed.sections.filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() } }
             if (sections.isEmpty()) {
                 EmptyCard(strings.emptyProviderHome(providerName))
@@ -79,8 +80,12 @@ fun HomeScreen(
             } else {
                 sections
             }
+            val listState = rememberSaveable(providerId, saver = LazyListState.Saver) {
+                LazyListState()
+            }
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -258,13 +263,29 @@ private fun CommunitySpotlightHero(
     strings: AppStrings,
     onOpenUrl: (String) -> Unit,
 ) {
-    var selectedRange by remember(spotlight.defaultRange) { mutableStateOf(spotlight.defaultRange) }
+    var selectedRange by rememberSaveable(spotlight.title) { mutableStateOf(spotlight.defaultRange) }
+    var dailyPage by rememberSaveable(spotlight.title) { mutableIntStateOf(0) }
+    var weeklyPage by rememberSaveable(spotlight.title) { mutableIntStateOf(0) }
+    var monthlyPage by rememberSaveable(spotlight.title) { mutableIntStateOf(0) }
     val items = spotlight.ranges[selectedRange].orEmpty()
     if (items.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { items.size })
 
     LaunchedEffect(selectedRange) {
-        pagerState.scrollToPage(0)
+        val savedPage = when (selectedRange) {
+            CommunitySpotlightRange.DAILY -> dailyPage
+            CommunitySpotlightRange.WEEKLY -> weeklyPage
+            CommunitySpotlightRange.MONTHLY -> monthlyPage
+        }
+        pagerState.scrollToPage(savedPage.coerceIn(0, items.lastIndex))
+    }
+
+    LaunchedEffect(pagerState.currentPage, selectedRange) {
+        when (selectedRange) {
+            CommunitySpotlightRange.DAILY -> dailyPage = pagerState.currentPage
+            CommunitySpotlightRange.WEEKLY -> weeklyPage = pagerState.currentPage
+            CommunitySpotlightRange.MONTHLY -> monthlyPage = pagerState.currentPage
+        }
     }
 
     Surface(
@@ -378,12 +399,6 @@ private fun CommunitySpotlightHero(
                             ) {}
                         }
                     }
-                    Text(
-                        text = strings.openProviderSite,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
                 }
             }
         }

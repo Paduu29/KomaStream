@@ -70,45 +70,71 @@ fun CommunityPageScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp),
-                shape = RoundedCornerShape(0.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                    .height(328.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AsyncImage(
-                        model = page.bannerUrl.ifBlank { page.avatarUrl },
-                        contentDescription = page.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
+                    val bannerModel = page.bannerUrl
+                        .takeIf { it.isNotBlank() }
+
+                    if (bannerModel != null) {
+                        AsyncImage(
+                            model = bannerModel,
+                            contentDescription = page.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            MaterialTheme.colorScheme.surfaceVariant,
+                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                                        )
+                                    )
+                                )
+                        )
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(Color(0x22000000), Color(0xEE090812)),
+                                    colors = listOf(
+                                        Color(0x22000000),
+                                        Color(0x8C090812),
+                                        Color(0xEE090812),
+                                    )
                                 )
                             )
                     )
+                    page.avatarUrl.takeIf { it.isNotBlank() }?.let { avatarUrl ->
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = page.title,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(18.dp)
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(20.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
                     Column(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
-                            AsyncImage(
-                                model = page.avatarUrl,
-                                contentDescription = page.title,
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(18.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
                             Column(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -137,12 +163,15 @@ fun CommunityPageScreen(
                                 text = page.description,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
+                                maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
                         page.stats.takeIf { it.isNotEmpty() }?.let { stats ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 stats.take(4).forEach { stat ->
                                     TagChip(
                                         label = "${stat.label}: ${stat.value}",

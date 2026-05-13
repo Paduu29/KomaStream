@@ -17,6 +17,7 @@ import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.LibraryBackupPayloadCodec
 import com.paudinc.komastream.data.repository.LibraryJsonCodec
 import com.paudinc.komastream.data.repository.MangaDetailCacheCodec
+import com.paudinc.komastream.utils.chapterCountForProvider
 import com.paudinc.komastream.utils.toProgressChapterNumber
 import org.json.JSONArray
 import org.json.JSONObject
@@ -286,7 +287,7 @@ class LibraryStore(context: Context) {
                     detailKey = detailKey,
                     detailPath = canonicalDetailPath,
                     detailJson = detailJson,
-                    chapterCount = canonicalDetail.chapters.size,
+                    chapterCount = chapterCountForProvider(detail.providerId, canonicalDetail.chapters),
                     updatedAt = now,
                 )
             )
@@ -298,7 +299,7 @@ class LibraryStore(context: Context) {
                 detailKey = detailKey,
                 detailPath = canonicalDetailPath,
                 detailJson = detailJson,
-                chapterCount = canonicalDetail.chapters.size,
+                chapterCount = chapterCountForProvider(detail.providerId, canonicalDetail.chapters),
                 updatedAt = now,
             )
         )
@@ -614,7 +615,7 @@ class LibraryStore(context: Context) {
                 ?: dao.readMangaDetailCacheByPath(entity.providerId, normalizeStoredPath(entity.detailPath))
                 ?: return@forEach
             val cachedDetail = detail.detailJson.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() } ?: return@forEach
-            val totalChapterCount = cachedDetail.chapters.size
+            val totalChapterCount = chapterCountForProvider(entity.providerId, cachedDetail.chapters)
             if (totalChapterCount <= 0) return@forEach
             val readCount = entity.lastReadChapterNumber?.takeIf { it > 0 }
                 ?: resolveMalReadCountForReadChapters(

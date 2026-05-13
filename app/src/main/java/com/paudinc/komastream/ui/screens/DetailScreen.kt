@@ -5,8 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -69,7 +69,9 @@ fun DetailScreen(
     var malIdInput by rememberSaveable(detail.providerId, detail.detailPath) { mutableStateOf(malMangaId?.toString().orEmpty()) }
     var hasAutoPositionedChapterList by remember(detail.providerId, detail.detailPath, autoJumpToUnread) { mutableStateOf(false) }
     var suppressAutoPositioning by remember(detail.providerId, detail.detailPath) { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+    val listState = rememberSaveable(detail.providerId, detail.detailPath, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     val scope = rememberCoroutineScope()
     LaunchedEffect(malMangaId) {
         malIdInput = malMangaId?.toString().orEmpty()
@@ -126,11 +128,8 @@ fun DetailScreen(
         if (autoJumpToUnread && targetUnreadIndex != null) {
             val chapterStartIndex = DETAIL_CHAPTER_LIST_START_INDEX
             listState.scrollToItem((targetUnreadIndex + chapterStartIndex).coerceAtLeast(0))
-            hasAutoPositionedChapterList = true
-        } else if (!autoJumpToUnread) {
-            listState.scrollToItem(0)
-            hasAutoPositionedChapterList = true
         }
+        hasAutoPositionedChapterList = true
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -888,7 +887,7 @@ private fun computeDetailChapterUiData(
     lastOpenedChapterPath: String,
     autoJumpToUnread: Boolean,
 ): DetailChapterUiData {
-    val canonicalReadChapterKeys = canonicalChapterKeys(providerId, readChapters)
+    val canonicalReadChapterKeys = chapterReadKeys(providerId, detailPath, chapters, readChapters)
     val sourceFilteredChapters = if (selectedChapterSourceId.isBlank() || selectedChapterSourceId == "all") {
         chapters
     } else {
@@ -907,7 +906,7 @@ private fun computeDetailChapterUiData(
     }
     val chapterPathsByLabel = filteredChapters.associate { chapter ->
         val path = buildChapterPath(detailPath, chapter)
-        path to canonicalChapterKey(providerId, path)
+        path to chapterReadKey(providerId, detailPath, chapter)
     }
     val targetUnreadChapterPath = if (autoJumpToUnread) {
         resolveTargetUnreadChapterPath(
