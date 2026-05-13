@@ -96,13 +96,23 @@ fun MangaCoverCard(
                                     )
                                 )
                         )
-                        manga.status.takeIf { it.isNotBlank() }?.let { status ->
+                        manga.contentType.takeIf { it.isNotBlank() }?.let { contentType ->
                             TagChip(
-                                label = strings.localizedStatus(status),
+                                label = contentType,
                                 containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                                 labelColor = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.padding(10.dp),
                             )
+                        }
+                        if (manga.contentType.isBlank()) {
+                            manga.status.takeIf { it.isNotBlank() }?.let { status ->
+                                TagChip(
+                                    label = strings.localizedStatus(status),
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                    labelColor = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(10.dp),
+                                )
+                            }
                         }
                     }
                     Column(
@@ -116,21 +126,37 @@ fun MangaCoverCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        manga.periodicity.takeIf { it.isNotBlank() }?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            manga.status.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = strings.localizedStatus(it),
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    labelColor = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            manga.chaptersCount.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = "${strings.chapters} $it",
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
+                            manga.rating.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = it,
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
                         }
                         manga.latestPublication.takeIf { it.isNotBlank() }?.let {
                             Text(
                                 it,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -177,6 +203,13 @@ fun MangaCoverCard(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
+                            manga.contentType.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = it,
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
                             manga.status.takeIf { it.isNotBlank() }?.let {
                                 TagChip(
                                     label = strings.localizedStatus(it),
@@ -189,6 +222,13 @@ fun MangaCoverCard(
                                     label = "${strings.chapters} $it",
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
+                            manga.rating.takeIf { it.isNotBlank() }?.let {
+                                TagChip(
+                                    label = it,
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
                                 )
                             }
                         }

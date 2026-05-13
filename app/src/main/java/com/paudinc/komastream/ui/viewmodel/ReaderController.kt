@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaDetail
@@ -93,6 +94,68 @@ class ReaderController(
                 path = resolvedPath,
                 onSuccess = {},
                 onError = onError,
+            )
+        }
+    }
+
+    fun openCommunity(
+        providerId: String,
+        path: String,
+        navigationController: NavigationController,
+        onLoadingChange: (Boolean) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        scope.launch {
+            val resolvedPath = resolvePreferredCommunityPath(path)
+            uiState = uiState.copy(
+                selectedCommunityPage = null,
+                requestedCommunityPath = resolvedPath,
+                isCommunityLoading = true,
+            )
+            onLoadingChange(true)
+            navigationController.pushScreen(Screen.Community(providerId, resolvedPath))
+            loadCommunity(
+                providerId = providerId,
+                path = resolvedPath,
+                onSuccess = { onLoadingChange(false) },
+                onError = {
+                    onLoadingChange(false)
+                    navigationController.goBack()
+                    onError(it)
+                },
+            )
+        }
+    }
+
+    fun restoreCommunity(
+        providerId: String,
+        path: String,
+        navigationController: NavigationController,
+        screen: Screen.Community,
+        onLoadingChange: (Boolean) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val resolvedPath = resolvePreferredCommunityPath(path)
+        if (screen.communityPath != resolvedPath) {
+            navigationController.replaceTop(screen.copy(communityPath = resolvedPath))
+        }
+        if (uiState.selectedCommunityPage?.providerId == providerId && uiState.requestedCommunityPath == resolvedPath) return
+        if (uiState.requestedCommunityPath == resolvedPath && uiState.selectedCommunityPage?.providerId == providerId) return
+        scope.launch {
+            uiState = uiState.copy(
+                selectedCommunityPage = null,
+                requestedCommunityPath = resolvedPath,
+                isCommunityLoading = true,
+            )
+            onLoadingChange(true)
+            loadCommunity(
+                providerId = providerId,
+                path = resolvedPath,
+                onSuccess = { onLoadingChange(false) },
+                onError = {
+                    onLoadingChange(false)
+                    onError(it)
+                },
             )
         }
     }
@@ -337,6 +400,40 @@ class ReaderController(
             }
     }
 
+    private suspend fun loadCommunity(
+        providerId: String,
+        path: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val provider = providerRegistry.get(providerId)
+        runCatching { withContext(Dispatchers.IO) { provider.fetchCommunityPage(path) } }
+            .onSuccess { page ->
+                if (page == null) {
+                    uiState = uiState.copy(
+                        requestedCommunityPath = path,
+                        isCommunityLoading = false,
+                    )
+                    onError("Could not open community page")
+                    return@onSuccess
+                }
+                uiState = uiState.copy(
+                    selectedCommunityPage = page,
+                    requestedCommunityPath = path,
+                    isCommunityLoading = false,
+                )
+                onSuccess()
+            }
+            .onFailure {
+                Log.e("KomaStream", "Could not fetch community page", it)
+                uiState = uiState.copy(
+                    requestedCommunityPath = path,
+                    isCommunityLoading = false,
+                )
+                onError(it.message ?: "Could not open community page")
+            }
+    }
+
     private suspend fun loadReader(
         providerId: String,
         path: String,
@@ -407,6 +504,10 @@ class ReaderController(
 
     private fun resolvePreferredDetailPath(providerId: String, path: String): String {
         return path.trim()
+    }
+
+    private fun resolvePreferredCommunityPath(path: String): String {
+        return path.trim().substringBefore('?')
     }
 
     private fun preferredChapterSourceId(providerId: String): String {

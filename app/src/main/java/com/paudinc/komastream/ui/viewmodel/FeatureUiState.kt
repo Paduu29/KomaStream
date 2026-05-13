@@ -1,6 +1,7 @@
 package com.paudinc.komastream.ui.viewmodel
 
 import com.paudinc.komastream.data.model.CatalogFilterOptions
+import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaDetail
@@ -36,10 +37,13 @@ data class LibraryUiState(
 data class ReaderUiState(
     val selectedDetail: MangaDetail? = null,
     val requestedDetailPath: String = "",
+    val selectedCommunityPage: CommunityPage? = null,
+    val requestedCommunityPath: String = "",
     val readerData: ReaderData? = null,
     val initialPageIndex: Int = 0,
     val currentPageIndex: Int = 0,
     val isChapterLoading: Boolean = false,
+    val isCommunityLoading: Boolean = false,
 )
 
 data class MyAnimeListUiState(

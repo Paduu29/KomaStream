@@ -23,6 +23,7 @@ interface MangaProvider {
     ): CatalogSearchResult
 
     fun fetchMangaDetail(detailPath: String): MangaDetail
+    fun fetchCommunityPage(communityPath: String): CommunityPage? = null
     fun fetchReaderData(chapterPath: String): ReaderData
     fun downloadBytes(url: String, referer: String?): ByteArray
     fun invalidateCaches() {}

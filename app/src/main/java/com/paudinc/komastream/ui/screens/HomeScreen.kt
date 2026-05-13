@@ -14,7 +14,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +47,7 @@ fun HomeScreen(
     onOpenManga: (String, String) -> Unit,
     onOpenChapter: (String, String) -> Unit,
     onOpenSection: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
     onAddToReading: (SavedManga) -> Unit,
     onToggleFavorite: (SavedManga) -> Unit,
     isFavorite: (String, String) -> Boolean,
@@ -67,8 +72,9 @@ fun HomeScreen(
             val canonicalReadChapterKeys = remember(providerId, readChapters) {
                 readChapters.map { canonicalChapterKey(providerId, it) }.toSet()
             }
+            val communitySpotlight = feed.communitySpotlight
             val topCarouselSection = sections.firstOrNull { it.type == HomeSectionType.MANGAS && it.mangas.isNotEmpty() }
-            val sectionsToRender = if (topCarouselSection != null) {
+            val sectionsToRender = if (communitySpotlight == null && topCarouselSection != null) {
                 sections.filterNot { it.id == topCarouselSection.id }
             } else {
                 sections
@@ -79,7 +85,15 @@ fun HomeScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                if (topCarouselSection != null) {
+                if (communitySpotlight != null) {
+                    item {
+                        CommunitySpotlightHero(
+                            spotlight = communitySpotlight,
+                            strings = strings,
+                            onOpenUrl = onOpenUrl,
+                        )
+                    }
+                } else if (topCarouselSection != null) {
                     item {
                         FeaturedCarousel(
                             section = topCarouselSection,
@@ -233,6 +247,216 @@ private fun FeaturedCarousel(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommunitySpotlightHero(
+    spotlight: CommunitySpotlightFeed,
+    strings: AppStrings,
+    onOpenUrl: (String) -> Unit,
+) {
+    var selectedRange by remember(spotlight.defaultRange) { mutableStateOf(spotlight.defaultRange) }
+    val items = spotlight.ranges[selectedRange].orEmpty()
+    if (items.isEmpty()) return
+    val pagerState = rememberPagerState(pageCount = { items.size })
+
+    LaunchedEffect(selectedRange) {
+        pagerState.scrollToPage(0)
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(342.dp)
+            .clip(RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
+        border = cardBorder(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
+    ) {
+        Box {
+            AsyncImage(
+                model = items[pagerState.currentPage].coverUrl,
+                contentDescription = items[pagerState.currentPage].title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(Color(0xF20A0813), Color(0xA90A0813), Color(0x330A0813)),
+                        )
+                    )
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = spotlight.kicker.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = spotlight.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CommunitySpotlightRange.entries.forEach { range ->
+                            val selected = range == selectedRange
+                            FilterChip(
+                                onClick = { selectedRange = range },
+                                selected = selected,
+                                label = { Text(communitySpotlightRangeLabel(range), maxLines = 1) },
+                                shape = RoundedCornerShape(14.dp),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = selected,
+                                    borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                    selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                ),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = Color(0xA61D1824),
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                HorizontalPager(
+                    state = pagerState,
+                    pageSpacing = 12.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) { page ->
+                    val item = items[page]
+                    CommunitySpotlightCard(
+                        item = item,
+                        onClick = { onOpenUrl(item.detailUrl) },
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items.forEachIndexed { index, _ ->
+                            Surface(
+                                modifier = Modifier.size(
+                                    width = if (index == pagerState.currentPage) 18.dp else 6.dp,
+                                    height = 6.dp
+                                ),
+                                shape = RoundedCornerShape(999.dp),
+                                color = if (index == pagerState.currentPage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                            ) {}
+                        }
+                    }
+                    Text(
+                        text = strings.openProviderSite,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommunitySpotlightCard(
+    item: CommunitySpotlightItem,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f),
+    ) {
+        Box {
+            AsyncImage(
+                model = item.coverUrl,
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color(0xDD0A0813)),
+                        )
+                    )
+            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
+                    .fillMaxWidth(0.86f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TagChip(
+                    label = item.badge,
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                    labelColor = MaterialTheme.colorScheme.onPrimary,
+                )
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (item.subtitle.isNotBlank()) {
+                    Text(
+                        text = item.subtitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (item.statLabel.isNotBlank()) {
+                    Text(
+                        text = item.statLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -436,4 +660,10 @@ internal fun homeSectionSubtitle(section: HomeFeedSection, strings: AppStrings):
     "recent-chapter-read" -> strings.homeRecentReadsSubtitle
     "popular-this-season", "trending" -> strings.homeSeasonPicksSubtitle
     else -> if (section.chapters.isNotEmpty()) strings.homeChaptersFallbackSubtitle else strings.homeMangasFallbackSubtitle
+}
+
+private fun communitySpotlightRangeLabel(range: CommunitySpotlightRange): String = when (range) {
+    CommunitySpotlightRange.DAILY -> "Daily"
+    CommunitySpotlightRange.WEEKLY -> "Weekly"
+    CommunitySpotlightRange.MONTHLY -> "Monthly"
 }

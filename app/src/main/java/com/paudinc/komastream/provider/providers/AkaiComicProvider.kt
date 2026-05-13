@@ -122,6 +122,11 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
     }
 
     override fun downloadBytes(url: String, referer: String?) = webViewResolver.downloadBytes(url, referer)
-    private fun emptyFeed() = HomeFeed(emptyList(), emptyList(), emptyList(), emptyList())
+    private fun emptyFeed() = HomeFeed(
+        latestUpdates = emptyList(),
+        popularChapters = emptyList(),
+        popularMangas = emptyList(),
+        sections = emptyList(),
+    )
     private fun rd(p: String) = ReaderData(id, "", "", "", p, null, null, emptyList())
 }

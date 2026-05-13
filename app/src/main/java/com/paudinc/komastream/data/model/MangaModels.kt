@@ -40,10 +40,12 @@ data class MangaSummary(
     val title: String,
     val detailPath: String,
     val coverUrl: String,
+    val contentType: String = "",
     val status: String = "",
     val periodicity: String = "",
     val latestPublication: String = "",
     val chaptersCount: String = "",
+    val rating: String = "",
     val views: String = "",
 )
 
@@ -138,6 +140,54 @@ enum class HomeSectionType {
     MANGAS,
 }
 
+enum class CommunitySpotlightRange {
+    DAILY,
+    WEEKLY,
+    MONTHLY,
+}
+
+data class CommunitySpotlightItem(
+    val title: String,
+    val subtitle: String,
+    val coverUrl: String,
+    val detailUrl: String,
+    val badge: String,
+    val statLabel: String = "",
+)
+
+data class CommunitySpotlightFeed(
+    val title: String,
+    val kicker: String,
+    val defaultRange: CommunitySpotlightRange,
+    val ranges: Map<CommunitySpotlightRange, List<CommunitySpotlightItem>>,
+)
+
+enum class CommunityPageType {
+    GROUP,
+    PROFILE,
+    COLLECTION,
+}
+
+data class CommunityPageStat(
+    val label: String,
+    val value: String,
+)
+
+data class CommunityPage(
+    val providerId: String,
+    val type: CommunityPageType,
+    val title: String,
+    val subtitle: String = "",
+    val avatarUrl: String = "",
+    val bannerUrl: String = "",
+    val description: String = "",
+    val stats: List<CommunityPageStat> = emptyList(),
+    val mangaItems: List<MangaSummary> = emptyList(),
+    val chapterItems: List<ChapterSummary> = emptyList(),
+    val memberNames: List<String> = emptyList(),
+    val achievementNames: List<String> = emptyList(),
+)
+
 data class HomeFeedSection(
     val id: String,
     val title: String,
@@ -157,6 +207,7 @@ data class HomeFeed(
     val latestUpdates: List<ChapterSummary>,
     val popularChapters: List<ChapterSummary>,
     val popularMangas: List<MangaSummary>,
+    val communitySpotlight: CommunitySpotlightFeed? = null,
     val sections: List<HomeFeedSection> = defaultHomeSections(
         latestUpdates = latestUpdates,
         popularChapters = popularChapters,

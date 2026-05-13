@@ -147,6 +147,14 @@ val currentProvider
                 onLoadingChange = ::updateLoadingState,
                 onError = { showError(it.ifBlank { strings.couldNotOpenChapter }) },
             )
+            is Screen.Community -> readerController.restoreCommunity(
+                providerId = screen.providerId,
+                path = screen.communityPath,
+                navigationController = navigationController,
+                screen = screen,
+                onLoadingChange = ::updateLoadingState,
+                onError = { showError(it.ifBlank { strings.couldNotOpenManga }) },
+            )
             else -> Unit
         }
     }
@@ -202,6 +210,16 @@ val currentProvider
             onLibraryChanged = { libraryController.refreshState() },
             onLoadingChange = ::updateLoadingState,
             onError = { showError(it.ifBlank { strings.couldNotOpenChapter }) },
+        )
+    }
+
+    fun openCommunity(providerId: String, path: String) {
+        readerController.openCommunity(
+            providerId = providerId,
+            path = path,
+            navigationController = navigationController,
+            onLoadingChange = ::updateLoadingState,
+            onError = { showError(it.ifBlank { strings.couldNotOpenManga }) },
         )
     }
 

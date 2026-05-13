@@ -25,6 +25,7 @@ sealed interface Screen {
     ) : Screen
     data class Reader(val providerId: String, val chapterPath: String) : Screen
     data class HomeSection(val sectionId: String) : Screen
+    data class Community(val providerId: String, val communityPath: String) : Screen
     data object ProviderPicker : Screen
     data object Settings : Screen
 }
@@ -42,6 +43,7 @@ val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
                 is Screen.Detail -> listOf("detail", screen.providerId, screen.detailPath, screen.isMalIdEditorOpen.toString())
                 is Screen.Reader -> listOf("reader", screen.providerId, screen.chapterPath)
                 is Screen.HomeSection -> listOf("home-section", screen.sectionId)
+                is Screen.Community -> listOf("community", screen.providerId, screen.communityPath)
                 Screen.ProviderPicker -> listOf("provider-picker")
                 Screen.Settings -> listOf("settings")
             }
@@ -58,6 +60,10 @@ val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
                 )
                 "reader" -> Screen.Reader(item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id }, item.getOrElse(2) { "/" })
                 "home-section" -> Screen.HomeSection(item.getOrElse(1) { "latest-updates" })
+                "community" -> Screen.Community(
+                    providerId = item.getOrElse(1) { createDefaultProviderRegistry().defaultProvider().id },
+                    communityPath = item.getOrElse(2) { "/" },
+                )
                 "provider-picker" -> Screen.ProviderPicker
                 "settings" -> Screen.Settings
                 else -> Screen.Root(RootTab.Home)

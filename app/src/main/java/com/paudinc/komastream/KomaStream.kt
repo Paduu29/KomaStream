@@ -313,6 +313,8 @@ fun KomaStream() {
                                                     ?.firstOrNull { it.id == screen.sectionId }
                                                     ?.let { homeSectionTitle(it, strings) }
                                                     .orEmpty()
+                                                is Screen.Community -> readerUiState.selectedCommunityPage?.title
+                                                    ?: screen.communityPath.substringAfterLast('/').ifBlank { strings.home }
                                                 is Screen.Root -> when (screen.tab) {
                                                     RootTab.Home -> strings.home
                                                     RootTab.Library -> strings.library
@@ -390,6 +392,14 @@ fun KomaStream() {
                                     onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                     onOpenChapter = { id, path -> viewModel.openReader(id, path) },
                                     onOpenSection = { viewModel.pushScreen(Screen.HomeSection(it)) },
+                                    onOpenUrl = { url ->
+                                        val communityPath = Uri.parse(url).path?.takeIf { it.isNotBlank() }
+                                        if (currentProvider.id == "mangadotnet-en" && communityPath != null) {
+                                            viewModel.openCommunity(currentProvider.id, communityPath)
+                                        } else {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        }
+                                    },
                                     onAddToReading = { viewModel.addToReading(it) },
                                     onToggleFavorite = { viewModel.toggleFavorite(it) },
                                     isFavorite = { providerId, detailPath ->
@@ -622,6 +632,25 @@ fun KomaStream() {
                                         isChapterLoading = readerUiState.isChapterLoading,
                                     )
                                 } ?: LoadingPlaceholder(strings.loadingChapter)
+                            }
+                                    is Screen.Community -> {
+                                        readerUiState.selectedCommunityPage?.let { page ->
+                                            CommunityPageScreen(
+                                                strings = strings,
+                                                page = page,
+                                                readChapters = libraryState.readChapters,
+                                                chapterProgress = { providerId, chapterPath ->
+                                                    libraryStore.getChapterProgress(providerId, chapterPath)
+                                                },
+                                                onOpenManga = { id, path -> viewModel.openDetail(id, path) },
+                                                onOpenChapter = { id, path -> viewModel.openReader(id, path) },
+                                                onAddToReading = { viewModel.addToReading(it) },
+                                                onToggleFavorite = { viewModel.toggleFavorite(it) },
+                                                isFavorite = { providerId, detailPath ->
+                                                    libraryStore.isFavorite(providerId, detailPath)
+                                                },
+                                            )
+                                } ?: LoadingPlaceholder(strings.loadingProviderHome(currentProvider.displayName))
                             }
                             is Screen.HomeSection -> HomeSectionScreen(
                                 sectionId = screen.sectionId,
@@ -1132,6 +1161,7 @@ private fun Screen.saveableKey(): String = when (this) {
     is Screen.Detail -> "detail:$providerId:$detailPath:$isMalIdEditorOpen"
     is Screen.Reader -> "reader:$providerId:$chapterPath"
     is Screen.HomeSection -> "home-section:$sectionId"
+    is Screen.Community -> "community:$providerId:$communityPath"
     Screen.ProviderPicker -> "provider-picker"
     Screen.Settings -> "settings"
 }

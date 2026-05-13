@@ -4,6 +4,12 @@ import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CatalogSearchResult
 import com.paudinc.komastream.data.model.CategoryOption
+import com.paudinc.komastream.data.model.CommunitySpotlightFeed
+import com.paudinc.komastream.data.model.CommunitySpotlightItem
+import com.paudinc.komastream.data.model.CommunitySpotlightRange
+import com.paudinc.komastream.data.model.CommunityPage
+import com.paudinc.komastream.data.model.CommunityPageStat
+import com.paudinc.komastream.data.model.CommunityPageType
 import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.FilterOption
 import com.paudinc.komastream.data.model.HomeFeed
@@ -37,6 +43,7 @@ class MangadotProvider : MangaProvider {
     private val client = OkHttpClient()
 
     override fun fetchHomeFeed(): HomeFeed {
+        val homeHtml = getText("/")
         val latestUpdates = fetchSectionMangas("latest_updates")
         val recentlyAdded = fetchSectionMangas("recently_added")
         val mostTracked = fetchSectionMangas("most_tracked")
@@ -46,6 +53,7 @@ class MangadotProvider : MangaProvider {
             latestUpdates = emptyList(),
             popularChapters = emptyList(),
             popularMangas = mostTracked.ifEmpty { topRated }.ifEmpty { latestUpdates },
+            communitySpotlight = parseCommunitySpotlight(homeHtml),
             sections = listOfNotNull(
                 latestUpdates.takeIf { it.isNotEmpty() }?.let {
                     HomeFeedSection(
@@ -180,6 +188,18 @@ class MangadotProvider : MangaProvider {
         )
     }
 
+    override fun fetchCommunityPage(communityPath: String): CommunityPage? {
+        val normalizedPath = normalizeStoredPath(communityPath)
+        val apiPath = normalizedPath.toCommunityApiPath() ?: return null
+        val raw = getText(apiPath)
+        return when {
+            normalizedPath.startsWith("/group/") -> parseGroupCommunityPage(raw, normalizedPath)
+            normalizedPath.startsWith("/user/") -> parseProfileCommunityPage(raw, normalizedPath)
+            normalizedPath.startsWith("/collections/user/") -> parseCollectionCommunityPage(raw, normalizedPath)
+            else -> null
+        }
+    }
+
     override fun fetchReaderData(chapterPath: String): ReaderData {
         val normalizedPath = normalizeStoredPath(chapterPath)
         val chapterId = normalizedPath.substringBefore('?').trim('/').substringAfterLast('/')
@@ -244,6 +264,262 @@ class MangadotProvider : MangaProvider {
     private fun fetchSectionMangas(sectionId: String): List<MangaSummary> {
         val response = getJson("/api/manga/section?id=$sectionId&adult=0")
         return response.optJSONArray("items")?.toMangaSummaries().orEmpty()
+    }
+
+    private fun parseCommunitySpotlight(html: String): CommunitySpotlightFeed? {
+        val spotlightStart = html.indexOf("community_spotlight")
+            .takeIf { it >= 0 } ?: return null
+        val daily = parseCommunitySpotlightRange(
+            html = html,
+            startIndex = spotlightStart,
+            rangeKey = "daily",
+            nextRangeKey = "weekly",
+        )
+        val weekly = parseCommunitySpotlightRange(
+            html = html,
+            startIndex = spotlightStart,
+            rangeKey = "weekly",
+            nextRangeKey = "monthly",
+        )
+        val monthly = parseCommunitySpotlightRange(
+            html = html,
+            startIndex = spotlightStart,
+            rangeKey = "monthly",
+            nextRangeKey = null,
+        )
+        val ranges = buildMap {
+            if (daily.isNotEmpty()) put(CommunitySpotlightRange.DAILY, daily)
+            if (weekly.isNotEmpty()) put(CommunitySpotlightRange.WEEKLY, weekly)
+            if (monthly.isNotEmpty()) put(CommunitySpotlightRange.MONTHLY, monthly)
+        }
+        if (ranges.isEmpty()) return null
+        val defaultRange = when {
+            CommunitySpotlightRange.WEEKLY in ranges -> CommunitySpotlightRange.WEEKLY
+            CommunitySpotlightRange.DAILY in ranges -> CommunitySpotlightRange.DAILY
+            else -> ranges.keys.first()
+        }
+        return CommunitySpotlightFeed(
+            title = "Powered by the Community",
+            kicker = "Powered by you",
+            defaultRange = defaultRange,
+            ranges = ranges,
+        )
+    }
+
+    private fun parseCommunitySpotlightRange(
+        html: String,
+        startIndex: Int,
+        rangeKey: String,
+        nextRangeKey: String?,
+    ): List<CommunitySpotlightItem> {
+        val rangeStart = findCommunitySpotlightToken(html, rangeKey, startIndex)
+            .takeIf { it >= 0 } ?: return emptyList()
+        val rangeEndCandidates = buildList {
+            nextRangeKey?.let { add(findCommunitySpotlightToken(html, it, rangeStart + 1)) }
+            listOf("latest_updates", "recently_added", "most_tracked", "top_rated")
+                .forEach { marker -> add(findCommunitySpotlightToken(html, marker, rangeStart + 1)) }
+        }.filter { it >= 0 }
+        val rangeEnd = rangeEndCandidates.minOrNull() ?: html.length
+        val block = html.substring(rangeStart, rangeEnd)
+        val normalizedBlock = block.replace("\\", "")
+
+        val parsedItems = buildList {
+            addAll(parseSerializedCommunitySpotlightItems(normalizedBlock))
+            addAll(parseRenderedCommunitySpotlightItems(normalizedBlock))
+        }
+
+        return parsedItems
+            .distinctBy { it.detailUrl }
+            .takeIf { it.isNotEmpty() }
+            .orEmpty()
+    }
+
+    private fun findCommunitySpotlightToken(html: String, token: String, startIndex: Int): Int {
+        val candidates = listOf(
+            html.indexOf(token, startIndex),
+            html.indexOf("\"$token\"", startIndex),
+            html.indexOf("""\\\"$token\\\"""", startIndex),
+            html.indexOf("""\\\\\"$token\\\\\"""", startIndex),
+        )
+        return candidates.filter { it >= 0 }.minOrNull() ?: -1
+    }
+
+    private fun parseSerializedCommunitySpotlightItems(block: String): List<CommunitySpotlightItem> {
+        val items = mutableListOf<CommunitySpotlightItem>()
+        val groupUploaderRegex = Regex(
+            """\"type\",\"(?<type>group|uploader)\",\d+,\"name\",\"(?<name>[^\"]+)\",\"handle\",\"(?<handle>[^\"]+)\",\"href\",\"(?<href>[^\"]+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val groupCompactRegex = Regex(
+            """(?<id>\d+),\"(?<name>[^\"]+)\",\"(?<handle>/g/[^\"]+)\",\"(?<href>/group/\d+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val uploaderTaggedRegex = Regex(
+            """\"uploader\",\"@(?<name>[^\"]+)\",\"uploader · [^\"]+\",\"(?<href>/user/[^\"]+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val uploaderTitledRegex = Regex(
+            """\"@(?<name>[^\"]+)\",\"uploader · [^\"]+\",\"(?<href>/user/[^\"]+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val uploaderPlainRegex = Regex(
+            """(?<id>\d+),\"@(?<name>[^\"]+)\",\"(?<href>/user/[^\"]+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val collectionRegex = Regex(
+            """\"(?<name>[^\"]+)\",\"by @(?<user>[^\"]+)\",\"(?<href>/collections/user/\d+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+
+        groupUploaderRegex.findAll(block).forEach { match ->
+            val type = match.groups["type"]?.value.orEmpty()
+            val name = match.groups["name"]?.value.orEmpty()
+            val handle = match.groups["handle"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val coverUrl = extractFirstCommunitySpotlightImage(block, match.range.last + 1)
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = name,
+                    subtitle = handle,
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = when (type) {
+                        "group" -> "Group"
+                        "uploader" -> "Uploader"
+                        else -> type.replaceFirstChar { it.uppercase() }
+                    },
+                    statLabel = handle,
+                )
+            }
+        }
+
+        groupCompactRegex.findAll(block).forEach { match ->
+            val name = match.groups["name"]?.value.orEmpty()
+            val handle = match.groups["handle"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val coverUrl = extractFirstCommunitySpotlightImage(block, match.range.last + 1)
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = name,
+                    subtitle = handle,
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = "Group",
+                    statLabel = handle,
+                )
+            }
+        }
+
+        uploaderTaggedRegex.findAll(block).forEach { match ->
+            val name = match.groups["name"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val coverUrl = extractFirstCommunitySpotlightImage(block, match.range.last + 1)
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = "@$name",
+                    subtitle = "uploader",
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = "Uploader",
+                    statLabel = "uploader",
+                )
+            }
+        }
+
+        uploaderTitledRegex.findAll(block).forEach { match ->
+            val name = match.groups["name"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val coverUrl = extractFirstCommunitySpotlightImage(block, match.range.last + 1)
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = "@$name",
+                    subtitle = "uploader",
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = "Uploader",
+                    statLabel = "uploader",
+                )
+            }
+        }
+
+        uploaderPlainRegex.findAll(block).forEach { match ->
+            val name = match.groups["name"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val coverUrl = extractFirstCommunitySpotlightImage(block, match.range.last + 1)
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = "@$name",
+                    subtitle = "uploader",
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = "Uploader",
+                    statLabel = "uploader",
+                )
+            }
+        }
+
+        collectionRegex.findAll(block).forEach { match ->
+            val name = match.groups["name"]?.value.orEmpty()
+            val handle = match.groups["user"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val coverUrl = extractFirstCommunitySpotlightImage(block, match.range.last + 1)
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = name,
+                    subtitle = "by @$handle",
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = "Collection",
+                    statLabel = "by @$handle",
+                )
+            }
+        }
+
+        return items
+    }
+
+    private fun parseRenderedCommunitySpotlightItems(block: String): List<CommunitySpotlightItem> {
+        val items = mutableListOf<CommunitySpotlightItem>()
+        val cardRegex = Regex(
+            """<a class="cs-card cs-card--(?<kind>group|uploader|collection)" href="(?<href>[^"]+)"[^>]*>(?<body>.*?)(?:</a>)""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        cardRegex.findAll(block).forEach { match ->
+            val kind = match.groups["kind"]?.value.orEmpty()
+            val href = match.groups["href"]?.value.orEmpty()
+            val body = match.groups["body"]?.value.orEmpty()
+            val name = Regex("""<div class="cs-name">([^<]+)</div>""", setOf(RegexOption.DOT_MATCHES_ALL))
+                .find(body)?.groupValues?.getOrNull(1).orEmpty()
+            val handle = Regex("""<div class="cs-handle">([^<]+)</div>""", setOf(RegexOption.DOT_MATCHES_ALL))
+                .find(body)?.groupValues?.getOrNull(1).orEmpty()
+            val coverUrl = Regex("""(?:https?://[^"\\]+|/uploads/[^"\\]+)""")
+                .find(body)?.value.orEmpty()
+            if (name.isNotBlank() && href.isNotBlank()) {
+                items += CommunitySpotlightItem(
+                    title = name,
+                    subtitle = handle,
+                    coverUrl = coverUrl,
+                    detailUrl = href.toAbsoluteUrl(),
+                    badge = when (kind) {
+                        "group" -> "Group"
+                        "uploader" -> "Uploader"
+                        else -> "Collection"
+                    },
+                    statLabel = handle,
+                )
+            }
+        }
+        return items
+    }
+
+    private fun extractFirstCommunitySpotlightImage(block: String, fromIndex: Int): String {
+        val window = block.substring(fromIndex).take(2500)
+        val candidate = Regex("""(?:https?://[^"\\]+|/uploads/[^"\\]+)""")
+            .findAll(window)
+            .map { it.value }
+            .firstOrNull { it.contains("/uploads/") || it.startsWith("http") }
+            .orEmpty()
+        return candidate.toAbsoluteUrl()
     }
 
     private fun fetchMangaChapters(mangaId: String): List<MangaChapter> {
@@ -332,6 +608,260 @@ class MangadotProvider : MangaProvider {
         broadcastStatus.takeIf { it.isNotBlank() && it != "any" }?.let { url.addQueryParameter("status", it) }
         categoryIds.forEach { origin -> url.addQueryParameter("origin", origin) }
         return url.build().toString()
+    }
+
+    private fun String.toCommunityApiPath(): String? = when {
+        startsWith("/group/") -> "$this.data?_routes=pages%2FGroupDetailPage"
+        startsWith("/user/") -> "$this.data?_routes=pages%2FPublicProfilePage"
+        startsWith("/collections/user/") -> "$this.data?_routes=pages%2FUserCollectionDetailPage"
+        else -> null
+    }
+
+    private fun parseGroupCommunityPage(raw: String, path: String): CommunityPage {
+        val title = extractStringField(raw, "name").ifBlank { "Mangadot group" }
+        val ownerUsername = extractStringField(raw, "owner_username")
+        val avatarUrl = extractStringField(raw, "avatar_url").toAbsoluteUrl()
+        val bannerUrl = extractStringField(raw, "banner_url").toAbsoluteUrl()
+        val description = extractStringField(raw, "description")
+        val status = extractStringField(raw, "status")
+        val createdAt = extractStringField(raw, "created_at")
+        val updatedAt = extractStringField(raw, "updated_at")
+        val uploadCount = extractIntField(raw, "upload_count")
+        val followerCount = extractIntField(raw, "follower_count")
+        val memberNames = parseMemberNames(raw)
+        val recentUploads = parseGroupRecentUploads(raw)
+
+        return CommunityPage(
+            providerId = id,
+            type = CommunityPageType.GROUP,
+            title = title,
+            subtitle = ownerUsername.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty(),
+            avatarUrl = avatarUrl,
+            bannerUrl = bannerUrl,
+            description = description,
+            stats = listOfNotNull(
+                uploadCount.takeIf { it > 0 }?.let { CommunityPageStat("Uploads", it.toString()) },
+                followerCount.takeIf { it > 0 }?.let { CommunityPageStat("Followers", it.toString()) },
+                status.takeIf { it.isNotBlank() }?.let { CommunityPageStat("Status", it.replaceFirstChar(Char::uppercase)) },
+                createdAt.takeIf { it.isNotBlank() }?.let { CommunityPageStat("Created", it.toHomeDateLabel()) },
+                updatedAt.takeIf { it.isNotBlank() }?.let { CommunityPageStat("Updated", it.toHomeDateLabel()) },
+            ),
+            mangaItems = recentUploads,
+            memberNames = memberNames,
+        )
+    }
+
+    private fun parseProfileCommunityPage(raw: String, path: String): CommunityPage {
+        val username = extractStringField(raw, "username")
+        val displayName = extractStringField(raw, "display_name")
+        val avatarUrl = extractStringField(raw, "profile_pic").toAbsoluteUrl()
+        val bannerUrl = extractStringField(raw, "background_pic").toAbsoluteUrl()
+        val bio = extractStringField(raw, "bio")
+        val totalXp = extractIntField(raw, "total_xp")
+        val level = extractIntField(raw, "level")
+        val levelName = extractStringField(raw, "level_name")
+        val currentStreak = extractIntField(raw, "current_streak")
+        val longestStreak = extractIntField(raw, "longest_streak")
+        val lastReadDate = extractStringField(raw, "last_read_date")
+        val totalManga = extractIntField(raw, "total_manga")
+        val chaptersRead = extractIntField(raw, "chapters_read")
+        val achievements = parseAchievementNames(raw)
+        val trackedManga = parseUserTrackedMangaItems(raw)
+
+        return CommunityPage(
+            providerId = id,
+            type = CommunityPageType.PROFILE,
+            title = displayName.ifBlank { "@$username" }.ifBlank { "Mangadot profile" },
+            subtitle = username.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty(),
+            avatarUrl = avatarUrl,
+            bannerUrl = bannerUrl,
+            description = bio,
+            stats = listOfNotNull(
+                totalXp.takeIf { it > 0 }?.let { CommunityPageStat("XP", it.toString()) },
+                level.takeIf { it > 0 }?.let { CommunityPageStat("Level", buildString {
+                    append(it)
+                    if (levelName.isNotBlank()) {
+                        append(" · ")
+                        append(levelName)
+                    }
+                }) },
+                totalManga.takeIf { it > 0 }?.let { CommunityPageStat("Titles", it.toString()) },
+                chaptersRead.takeIf { it > 0 }?.let { CommunityPageStat("Chapters", it.toString()) },
+                currentStreak.takeIf { it > 0 }?.let { CommunityPageStat("Streak", "${it}d") },
+                longestStreak.takeIf { it > 0 }?.let { CommunityPageStat("Best streak", "${it}d") },
+                lastReadDate.takeIf { it.isNotBlank() }?.let { CommunityPageStat("Last read", it.toHomeDateLabel()) },
+            ),
+            mangaItems = trackedManga,
+            achievementNames = achievements,
+        )
+    }
+
+    private fun parseCollectionCommunityPage(raw: String, path: String): CommunityPage {
+        val title = extractStringField(raw, "name").ifBlank { "Collection" }
+        val username = extractStringField(raw, "username")
+        val avatarUrl = extractStringField(raw, "profile_pic").toAbsoluteUrl()
+        val description = extractStringField(raw, "description")
+        val isPublic = extractBooleanField(raw, "is_public")
+        val createdAt = extractStringField(raw, "created_at")
+        val updatedAt = extractStringField(raw, "updated_at")
+        val mangaItems = parseCollectionMangaItems(raw)
+
+        return CommunityPage(
+            providerId = id,
+            type = CommunityPageType.COLLECTION,
+            title = title,
+            subtitle = username.takeIf { it.isNotBlank() }?.let { "by @$it" }.orEmpty(),
+            avatarUrl = avatarUrl,
+            description = description,
+            stats = listOfNotNull(
+                mangaItems.size.takeIf { it > 0 }?.let { CommunityPageStat("Titles", it.toString()) },
+                CommunityPageStat("Visibility", if (isPublic) "Public" else "Private"),
+                createdAt.takeIf { it.isNotBlank() }?.let { CommunityPageStat("Created", it.toHomeDateLabel()) },
+                updatedAt.takeIf { it.isNotBlank() }?.let { CommunityPageStat("Updated", it.toHomeDateLabel()) },
+            ),
+            mangaItems = mangaItems,
+        )
+    }
+
+    private fun parseGroupRecentUploads(raw: String): List<MangaSummary> {
+        val labeledRegex = Regex(
+            """(?<recordId>\d+),\"manga_id\",(?<mangaId>\d+),\"chapter_number\",(?<chapterNumber>\d+),\"chapter_title\",\"(?<chapterTitle>[^\"]*)\",\"date_added\",\"language\",\"(?<language>[^\"]*)\",\"scanlator_name\",\"manga_title\",\"(?<mangaTitle>[^\"]*)\",\"manga_photo\",\"(?<photo>[^\"]*)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val compactRegex = Regex(
+            """(?<recordId>\d+),(?<mangaId>\d+),(?<chapterNumber>\d+),\"(?<dateAdded>[^\"]*)\",\"(?<mangaTitle>[^\"]*)\",\"(?<photo>[^\"]*)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        return buildList {
+            labeledRegex.findAll(raw).forEach { match ->
+                val mangaId = match.groups["mangaId"]?.value.orEmpty()
+                val chapterTitle = match.groups["chapterTitle"]?.value.orEmpty()
+                val language = match.groups["language"]?.value.orEmpty()
+                val mangaTitle = match.groups["mangaTitle"]?.value.orEmpty()
+                val photo = match.groups["photo"]?.value.orEmpty()
+                if (mangaId.isBlank() || mangaTitle.isBlank()) return@forEach
+                add(
+                    MangaSummary(
+                        providerId = id,
+                        title = mangaTitle,
+                        detailPath = "/manga/$mangaId",
+                        coverUrl = photo.toAbsoluteUrl(),
+                        status = chapterTitle.ifBlank { "Recent upload" },
+                        views = language.uppercase(),
+                    )
+                )
+            }
+            compactRegex.findAll(raw).forEach { match ->
+                val mangaId = match.groups["mangaId"]?.value.orEmpty()
+                val chapterNumber = match.groups["chapterNumber"]?.value.orEmpty()
+                val dateAdded = match.groups["dateAdded"]?.value.orEmpty()
+                val mangaTitle = match.groups["mangaTitle"]?.value.orEmpty()
+                val photo = match.groups["photo"]?.value.orEmpty()
+                if (mangaId.isBlank() || mangaTitle.isBlank()) return@forEach
+                add(
+                    MangaSummary(
+                        providerId = id,
+                        title = mangaTitle,
+                        detailPath = "/manga/$mangaId",
+                        coverUrl = photo.toAbsoluteUrl(),
+                        status = "Chapter ${chapterNumber.ifBlank { "?" }}",
+                        latestPublication = dateAdded.toHomeDateLabel(),
+                    )
+                )
+            }
+        }.distinctBy { it.detailPath }
+    }
+
+    private fun parseCollectionMangaItems(raw: String): List<MangaSummary> {
+        val titleFirstRegex = Regex(
+            """(?<mangaId>\d+),\"title\",\"(?<title>[^\"]+)\",\"genres\",\\[(?:.*?)\\],\"(?<genreSample>[^\"]*)\".*?\"status\",\"(?<status>[^\"]*)\",\"photo\",\"(?<photo>[^\"]*)\".*?\"chapter_count\",(?<chapterCount>\d+).*?\"country_of_origin\",\"(?<origin>[A-Z]+)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val userListRegex = Regex(
+            """\"manga_id\",(?<mangaId>\d+).*?\"title\",\"(?<title>[^\"]+)\",\"photo\",\"(?<photo>[^\"]*)\".*?\"manga_status\",\"(?<status>[^\"]*)\"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val matches = buildList {
+            addAll(titleFirstRegex.findAll(raw))
+            addAll(userListRegex.findAll(raw))
+        }
+        return matches.mapNotNull { match ->
+            val mangaId = match.groups["mangaId"]?.value.orEmpty()
+            val title = match.groups["title"]?.value.orEmpty()
+            val photo = match.groups["photo"]?.value.orEmpty()
+            val status = match.groups["status"]?.value.orEmpty()
+            val chapterCount = match.groups["chapterCount"]?.value.orEmpty()
+            val origin = match.groups["origin"]?.value.orEmpty()
+            if (mangaId.isBlank() || title.isBlank()) return@mapNotNull null
+            MangaSummary(
+                providerId = id,
+                title = title,
+                detailPath = "/manga/$mangaId",
+                coverUrl = photo.toAbsoluteUrl(),
+                contentType = origin.toContentTypeLabel(),
+                status = status,
+                chaptersCount = chapterCount.takeIf { it.isNotBlank() && it != "0" }.orEmpty(),
+            )
+        }
+            .distinctBy { it.detailPath }
+    }
+
+    private fun parseUserTrackedMangaItems(raw: String): List<MangaSummary> {
+        return parseCollectionMangaItems(raw)
+    }
+
+    private fun parseMemberNames(raw: String): List<String> {
+        val membersIndex = raw.indexOf("\"members\"")
+        if (membersIndex < 0) return emptyList()
+        val tail = raw.substring(membersIndex)
+        return Regex("\"username\",\"([^\"]+)\"")
+            .findAll(tail)
+            .map { it.groupValues.getOrNull(1).orEmpty() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+    }
+
+    private fun parseAchievementNames(raw: String): List<String> {
+        val start = raw.indexOf("\"achievements\"").takeIf { it >= 0 } ?: return emptyList()
+        val end = raw.indexOf("\"stats\"", start + 1).takeIf { it > start } ?: raw.length
+        return Regex("\"name\",\"([^\"]+)\"")
+            .findAll(raw.substring(start, end))
+            .mapNotNull { match ->
+                val value = match.groupValues.getOrNull(1).orEmpty()
+                value.takeIf { it.isNotBlank() }
+            }
+            .distinct()
+            .take(8)
+            .toList()
+    }
+
+    private fun extractStringField(raw: String, fieldName: String): String {
+        return Regex("\"$fieldName\",(?:null|\"([^\"]*)\"|(-?\\d+(?:\\.\\d+)?))", setOf(RegexOption.DOT_MATCHES_ALL))
+            .find(raw)
+            ?.groupValues
+            ?.let { groups ->
+                groups.getOrNull(1).orEmpty().ifBlank { groups.getOrNull(2).orEmpty() }
+            }
+            .orEmpty()
+    }
+
+    private fun extractIntField(raw: String, fieldName: String): Int {
+        return Regex("\"$fieldName\",(-?\\d+)", setOf(RegexOption.DOT_MATCHES_ALL))
+            .find(raw)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: 0
+    }
+
+    private fun extractBooleanField(raw: String, fieldName: String): Boolean {
+        return Regex("\"$fieldName\",(true|false)", setOf(RegexOption.DOT_MATCHES_ALL))
+            .find(raw)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toBooleanStrictOrNull()
+            ?: false
     }
 
     private fun hasNextPage(document: Document): Boolean {
@@ -431,6 +961,12 @@ class MangadotProvider : MangaProvider {
                         title = title,
                         detailPath = "/manga/$idValue",
                         coverUrl = photo.toAbsoluteUrl(),
+                        contentType = item.optString("country_of_origin").toContentTypeLabel(),
+                        status = item.optString("status").trim(),
+                        latestPublication = item.optString("last_chapter_date").trim().toHomeDateLabel(),
+                        chaptersCount = item.optInt("chapter_count", 0).takeIf { it > 0 }?.toString().orEmpty(),
+                        rating = item.optDouble("avg_rating", 0.0).takeIf { it > 0 }?.let { "Rating %.1f".format(it) }.orEmpty(),
+                        views = item.optInt("view_count", 0).takeIf { it > 0 }?.let { "Views $it" }.orEmpty(),
                     )
                 )
             }
@@ -457,6 +993,20 @@ class MangadotProvider : MangaProvider {
     private fun String.extractBackgroundImageUrl(): String {
         val match = Regex("""background-image:url\(([^)]+)\)""").find(this) ?: return ""
         return match.groupValues.getOrNull(1).orEmpty().trim('\'', '"')
+    }
+
+    private fun String.toContentTypeLabel(): String = when (uppercase()) {
+        "JP" -> "Manga"
+        "KR" -> "Manhwa"
+        "CN" -> "Manhua"
+        "ONESHOT" -> "One Shot"
+        else -> ""
+    }
+
+    private fun String.toHomeDateLabel(): String {
+        val value = trim()
+        if (value.isBlank()) return ""
+        return value
     }
 
     private fun extractJsonField(html: String, fieldName: String): String {
