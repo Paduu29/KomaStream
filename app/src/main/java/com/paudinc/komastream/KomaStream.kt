@@ -65,8 +65,8 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 fun KomaStream() {
     val context = LocalContext.current
-    val libraryStore = remember { LibraryStore(context) }
     val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
+    val libraryStore = remember(providerRegistry) { LibraryStore(context, providerRegistry.defaultProvider().id) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
     val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
@@ -74,7 +74,7 @@ fun KomaStream() {
     var savedNavigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
         mutableStateOf(
             listOf(
-                if (libraryStore.hasSeenProviderPicker()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
+                if (libraryStore.hasSeenProviderPickerFast()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
             )
         )
     }
@@ -161,8 +161,14 @@ fun KomaStream() {
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.startBackgroundWork()
+    }
+
     LaunchedEffect(libraryState.selectedProviderId) {
-        viewModel.refreshCurrentProviderContent(clearVisibleData = true)
+        if (libraryState.selectedProviderId.isNotBlank()) {
+            viewModel.refreshCurrentProviderContent(clearVisibleData = true)
+        }
     }
 
     LaunchedEffect(viewModel.navigationController.navigationStack) {

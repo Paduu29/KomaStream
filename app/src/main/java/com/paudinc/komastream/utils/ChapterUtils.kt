@@ -195,6 +195,7 @@ fun chapterValue(chapter: MangaChapter): Double {
 fun String.toProgressChapterNumber(): Double? = parseChapterInput(this)
 
 fun chapterPathProgressNumber(providerId: String, chapterPath: String): Double? {
+    if (providerId in setOf("mangaball-en", "mangatube-de", "mangadotnet-en")) return null
     val segments = canonicalChapterKey(providerId, chapterPath)
         .split("/")
         .filter { it.isNotBlank() }

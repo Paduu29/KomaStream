@@ -50,9 +50,7 @@ class LibraryController(
 ) {
     var uiState by mutableStateOf(
         LibraryUiState(
-            state = libraryStore.read(),
-            allProvidersState = libraryStore.read(filterBySelectedProvider = false),
-            downloadedChapterPaths = offlineStore.getDownloadedChapterPaths(),
+            state = emptyLibraryState(),
         )
     )
         private set
@@ -63,15 +61,12 @@ class LibraryController(
     private var lastTrackedWorkSignature: String = ""
 
     fun refreshState(filterBySelectedProvider: Boolean = true) {
-        uiState = uiState.copy(
-            state = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider),
-            allProvidersState = libraryStore.read(filterBySelectedProvider = false),
-        )
+        refreshStateAsync(filterBySelectedProvider)
     }
 
     fun refreshStateAsync(filterBySelectedProvider: Boolean = true) {
         scope.launch {
-            val (state, allProvidersState) = withContext(Dispatchers.Default) {
+            val (state, allProvidersState) = withContext(Dispatchers.IO) {
                 val currentState = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider)
                 val currentAllProvidersState = if (filterBySelectedProvider) {
                     libraryStore.read(filterBySelectedProvider = false)
@@ -88,9 +83,17 @@ class LibraryController(
     }
 
     fun refreshOfflineDownloads() {
-        uiState = uiState.copy(
-            downloadedChapterPaths = offlineStore.getDownloadedChapterPaths()
-        )
+        scope.launch {
+            val downloadedChapterPaths = withContext(Dispatchers.IO) {
+                offlineStore.getDownloadedChapterPaths()
+            }
+            uiState = uiState.copy(downloadedChapterPaths = downloadedChapterPaths)
+        }
+    }
+
+    fun initialize() {
+        refreshStateAsync()
+        refreshOfflineDownloads()
     }
 
     fun startDownloadProgressTracking() {

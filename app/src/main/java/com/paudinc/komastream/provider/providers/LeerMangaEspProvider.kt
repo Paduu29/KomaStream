@@ -147,7 +147,6 @@ class LeerMangaEspProvider : MangaProvider {
             .filter { it.isNotBlank() }
         val status = infoBlocks.getOrNull(1).orEmpty()
         val alternateTitle = infoBlocks.firstOrNull().orEmpty()
-        val demography = document.selectFirst(".demography")?.text()?.trim().orEmpty()
         val description = buildString {
             append(document.selectFirst(".synopsis")?.text()?.trim().orEmpty())
             if (alternateTitle.isNotBlank()) {
@@ -166,7 +165,7 @@ class LeerMangaEspProvider : MangaProvider {
             description = description,
             status = status,
             publicationDate = "",
-            periodicity = demography,
+            periodicity = "",
             chapters = fetchAllChapters(normalizedPath),
         )
     }
@@ -340,7 +339,7 @@ class LeerMangaEspProvider : MangaProvider {
             detailPath = "/manga/$slug/",
             coverUrl = portadaUrl(coverPath),
             status = demography,
-            periodicity = type,
+            contentType = type,
             latestPublication = latestChapter.takeIf { it > 0.0 }?.let { "Cap. ${formatChapterNumber(it)}" }.orEmpty(),
         )
     }
@@ -381,7 +380,7 @@ class LeerMangaEspProvider : MangaProvider {
                     detailPath = detailPath,
                     coverUrl = coverUrl,
                     status = demography,
-                    periodicity = genres,
+                    contentType = genres,
                 )
             }
             .distinctBy { it.detailPath }
@@ -403,7 +402,7 @@ class LeerMangaEspProvider : MangaProvider {
                 detailPath = detailPath,
                 coverUrl = coverUrl,
                 status = demography,
-                periodicity = type,
+                contentType = type,
                 latestPublication = latestPublication,
             )
         }

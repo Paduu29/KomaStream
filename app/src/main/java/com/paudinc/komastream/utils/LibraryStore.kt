@@ -27,12 +27,19 @@ data class CachedMangaDetailSnapshot(
     val updatedAt: Long,
 )
 
-class LibraryStore(context: Context) {
+class LibraryStore(
+    context: Context,
+    defaultProviderId: String,
+) {
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
     private val database = LibraryDatabase.getInstance(context)
     private val dao = database.libraryDao()
-    private val defaultProviderId = createDefaultProviderRegistry().defaultProvider().id
-    private val jsonCodec = LibraryJsonCodec(defaultProviderId = defaultProviderId)
+    private val defaultProviderId = defaultProviderId.ifBlank {
+        legacyPrefs.getString("selectedProviderId", "").orEmpty()
+    }
+    private val jsonCodec = LibraryJsonCodec(
+        defaultProviderId = this.defaultProviderId
+    )
     private val backupPayloadCodec = LibraryBackupPayloadCodec()
     private val mangaDetailCacheCodec = MangaDetailCacheCodec()
     private val initLock = Any()
@@ -386,6 +393,10 @@ class LibraryStore(context: Context) {
     }
 
     fun hasSeenProviderPicker(): Boolean = readSettings().hasSeenProviderPicker
+
+    fun hasSeenProviderPickerFast(): Boolean = legacyPrefs.getBoolean("hasSeenProviderPicker", false)
+
+    fun selectedProviderIdFast(): String = legacyPrefs.getString("selectedProviderId", "").orEmpty()
 
     fun setHasSeenProviderPicker(seen: Boolean) {
         updateSettings { it.copy(hasSeenProviderPicker = seen) }

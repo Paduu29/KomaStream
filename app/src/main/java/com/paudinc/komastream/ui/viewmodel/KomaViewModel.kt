@@ -50,10 +50,11 @@ class KomaViewModel(
     catalogStateInteractor: CatalogStateInteractor = CatalogStateInteractor(),
     readerActionInteractor: ReaderActionInteractor = ReaderActionInteractor(),
 ) : ViewModel() {
+    private var backgroundWorkStarted = false
 
     val navigationController = NavigationController(
         initialStack = initialNavigationStack ?: listOf(
-            if (libraryStore.hasSeenProviderPicker()) {
+            if (libraryStore.hasSeenProviderPickerFast()) {
                 Screen.Root(RootTab.Home)
             } else {
                 Screen.ProviderPicker
@@ -105,17 +106,15 @@ class KomaViewModel(
     val screen: Screen
         get() = navigationController.screen
 
-val currentProvider
+    val currentProvider
         get() = providerRegistry.get(libraryController.uiState.state.selectedProviderId)
 
-    init {
-        libraryController.refreshOfflineDownloads()
+    fun startBackgroundWork() {
+        if (backgroundWorkStarted) return
+        backgroundWorkStarted = true
+        libraryController.initialize()
         libraryController.startDownloadProgressTracking()
         updateController.checkForUpdates(openDialogOnUpdate = true)
-        val providerId = libraryController.uiState.state.selectedProviderId
-        if (providerId.isNotBlank()) {
-            refreshHome()
-        }
     }
 
     fun pushScreen(next: Screen) {
@@ -171,8 +170,8 @@ val currentProvider
         updateController.installDownloadedUpdate(file)
     }
 
-    fun refreshHome() {
-        homeController.refreshHome(currentProvider, ::showError)
+    fun refreshHome(providerId: String = currentProvider.id, force: Boolean = false) {
+        homeController.refreshHome(providerRegistry.get(providerId), ::showError, force = force)
     }
 
     fun refreshCatalogFilterOptions() {
@@ -373,7 +372,7 @@ val currentProvider
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         if (currentProvider.id == MangaBallProvider.PROVIDER_ID) {
-            homeController.refreshHome(currentProvider, ::showError)
+            refreshHome(providerId = MangaBallProvider.PROVIDER_ID, force = true)
             catalogController.refreshFilterOptions(currentProvider)
         }
     }
@@ -393,7 +392,7 @@ val currentProvider
         ) {
             libraryController.refreshState()
             libraryController.changeLanguage(libraryController.currentState().appLanguage)
-            homeController.refreshHome(currentProvider, ::showError)
+            refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { currentProvider.id }, force = true)
         }
     }
 
@@ -408,9 +407,9 @@ val currentProvider
         catalogController.resetForProviderChange()
         navigationController.replaceRoot(RootTab.Home)
         if (previousProviderId != providerId) {
-            refreshHome()
+            refreshHome(providerId = providerId, force = true)
         } else {
-            homeController.refreshHome(currentProvider, ::showError, force = true)
+            refreshHome(providerId = providerId, force = true)
         }
     }
 
@@ -420,7 +419,7 @@ val currentProvider
             catalogController.clearResults()
         }
         refreshCatalogFilterOptions()
-        refreshHome()
+        refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { currentProvider.id })
     }
 
     fun updatePageProgress(providerId: String, path: String, index: Int, allowAutoReadMark: Boolean = true) {

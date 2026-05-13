@@ -15,6 +15,8 @@ class HomeController(
 ) {
     var uiState by mutableStateOf(HomeUiState())
         private set
+    @Volatile
+    private var refreshToken: Long = 0L
 
     fun refreshHome(
         provider: MangaProvider,
@@ -22,20 +24,31 @@ class HomeController(
         force: Boolean = false,
     ) {
         if (uiState.isRefreshing && !force) return
+        val requestToken = synchronized(this) {
+            refreshToken += 1L
+            refreshToken
+        }
 
         scope.launch {
             uiState = uiState.copy(isRefreshing = true)
+            val providerId = provider.id
 
             runCatching { withContext(Dispatchers.IO) { provider.fetchHomeFeed() } }
                 .onSuccess {
-                    uiState = uiState.copy(
-                        feed = it,
-                        isRefreshing = false
-                    )
+                    if (requestToken == refreshToken) {
+                        uiState = uiState.copy(
+                            feed = it,
+                            isRefreshing = false
+                        )
+                    }
                 }
                 .onFailure {
-                    uiState = uiState.copy(isRefreshing = false)
-                    onError(it.message ?: "Could not load home")
+                    if (requestToken == refreshToken) {
+                        uiState = uiState.copy(isRefreshing = false)
+                        onError(it.message ?: "Could not load home")
+                    } else {
+                        Log.d("KomaStream", "Dropped stale home refresh for $providerId", it)
+                    }
                 }
         }
     }

@@ -37,7 +37,9 @@ class KomaStreamApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
-        AppCacheMaintenance.trimAll(this)
+        Thread {
+            AppCacheMaintenance.trimAll(this)
+        }.start()
     }
 
     override fun newImageLoader(): ImageLoader {

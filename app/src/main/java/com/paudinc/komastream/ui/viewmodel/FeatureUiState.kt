@@ -2,6 +2,7 @@ package com.paudinc.komastream.ui.viewmodel
 
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CommunityPage
+import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaDetail
@@ -33,6 +34,19 @@ data class LibraryUiState(
     val downloadedChapterPaths: Set<String> = emptySet(),
     val isBulkUpdatingChapters: Boolean = false,
 )
+
+fun emptyLibraryState(): LibraryState =
+    LibraryState(
+        favorites = emptyList(),
+        reading = emptyList(),
+        readChapters = emptySet(),
+        useDarkTheme = false,
+        autoJumpToUnread = true,
+        mangaBallAdultContentEnabled = false,
+        preferredChapterLanguage = AppLanguage.EN,
+        selectedProviderId = "",
+        appLanguage = AppLanguage.EN,
+    )
 
 data class ReaderUiState(
     val selectedDetail: MangaDetail? = null,

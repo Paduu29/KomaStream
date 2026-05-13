@@ -19,12 +19,12 @@ import javax.crypto.spec.GCMParameterSpec
 class OfflineChapterStore(val context: Context) {
     private val rootDir = File(context.filesDir, "offline_chapters").apply { mkdirs() }
     private val cryptoLock = Any()
-
-    init {
-        migrateLegacyChapterDirs()
-    }
+    private val migrationLock = Any()
+    @Volatile
+    private var legacyMigrationComplete = false
 
     fun getDownloadedChapterPaths(): Set<String> {
+        ensureMigrated()
         return rootDir.listFiles()
             ?.mapNotNull { directory ->
                 readManifest(directory)?.let { manifest ->
@@ -39,10 +39,12 @@ class OfflineChapterStore(val context: Context) {
     }
 
     fun isChapterDownloaded(providerId: String, chapterPath: String): Boolean {
+        ensureMigrated()
         return manifestFile(providerId, chapterPath).exists()
     }
 
     fun saveChapter(readerData: ReaderData, pageBytes: List<ByteArray>) {
+        ensureMigrated()
         require(readerData.pages.size == pageBytes.size) { "Page payload count does not match page metadata" }
         val chapterDir = chapterDir(readerData.providerId, readerData.chapterPath).apply {
             mkdirs()
@@ -74,6 +76,7 @@ class OfflineChapterStore(val context: Context) {
     }
 
     fun loadChapter(providerId: String, chapterPath: String): ReaderData? {
+        ensureMigrated()
         val manifest = readManifest(chapterDir(providerId, chapterPath)) ?: return null
         val pages = manifest.optJSONArray("pages") ?: JSONArray()
         return ReaderData(
@@ -101,6 +104,7 @@ class OfflineChapterStore(val context: Context) {
     }
 
     fun loadPageBytes(providerId: String, chapterPath: String, page: ReaderPage): ByteArray? {
+        ensureMigrated()
         val fileName = page.offlineFileName.takeIf { it.isNotBlank() } ?: return null
         val file = File(chapterDir(providerId, chapterPath), fileName)
         if (!file.exists()) return null
@@ -108,6 +112,7 @@ class OfflineChapterStore(val context: Context) {
     }
 
     fun removeChapter(providerId: String, chapterPath: String) {
+        ensureMigrated()
         chapterDir(providerId, chapterPath).deleteRecursively()
     }
 
@@ -187,6 +192,15 @@ class OfflineChapterStore(val context: Context) {
             } else {
                 directory.renameTo(targetDir)
             }
+        }
+    }
+
+    private fun ensureMigrated() {
+        if (legacyMigrationComplete) return
+        synchronized(migrationLock) {
+            if (legacyMigrationComplete) return
+            migrateLegacyChapterDirs()
+            legacyMigrationComplete = true
         }
     }
 
