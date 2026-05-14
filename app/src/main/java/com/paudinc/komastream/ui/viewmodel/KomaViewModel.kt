@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
+import com.paudinc.komastream.data.model.BackupFormat
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.MangaChapter
@@ -54,7 +55,7 @@ class KomaViewModel(
 
     val navigationController = NavigationController(
         initialStack = initialNavigationStack ?: listOf(
-            if (libraryStore.hasSeenProviderPickerFast()) {
+            if (libraryStore.selectedProviderId().isNotBlank()) {
                 Screen.Root(RootTab.Home)
             } else {
                 Screen.ProviderPicker
@@ -385,6 +386,10 @@ class KomaViewModel(
         backupController.exportBackup(uri)
     }
 
+    fun exportDatabaseBackup(uri: Uri) {
+        backupController.exportBackup(uri, BackupFormat.DATABASE)
+    }
+
     fun importBackup(uri: Uri) {
         backupController.importBackup(
             uri = uri,
@@ -393,6 +398,18 @@ class KomaViewModel(
             libraryController.refreshState()
             libraryController.changeLanguage(libraryController.currentState().appLanguage)
             refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { currentProvider.id }, force = true)
+        }
+    }
+
+    fun importDatabaseBackup(uri: Uri) {
+        backupController.importBackup(
+            uri = uri,
+            format = BackupFormat.DATABASE,
+            selectedProviderIdFallback = libraryController.uiState.state.selectedProviderId,
+        ) {
+            libraryController.refreshState()
+            libraryController.changeLanguage(libraryController.currentState().appLanguage)
+            homeController.refreshHome(currentProvider, ::showError)
         }
     }
 

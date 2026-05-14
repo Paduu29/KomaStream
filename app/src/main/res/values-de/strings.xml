@@ -94,7 +94,13 @@
     <string name="backup">Backup</string>
     <string name="export_backup">Backup exportieren</string>
     <string name="import_backup">Backup importieren</string>
-    <string name="backup_description">Beim Export wird eine JSON-Backup-Datei erstellt. Beim Import wird ein ausgewähltes JSON-Backup wiederhergestellt.</string>
+    <string name="export_json_backup">JSON exportieren</string>
+    <string name="import_json_backup">JSON importieren</string>
+    <string name="export_database_backup">Datenbank exportieren</string>
+    <string name="import_database_backup">Datenbank importieren</string>
+    <string name="json_backup">JSON-Backup</string>
+    <string name="database_backup">Datenbank-Backup</string>
+    <string name="backup_description">Beim Export wird entweder ein JSON-Backup oder ein SQLite-Datenbank-Backup erstellt. Beim Import wird die ausgewählte Backup-Datei wiederhergestellt.</string>
     <string name="backup_exporting">Backup wird exportiert</string>
     <string name="backup_importing">Backup wird importiert</string>
     <string name="backup_export_success">Backup wurde erfolgreich exportiert.</string>

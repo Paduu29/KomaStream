@@ -102,7 +102,13 @@
     <string name="backup">Backup</string>
     <string name="export_backup">Export backup</string>
     <string name="import_backup">Import backup</string>
-    <string name="backup_description">Export saves a JSON backup file. Import restores from a selected JSON file.</string>
+    <string name="export_json_backup">Export JSON</string>
+    <string name="import_json_backup">Import JSON</string>
+    <string name="export_database_backup">Export database</string>
+    <string name="import_database_backup">Import database</string>
+    <string name="json_backup">JSON backup</string>
+    <string name="database_backup">Database backup</string>
+    <string name="backup_description">Export saves either a JSON backup or a SQLite database backup. Import restores from the selected backup file.</string>
     <string name="backup_exporting">Exporting backup</string>
     <string name="backup_importing">Importing backup</string>
     <string name="backup_export_success">Backup export completed successfully.</string>

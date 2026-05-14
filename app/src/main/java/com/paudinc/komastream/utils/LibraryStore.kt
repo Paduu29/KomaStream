@@ -1,6 +1,8 @@
 package com.paudinc.komastream.utils
 
 import android.content.Context
+import android.content.ContentValues
+import android.database.sqlite.SQLiteDatabase
 import com.paudinc.komastream.data.local.AppSettingsEntity
 import com.paudinc.komastream.data.local.ChapterPageCountEntity
 import com.paudinc.komastream.data.local.ChapterProgressEntity
@@ -17,8 +19,8 @@ import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.data.repository.LibraryBackupPayloadCodec
 import com.paudinc.komastream.data.repository.LibraryJsonCodec
 import com.paudinc.komastream.data.repository.MangaDetailCacheCodec
-import com.paudinc.komastream.utils.chapterCountForProvider
 import com.paudinc.komastream.utils.toProgressChapterNumber
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,19 +29,13 @@ data class CachedMangaDetailSnapshot(
     val updatedAt: Long,
 )
 
-class LibraryStore(
-    context: Context,
-    defaultProviderId: String,
-) {
+class LibraryStore(context: Context) {
+    private val appContext = context.applicationContext
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
     private val database = LibraryDatabase.getInstance(context)
     private val dao = database.libraryDao()
-    private val defaultProviderId = defaultProviderId.ifBlank {
-        legacyPrefs.getString("selectedProviderId", "").orEmpty()
-    }
-    private val jsonCodec = LibraryJsonCodec(
-        defaultProviderId = this.defaultProviderId
-    )
+    private val defaultProviderId: String = createDefaultProviderRegistry().defaultProvider().id
+    private val jsonCodec = LibraryJsonCodec(defaultProviderId = defaultProviderId)
     private val backupPayloadCodec = LibraryBackupPayloadCodec()
     private val mangaDetailCacheCodec = MangaDetailCacheCodec()
     private val initLock = Any()
@@ -427,6 +423,9 @@ class LibraryStore(
         val importedSettings = importedPayload.settings?.let(::JSONObject)
         onProgress(99, "Applying settings")
         updateSettings {
+            val restoredHasSeenProviderPicker =
+                importedSettings?.optBoolean("hasSeenProviderPicker", it.hasSeenProviderPicker)
+                    ?: it.hasSeenProviderPicker
             it.copy(
                 selectedProviderId = importedPayload.selectedProviderId,
                 useDarkTheme = importedSettings?.optBoolean("useDarkTheme", it.useDarkTheme) ?: it.useDarkTheme,
@@ -434,11 +433,121 @@ class LibraryStore(
                 mangaBallAdultContentEnabled = importedSettings?.optBoolean("mangaBallAdultContentEnabled", it.mangaBallAdultContentEnabled) ?: it.mangaBallAdultContentEnabled,
                 preferredChapterLanguage = importedSettings?.optString("preferredChapterLanguage").orEmpty().ifBlank { it.preferredChapterLanguage },
                 appLanguage = importedSettings?.optString("appLanguage").orEmpty().ifBlank { it.appLanguage },
-                hasSeenProviderPicker = importedSettings?.optBoolean("hasSeenProviderPicker", it.hasSeenProviderPicker) ?: it.hasSeenProviderPicker,
+                hasSeenProviderPicker = restoredHasSeenProviderPicker || importedPayload.selectedProviderId.isNotBlank(),
                 legacyPrefsMigrated = true,
             )
         }
         onProgress(100, "Backup restored")
+    }
+
+    fun exportDatabaseBackup(
+        onProgress: (Int, String) -> Unit = { _, _ -> },
+    ): ByteArray {
+        ensureInitialized()
+        val tempFile = createTempDatabaseBackupFile()
+        try {
+            onProgress(5, "Preparing database backup")
+            SQLiteDatabase.openOrCreateDatabase(tempFile, null).use { database ->
+                database.rawQuery("PRAGMA journal_mode=DELETE", null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        // Consume pragma result row on Android's SQLite wrapper.
+                    }
+                }
+                createDatabaseBackupSchema(database)
+                database.beginTransaction()
+                try {
+                    onProgress(12, "Writing backup metadata")
+                    database.insertOrThrow(
+                        DATABASE_BACKUP_METADATA_TABLE,
+                        null,
+                        ContentValues().apply {
+                            put("id", 0)
+                            put("backup_version", DATABASE_BACKUP_VERSION)
+                            put("format", "komastream-room")
+                        },
+                    )
+
+                    onProgress(20, "Exporting favorites")
+                    dao.readFavorites().forEach { entity ->
+                        database.insertOrThrow(FAVORITES_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(32, "Exporting reading list")
+                    dao.readReading().forEach { entity ->
+                        database.insertOrThrow(READING_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(44, "Exporting read chapters")
+                    dao.readChapters().forEach { entity ->
+                        database.insertOrThrow(READ_CHAPTERS_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(56, "Exporting chapter progress")
+                    dao.readChapterProgress().forEach { entity ->
+                        database.insertOrThrow(CHAPTER_PROGRESS_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(68, "Exporting page counts")
+                    dao.readChapterPageCounts().forEach { entity ->
+                        database.insertOrThrow(CHAPTER_PAGE_COUNTS_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(78, "Exporting settings")
+                    database.insertOrThrow(APP_SETTINGS_TABLE, null, readSettings().toContentValues())
+                    onProgress(88, "Exporting detail cache")
+                    dao.readMangaDetailCaches().forEach { entity ->
+                        database.insertOrThrow(MANGA_DETAIL_CACHE_TABLE, null, entity.toContentValues())
+                    }
+                    database.setTransactionSuccessful()
+                } finally {
+                    database.endTransaction()
+                }
+            }
+            return tempFile.readBytes()
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    fun importDatabaseBackup(
+        payload: ByteArray,
+        onProgress: (Int, String) -> Unit = { _, _ -> },
+    ) {
+        ensureInitialized()
+        val tempFile = createTempDatabaseBackupFile()
+        try {
+            tempFile.writeBytes(payload)
+            SQLiteDatabase.openDatabase(tempFile.path, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+                validateDatabaseBackup(database)
+                onProgress(60, "Reading database backup")
+                val favorites = database.readFavoritesBackup()
+                val reading = database.readReadingBackup()
+                val readChapters = database.readReadChaptersBackup()
+                val chapterProgress = database.readChapterProgressBackup()
+                val pageCounts = database.readChapterPageCountsBackup()
+                val settings = database.readAppSettingsBackup()
+                val detailCache = database.readMangaDetailCacheBackup()
+
+                onProgress(82, "Applying database backup")
+                dao.clearFavorites()
+                dao.clearReading()
+                dao.clearReadChapters()
+                dao.clearChapterProgress()
+                dao.clearChapterPageCounts()
+                dao.clearMangaDetailCache()
+
+                favorites.forEach(dao::upsertFavorite)
+                reading.forEach(dao::upsertReading)
+                readChapters.forEach(dao::upsertReadChapter)
+                chapterProgress.forEach(dao::upsertChapterProgress)
+                pageCounts.forEach(dao::upsertChapterPageCount)
+                detailCache.forEach(dao::upsertMangaDetailCache)
+                dao.upsertSettings(
+                    settings.copy(
+                        hasSeenProviderPicker = settings.hasSeenProviderPicker || settings.selectedProviderId.isNotBlank(),
+                        legacyPrefsMigrated = true,
+                    )
+                )
+                onProgress(100, "Database restored")
+            }
+        } finally {
+            tempFile.delete()
+        }
     }
 
     fun saveChapterProgress(providerId: String, chapterPath: String, pageIndex: Int) {
@@ -1015,8 +1124,357 @@ class LibraryStore(
         return canonicalChapterPathKey(providerId, chapterPath)
     }
 
+    private fun createTempDatabaseBackupFile(): File =
+        File.createTempFile("komastream_backup_", ".db", appContext.cacheDir)
+
+    private fun createDatabaseBackupSchema(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $DATABASE_BACKUP_METADATA_TABLE (
+                id INTEGER PRIMARY KEY NOT NULL,
+                backup_version INTEGER NOT NULL,
+                format TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $FAVORITES_TABLE (
+                provider_id TEXT NOT NULL,
+                detail_path TEXT NOT NULL COLLATE NOCASE,
+                title TEXT NOT NULL,
+                cover_url TEXT NOT NULL,
+                favorite_status TEXT NOT NULL,
+                last_chapter_title TEXT NOT NULL,
+                last_chapter_path TEXT NOT NULL,
+                last_progress_chapter_number REAL,
+                mal_manga_id INTEGER,
+                last_read_chapter_number INTEGER,
+                order_index INTEGER NOT NULL,
+                PRIMARY KEY(provider_id, detail_path)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $READING_TABLE (
+                provider_id TEXT NOT NULL,
+                detail_path TEXT NOT NULL COLLATE NOCASE,
+                title TEXT NOT NULL,
+                cover_url TEXT NOT NULL,
+                last_chapter_title TEXT NOT NULL,
+                last_chapter_path TEXT NOT NULL,
+                last_progress_chapter_number REAL,
+                mal_manga_id INTEGER,
+                last_read_chapter_number INTEGER,
+                order_index INTEGER NOT NULL,
+                PRIMARY KEY(provider_id, detail_path)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $READ_CHAPTERS_TABLE (
+                provider_id TEXT NOT NULL,
+                chapter_path TEXT NOT NULL,
+                read_order INTEGER NOT NULL,
+                PRIMARY KEY(provider_id, chapter_path)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $CHAPTER_PROGRESS_TABLE (
+                provider_id TEXT NOT NULL,
+                chapter_path TEXT NOT NULL,
+                page_index INTEGER NOT NULL,
+                PRIMARY KEY(provider_id, chapter_path)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $CHAPTER_PAGE_COUNTS_TABLE (
+                provider_id TEXT NOT NULL,
+                chapter_path TEXT NOT NULL,
+                page_count INTEGER NOT NULL,
+                PRIMARY KEY(provider_id, chapter_path)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $APP_SETTINGS_TABLE (
+                id INTEGER PRIMARY KEY NOT NULL,
+                selected_provider_id TEXT NOT NULL,
+                use_dark_theme INTEGER NOT NULL,
+                auto_jump_to_unread INTEGER NOT NULL,
+                mangaball_adult_content_enabled INTEGER NOT NULL,
+                app_language TEXT NOT NULL,
+                preferred_chapter_language TEXT NOT NULL,
+                has_seen_provider_picker INTEGER NOT NULL,
+                legacy_prefs_migrated INTEGER NOT NULL,
+                favorite_status_backfill_done INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $MANGA_DETAIL_CACHE_TABLE (
+                provider_id TEXT NOT NULL,
+                detail_key TEXT NOT NULL,
+                detail_path TEXT NOT NULL COLLATE NOCASE,
+                detail_json TEXT NOT NULL,
+                chapter_count INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(provider_id, detail_key)
+            )
+            """.trimIndent()
+        )
+    }
+
+    private fun validateDatabaseBackup(database: SQLiteDatabase) {
+        val requiredTables = setOf(
+            FAVORITES_TABLE,
+            READING_TABLE,
+            READ_CHAPTERS_TABLE,
+            CHAPTER_PROGRESS_TABLE,
+            CHAPTER_PAGE_COUNTS_TABLE,
+            APP_SETTINGS_TABLE,
+            MANGA_DETAIL_CACHE_TABLE,
+        )
+        val availableTables = buildSet {
+            database.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    add(cursor.getString(0))
+                }
+            }
+        }
+        if (!requiredTables.all { it in availableTables }) {
+            error("Invalid database backup")
+        }
+    }
+
     private companion object {
         private const val KEY_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
         private const val MAX_CACHED_DETAIL_PAYLOAD_SIZE = 900_000
+        private const val DATABASE_BACKUP_VERSION = 1
+        private const val DATABASE_BACKUP_METADATA_TABLE = "backup_metadata"
+        private const val FAVORITES_TABLE = "favorite_manga"
+        private const val READING_TABLE = "reading_manga"
+        private const val READ_CHAPTERS_TABLE = "read_chapters"
+        private const val CHAPTER_PROGRESS_TABLE = "chapter_progress"
+        private const val CHAPTER_PAGE_COUNTS_TABLE = "chapter_page_counts"
+        private const val APP_SETTINGS_TABLE = "app_settings"
+        private const val MANGA_DETAIL_CACHE_TABLE = "manga_detail_cache"
     }
+}
+
+private fun FavoriteMangaEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("provider_id", providerId)
+    put("detail_path", detailPath)
+    put("title", title)
+    put("cover_url", coverUrl)
+    put("favorite_status", favoriteStatus)
+    put("last_chapter_title", lastChapterTitle)
+    put("last_chapter_path", lastChapterPath)
+    put("last_progress_chapter_number", lastProgressChapterNumber)
+    put("mal_manga_id", malMangaId)
+    put("last_read_chapter_number", lastReadChapterNumber)
+    put("order_index", orderIndex)
+}
+
+private fun ReadingMangaEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("provider_id", providerId)
+    put("detail_path", detailPath)
+    put("title", title)
+    put("cover_url", coverUrl)
+    put("last_chapter_title", lastChapterTitle)
+    put("last_chapter_path", lastChapterPath)
+    put("last_progress_chapter_number", lastProgressChapterNumber)
+    put("mal_manga_id", malMangaId)
+    put("last_read_chapter_number", lastReadChapterNumber)
+    put("order_index", orderIndex)
+}
+
+private fun ReadChapterEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("provider_id", providerId)
+    put("chapter_path", chapterPath)
+    put("read_order", readOrder)
+}
+
+private fun ChapterProgressEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("provider_id", providerId)
+    put("chapter_path", chapterPath)
+    put("page_index", pageIndex)
+}
+
+private fun ChapterPageCountEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("provider_id", providerId)
+    put("chapter_path", chapterPath)
+    put("page_count", pageCount)
+}
+
+private fun AppSettingsEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("id", id)
+    put("selected_provider_id", selectedProviderId)
+    put("use_dark_theme", useDarkTheme)
+    put("auto_jump_to_unread", autoJumpToUnread)
+    put("mangaball_adult_content_enabled", mangaBallAdultContentEnabled)
+    put("app_language", appLanguage)
+    put("preferred_chapter_language", preferredChapterLanguage)
+    put("has_seen_provider_picker", hasSeenProviderPicker)
+    put("legacy_prefs_migrated", legacyPrefsMigrated)
+    put("favorite_status_backfill_done", favoriteStatusBackfillDone)
+}
+
+private fun MangaDetailCacheEntity.toContentValues(): ContentValues = ContentValues().apply {
+    put("provider_id", providerId)
+    put("detail_key", detailKey)
+    put("detail_path", detailPath)
+    put("detail_json", detailJson)
+    put("chapter_count", chapterCount)
+    put("updated_at", updatedAt)
+}
+
+private fun SQLiteDatabase.readFavoritesBackup(): List<FavoriteMangaEntity> =
+    query("favorite_manga", null, null, null, null, null, "order_index DESC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    FavoriteMangaEntity(
+                        providerId = cursor.getString(cursor.getColumnIndexOrThrow("provider_id")),
+                        detailPath = cursor.getString(cursor.getColumnIndexOrThrow("detail_path")),
+                        title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                        coverUrl = cursor.getString(cursor.getColumnIndexOrThrow("cover_url")),
+                        favoriteStatus = cursor.getString(cursor.getColumnIndexOrThrow("favorite_status")),
+                        lastChapterTitle = cursor.getString(cursor.getColumnIndexOrThrow("last_chapter_title")),
+                        lastChapterPath = cursor.getString(cursor.getColumnIndexOrThrow("last_chapter_path")),
+                        lastProgressChapterNumber = cursor.getDoubleOrNull("last_progress_chapter_number"),
+                        malMangaId = cursor.getLongOrNull("mal_manga_id"),
+                        lastReadChapterNumber = cursor.getIntOrNull("last_read_chapter_number"),
+                        orderIndex = cursor.getLong(cursor.getColumnIndexOrThrow("order_index")),
+                    )
+                )
+            }
+        }
+    }
+
+private fun SQLiteDatabase.readReadingBackup(): List<ReadingMangaEntity> =
+    query("reading_manga", null, null, null, null, null, "order_index DESC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    ReadingMangaEntity(
+                        providerId = cursor.getString(cursor.getColumnIndexOrThrow("provider_id")),
+                        detailPath = cursor.getString(cursor.getColumnIndexOrThrow("detail_path")),
+                        title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                        coverUrl = cursor.getString(cursor.getColumnIndexOrThrow("cover_url")),
+                        lastChapterTitle = cursor.getString(cursor.getColumnIndexOrThrow("last_chapter_title")),
+                        lastChapterPath = cursor.getString(cursor.getColumnIndexOrThrow("last_chapter_path")),
+                        lastProgressChapterNumber = cursor.getDoubleOrNull("last_progress_chapter_number"),
+                        malMangaId = cursor.getLongOrNull("mal_manga_id"),
+                        lastReadChapterNumber = cursor.getIntOrNull("last_read_chapter_number"),
+                        orderIndex = cursor.getLong(cursor.getColumnIndexOrThrow("order_index")),
+                    )
+                )
+            }
+        }
+    }
+
+private fun SQLiteDatabase.readReadChaptersBackup(): List<ReadChapterEntity> =
+    query("read_chapters", null, null, null, null, null, "read_order DESC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    ReadChapterEntity(
+                        providerId = cursor.getString(cursor.getColumnIndexOrThrow("provider_id")),
+                        chapterPath = cursor.getString(cursor.getColumnIndexOrThrow("chapter_path")),
+                        readOrder = cursor.getLong(cursor.getColumnIndexOrThrow("read_order")),
+                    )
+                )
+            }
+        }
+    }
+
+private fun SQLiteDatabase.readChapterProgressBackup(): List<ChapterProgressEntity> =
+    query("chapter_progress", null, null, null, null, null, null).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    ChapterProgressEntity(
+                        providerId = cursor.getString(cursor.getColumnIndexOrThrow("provider_id")),
+                        chapterPath = cursor.getString(cursor.getColumnIndexOrThrow("chapter_path")),
+                        pageIndex = cursor.getInt(cursor.getColumnIndexOrThrow("page_index")),
+                    )
+                )
+            }
+        }
+    }
+
+private fun SQLiteDatabase.readChapterPageCountsBackup(): List<ChapterPageCountEntity> =
+    query("chapter_page_counts", null, null, null, null, null, null).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    ChapterPageCountEntity(
+                        providerId = cursor.getString(cursor.getColumnIndexOrThrow("provider_id")),
+                        chapterPath = cursor.getString(cursor.getColumnIndexOrThrow("chapter_path")),
+                        pageCount = cursor.getInt(cursor.getColumnIndexOrThrow("page_count")),
+                    )
+                )
+            }
+        }
+    }
+
+private fun SQLiteDatabase.readAppSettingsBackup(): AppSettingsEntity =
+    query("app_settings", null, "id = 0", null, null, null, null).use { cursor ->
+        if (!cursor.moveToFirst()) {
+            return@use AppSettingsEntity()
+        }
+        AppSettingsEntity(
+            id = cursor.getInt(cursor.getColumnIndexOrThrow("id")),
+            selectedProviderId = cursor.getString(cursor.getColumnIndexOrThrow("selected_provider_id")),
+            useDarkTheme = cursor.getInt(cursor.getColumnIndexOrThrow("use_dark_theme")) != 0,
+            autoJumpToUnread = cursor.getInt(cursor.getColumnIndexOrThrow("auto_jump_to_unread")) != 0,
+            mangaBallAdultContentEnabled = cursor.getInt(cursor.getColumnIndexOrThrow("mangaball_adult_content_enabled")) != 0,
+            appLanguage = cursor.getString(cursor.getColumnIndexOrThrow("app_language")),
+            preferredChapterLanguage = cursor.getString(cursor.getColumnIndexOrThrow("preferred_chapter_language")),
+            hasSeenProviderPicker = cursor.getInt(cursor.getColumnIndexOrThrow("has_seen_provider_picker")) != 0,
+            legacyPrefsMigrated = cursor.getInt(cursor.getColumnIndexOrThrow("legacy_prefs_migrated")) != 0,
+            favoriteStatusBackfillDone = cursor.getInt(cursor.getColumnIndexOrThrow("favorite_status_backfill_done")) != 0,
+        )
+    }
+
+private fun SQLiteDatabase.readMangaDetailCacheBackup(): List<MangaDetailCacheEntity> =
+    query("manga_detail_cache", null, null, null, null, null, "updated_at DESC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    MangaDetailCacheEntity(
+                        providerId = cursor.getString(cursor.getColumnIndexOrThrow("provider_id")),
+                        detailKey = cursor.getString(cursor.getColumnIndexOrThrow("detail_key")),
+                        detailPath = cursor.getString(cursor.getColumnIndexOrThrow("detail_path")),
+                        detailJson = cursor.getString(cursor.getColumnIndexOrThrow("detail_json")),
+                        chapterCount = cursor.getInt(cursor.getColumnIndexOrThrow("chapter_count")),
+                        updatedAt = cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
+                    )
+                )
+            }
+        }
+    }
+
+private fun android.database.Cursor.getDoubleOrNull(columnName: String): Double? {
+    val index = getColumnIndexOrThrow(columnName)
+    return if (isNull(index)) null else getDouble(index)
+}
+
+private fun android.database.Cursor.getLongOrNull(columnName: String): Long? {
+    val index = getColumnIndexOrThrow(columnName)
+    return if (isNull(index)) null else getLong(index)
+}
+
+private fun android.database.Cursor.getIntOrNull(columnName: String): Int? {
+    val index = getColumnIndexOrThrow(columnName)
+    return if (isNull(index)) null else getInt(index)
 }

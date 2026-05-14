@@ -94,7 +94,13 @@
     <string name="backup">Copia de seguridad</string>
     <string name="export_backup">Exportar copia</string>
     <string name="import_backup">Importar copia</string>
-    <string name="backup_description">La exportación guarda un archivo JSON. La importación restaura desde un archivo JSON seleccionado.</string>
+    <string name="export_json_backup">Exportar JSON</string>
+    <string name="import_json_backup">Importar JSON</string>
+    <string name="export_database_backup">Exportar base de datos</string>
+    <string name="import_database_backup">Importar base de datos</string>
+    <string name="json_backup">Copia JSON</string>
+    <string name="database_backup">Copia de base de datos</string>
+    <string name="backup_description">La exportación guarda una copia JSON o una copia SQLite de la base de datos. La importación restaura desde el archivo seleccionado.</string>
     <string name="backup_exporting">Exportando copia</string>
     <string name="backup_importing">Importando copia</string>
     <string name="backup_export_success">La copia de seguridad fue exportada correctamente.</string>

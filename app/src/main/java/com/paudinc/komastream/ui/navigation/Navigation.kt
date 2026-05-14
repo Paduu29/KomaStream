@@ -28,6 +28,14 @@ sealed interface Screen {
     data class Community(val providerId: String, val communityPath: String) : Screen
     data object ProviderPicker : Screen
     data object Settings : Screen
+    data object SettingsLanguage : Screen
+    data object SettingsTheme : Screen
+    data object SettingsChapterLanguage : Screen
+    data object SettingsReader : Screen
+    data object SettingsContent : Screen
+    data object SettingsUpdates : Screen
+    data object SettingsMyAnimeList : Screen
+    data object SettingsBackup : Screen
 }
 
 enum class CatalogMode {
@@ -46,6 +54,14 @@ val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
                 is Screen.Community -> listOf("community", screen.providerId, screen.communityPath)
                 Screen.ProviderPicker -> listOf("provider-picker")
                 Screen.Settings -> listOf("settings")
+                Screen.SettingsLanguage -> listOf("settings-language")
+                Screen.SettingsTheme -> listOf("settings-theme")
+                Screen.SettingsChapterLanguage -> listOf("settings-chapter-language")
+                Screen.SettingsReader -> listOf("settings-reader")
+                Screen.SettingsContent -> listOf("settings-content")
+                Screen.SettingsUpdates -> listOf("settings-updates")
+                Screen.SettingsMyAnimeList -> listOf("settings-mal")
+                Screen.SettingsBackup -> listOf("settings-backup")
             }
         }
     },
@@ -66,6 +82,14 @@ val ScreenStackSaver = Saver<List<Screen>, List<List<String>>>(
                 )
                 "provider-picker" -> Screen.ProviderPicker
                 "settings" -> Screen.Settings
+                "settings-language" -> Screen.SettingsLanguage
+                "settings-theme" -> Screen.SettingsTheme
+                "settings-chapter-language" -> Screen.SettingsChapterLanguage
+                "settings-reader" -> Screen.SettingsReader
+                "settings-content" -> Screen.SettingsContent
+                "settings-updates" -> Screen.SettingsUpdates
+                "settings-mal" -> Screen.SettingsMyAnimeList
+                "settings-backup" -> Screen.SettingsBackup
                 else -> Screen.Root(RootTab.Home)
             }
         }.ifEmpty { listOf(Screen.ProviderPicker) }

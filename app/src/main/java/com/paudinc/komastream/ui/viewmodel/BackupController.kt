@@ -2,6 +2,7 @@ package com.paudinc.komastream.ui.viewmodel
 
 import android.net.Uri
 import android.util.Log
+import com.paudinc.komastream.data.model.BackupFormat
 import com.paudinc.komastream.data.model.BackupOperationType
 import com.paudinc.komastream.data.model.BackupOperationUiState
 import com.paudinc.komastream.data.repository.BackupFileInteractor
@@ -34,21 +35,39 @@ class BackupController(
     }
 
     fun exportBackup(uri: Uri) {
+        exportBackup(uri, BackupFormat.JSON)
+    }
+
+    fun exportBackup(uri: Uri, format: BackupFormat) {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val startedAt = System.currentTimeMillis()
+                    val exportStage = when (format) {
+                        BackupFormat.JSON -> strings.backupExporting
+                        BackupFormat.DATABASE -> strings.exportDatabaseBackup
+                    }
                     _operationState.value = BackupOperationUiState.InProgress(
                         type = BackupOperationType.EXPORT,
                         progressPercent = 0,
-                        stageMessage = strings.backupExporting,
+                        stageMessage = exportStage,
                     )
-                    val bytes = libraryStore.exportBackup().toByteArray()
+                    val bytes = when (format) {
+                        BackupFormat.JSON -> libraryStore.exportBackup().toByteArray()
+                        BackupFormat.DATABASE -> libraryStore.exportDatabaseBackup { progress, stage ->
+                            _operationState.value = BackupOperationUiState.InProgress(
+                                type = BackupOperationType.EXPORT,
+                                progressPercent = progress.coerceIn(0, 90),
+                                stageMessage = stage,
+                                etaSeconds = buildEtaSeconds(startedAt, progress.coerceAtLeast(1)),
+                            )
+                        }
+                    }
                     backupFileInteractor.exportBackup(uri, bytes) { progress ->
                         _operationState.value = BackupOperationUiState.InProgress(
                             type = BackupOperationType.EXPORT,
-                            progressPercent = progress,
-                            stageMessage = strings.backupExporting,
+                            progressPercent = if (format == BackupFormat.JSON) progress else (90 + (progress / 10)).coerceIn(90, 100),
+                            stageMessage = exportStage,
                             etaSeconds = buildEtaSeconds(startedAt, progress),
                         )
                     }
@@ -74,43 +93,83 @@ class BackupController(
         selectedProviderIdFallback: String,
         onImported: () -> Unit,
     ) {
+        importBackup(uri, BackupFormat.JSON, selectedProviderIdFallback, onImported)
+    }
+
+    fun importBackup(
+        uri: Uri,
+        format: BackupFormat,
+        selectedProviderIdFallback: String,
+        onImported: () -> Unit,
+    ) {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val startedAt = System.currentTimeMillis()
+                    val importStage = when (format) {
+                        BackupFormat.JSON -> strings.backupImporting
+                        BackupFormat.DATABASE -> strings.importDatabaseBackup
+                    }
                     _operationState.value = BackupOperationUiState.InProgress(
                         type = BackupOperationType.IMPORT,
                         progressPercent = 0,
-                        stageMessage = strings.backupImporting,
+                        stageMessage = importStage,
                     )
                     val payloadBytes = backupFileInteractor.importBackup(uri) { progress ->
-                        val adjusted = (progress.coerceIn(0, 100) * 6) / 10
+                        val adjusted = if (format == BackupFormat.JSON) {
+                            (progress.coerceIn(0, 100) * 6) / 10
+                        } else {
+                            (progress.coerceIn(0, 100) * 5) / 10
+                        }
                         _operationState.value = BackupOperationUiState.InProgress(
                             type = BackupOperationType.IMPORT,
-                            progressPercent = adjusted.coerceIn(0, 60),
+                            progressPercent = adjusted.coerceIn(0, if (format == BackupFormat.JSON) 60 else 50),
                             stageMessage = strings.backupReadingFile,
                             etaSeconds = buildEtaSeconds(startedAt, adjusted.coerceAtLeast(1)),
                         )
                     }
-                    val restoredPayload = payloadBytes.toString(Charsets.UTF_8)
-                    _operationState.value = BackupOperationUiState.InProgress(
-                        type = BackupOperationType.IMPORT,
-                        progressPercent = 62,
-                        stageMessage = strings.backupPreparingRestore,
-                        etaSeconds = buildEtaSeconds(startedAt, 62),
-                    )
-                    libraryStore.importBackup(
-                        payload = restoredPayload,
-                        selectedProviderIdFallback = selectedProviderIdFallback,
-                        onProgress = { progress, stage ->
+                    when (format) {
+                        BackupFormat.JSON -> {
+                            val restoredPayload = payloadBytes.toString(Charsets.UTF_8)
                             _operationState.value = BackupOperationUiState.InProgress(
                                 type = BackupOperationType.IMPORT,
-                                progressPercent = progress.coerceIn(62, 100),
-                                stageMessage = stage,
-                                etaSeconds = buildEtaSeconds(startedAt, progress.coerceIn(1, 100)),
+                                progressPercent = 62,
+                                stageMessage = strings.backupPreparingRestore,
+                                etaSeconds = buildEtaSeconds(startedAt, 62),
                             )
-                        },
-                    )
+                            libraryStore.importBackup(
+                                payload = restoredPayload,
+                                selectedProviderIdFallback = selectedProviderIdFallback,
+                                onProgress = { progress, stage ->
+                                    _operationState.value = BackupOperationUiState.InProgress(
+                                        type = BackupOperationType.IMPORT,
+                                        progressPercent = progress.coerceIn(62, 100),
+                                        stageMessage = stage,
+                                        etaSeconds = buildEtaSeconds(startedAt, progress.coerceIn(1, 100)),
+                                    )
+                                },
+                            )
+                        }
+                        BackupFormat.DATABASE -> {
+                            _operationState.value = BackupOperationUiState.InProgress(
+                                type = BackupOperationType.IMPORT,
+                                progressPercent = 55,
+                                stageMessage = strings.backupPreparingRestore,
+                                etaSeconds = buildEtaSeconds(startedAt, 55),
+                            )
+                            libraryStore.importDatabaseBackup(
+                                payload = payloadBytes,
+                                onProgress = { progress, stage ->
+                                    _operationState.value = BackupOperationUiState.InProgress(
+                                        type = BackupOperationType.IMPORT,
+                                        progressPercent = progress.coerceIn(55, 100),
+                                        stageMessage = stage,
+                                        etaSeconds = buildEtaSeconds(startedAt, progress.coerceIn(1, 100)),
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
                 onImported()
                 _operationState.value = BackupOperationUiState.Completed(

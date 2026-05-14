@@ -83,8 +83,12 @@ fun HomeScreen(
             val listState = rememberSaveable(providerId, saver = LazyListState.Saver) {
                 LazyListState()
             }
+            var previousProviderId by rememberSaveable { mutableStateOf<String?>(null) }
             LaunchedEffect(providerId) {
-                listState.scrollToItem(0)
+                if (previousProviderId != null && previousProviderId != providerId) {
+                    listState.scrollToItem(0)
+                }
+                previousProviderId = providerId
             }
 
             LazyColumn(

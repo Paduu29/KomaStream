@@ -305,6 +305,11 @@ enum class BackupOperationType {
     EXPORT,
 }
 
+enum class BackupFormat {
+    JSON,
+    DATABASE,
+}
+
 sealed interface BackupOperationUiState {
     data object Idle : BackupOperationUiState
 

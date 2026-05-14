@@ -66,7 +66,7 @@ import androidx.compose.ui.window.DialogProperties
 fun KomaStream() {
     val context = LocalContext.current
     val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
-    val libraryStore = remember(providerRegistry) { LibraryStore(context, providerRegistry.defaultProvider().id) }
+    val libraryStore = remember { LibraryStore(context) }
     val offlineStore = remember { OfflineChapterStore(context) }
     val workManager = remember { WorkManager.getInstance(context) }
     val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
@@ -74,7 +74,7 @@ fun KomaStream() {
     var savedNavigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
         mutableStateOf(
             listOf(
-                if (libraryStore.hasSeenProviderPickerFast()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
+                if (libraryStore.selectedProviderId().isNotBlank()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
             )
         )
     }
@@ -122,6 +122,12 @@ fun KomaStream() {
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.importBackup(it) }
+    }
+    val exportDatabaseLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        uri?.let { viewModel.exportDatabaseBackup(it) }
+    }
+    val importDatabaseLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.importDatabaseBackup(it) }
     }
     val activity = context as? Activity
     val currentProvider = viewModel.currentProvider
@@ -306,6 +312,14 @@ fun KomaStream() {
                                             text = when (screen) {
                                                 is Screen.Detail -> readerUiState.selectedDetail?.title ?: ""
                                                 is Screen.Settings -> strings.settings
+                                                Screen.SettingsLanguage -> strings.languageLabel
+                                                Screen.SettingsTheme -> strings.theme
+                                                Screen.SettingsChapterLanguage -> strings.preferredChapterLanguage
+                                                Screen.SettingsReader -> strings.reader
+                                                Screen.SettingsContent -> strings.mangaBallAdultContentLabel
+                                                Screen.SettingsUpdates -> strings.updates
+                                                Screen.SettingsMyAnimeList -> strings.myAnimeList
+                                                Screen.SettingsBackup -> strings.backup
                                                 is Screen.ProviderPicker -> strings.chooseProvider
                                                 is Screen.Reader -> readerUiState.readerData?.let { reader ->
                                                     buildReaderTopBarTitle(
@@ -520,33 +534,14 @@ fun KomaStream() {
                                     RootTab.Settings -> SettingsScreen(
                                         strings = strings,
                                         selectedProviderId = libraryState.selectedProviderId,
-                                        appLanguage = libraryState.appLanguage,
-                                        preferredChapterLanguage = libraryState.preferredChapterLanguage,
-                                        useDarkTheme = libraryState.useDarkTheme,
-                                        autoJumpToUnread = libraryState.autoJumpToUnread,
-                                        mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
-                                        malUiState = malUiState,
-                                        versionName = BuildConfig.VERSION_NAME,
-                                        updateState = updateController.updateState,
-                                        onLanguageChange = { viewModel.changeLanguage(it) },
-                                        onPreferredChapterLanguageChange = { viewModel.changePreferredChapterLanguage(it) },
-                                        onThemeChange = { viewModel.changeTheme(it) },
-                                        onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
-                                        onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
-                                        onMalConnect = {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.beginMalConnect()))
-                                                    .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
-                                            )
-                                        },
-                                        onMalSync = { viewModel.syncMalLibraryBothWays() },
-                                        onMalDisconnect = { viewModel.disconnectMal() },
-                                        onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
-                                        onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
-                                        onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
-                                        onDownloadUpdate = downloadUpdate,
-                                        onInstallUpdate = installUpdate,
-                                        onOpenReleasePage = openReleasePage,
+                                        onOpenLanguage = { viewModel.pushScreen(Screen.SettingsLanguage) },
+                                        onOpenTheme = { viewModel.pushScreen(Screen.SettingsTheme) },
+                                        onOpenChapterLanguage = { viewModel.pushScreen(Screen.SettingsChapterLanguage) },
+                                        onOpenReader = { viewModel.pushScreen(Screen.SettingsReader) },
+                                        onOpenContent = { viewModel.pushScreen(Screen.SettingsContent) },
+                                        onOpenUpdates = { viewModel.pushScreen(Screen.SettingsUpdates) },
+                                        onOpenMyAnimeList = { viewModel.pushScreen(Screen.SettingsMyAnimeList) },
+                                        onOpenBackup = { viewModel.pushScreen(Screen.SettingsBackup) },
                                     )
                                 }
                             }
@@ -679,19 +674,52 @@ fun KomaStream() {
                             is Screen.Settings -> SettingsScreen(
                                 strings = strings,
                                 selectedProviderId = libraryState.selectedProviderId,
+                                onOpenLanguage = { viewModel.pushScreen(Screen.SettingsLanguage) },
+                                onOpenTheme = { viewModel.pushScreen(Screen.SettingsTheme) },
+                                onOpenChapterLanguage = { viewModel.pushScreen(Screen.SettingsChapterLanguage) },
+                                onOpenReader = { viewModel.pushScreen(Screen.SettingsReader) },
+                                onOpenContent = { viewModel.pushScreen(Screen.SettingsContent) },
+                                onOpenUpdates = { viewModel.pushScreen(Screen.SettingsUpdates) },
+                                onOpenMyAnimeList = { viewModel.pushScreen(Screen.SettingsMyAnimeList) },
+                                onOpenBackup = { viewModel.pushScreen(Screen.SettingsBackup) },
+                            )
+                            Screen.SettingsLanguage -> LanguageSettingsScreen(
+                                strings = strings,
                                 appLanguage = libraryState.appLanguage,
-                                preferredChapterLanguage = libraryState.preferredChapterLanguage,
+                                onLanguageChange = { viewModel.changeLanguage(it) },
+                            )
+                            Screen.SettingsTheme -> ThemeSettingsScreen(
+                                strings = strings,
                                 useDarkTheme = libraryState.useDarkTheme,
+                                onThemeChange = { viewModel.changeTheme(it) },
+                            )
+                            Screen.SettingsChapterLanguage -> ChapterLanguageSettingsScreen(
+                                strings = strings,
+                                preferredChapterLanguage = libraryState.preferredChapterLanguage,
+                                onPreferredChapterLanguageChange = { viewModel.changePreferredChapterLanguage(it) },
+                            )
+                            Screen.SettingsReader -> ReaderSettingsScreen(
+                                strings = strings,
                                 autoJumpToUnread = libraryState.autoJumpToUnread,
+                                onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
+                            )
+                            Screen.SettingsContent -> ContentSettingsScreen(
+                                strings = strings,
                                 mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
-                                malUiState = malUiState,
+                                onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
+                            )
+                            Screen.SettingsUpdates -> UpdatesSettingsScreen(
+                                strings = strings,
                                 versionName = BuildConfig.VERSION_NAME,
                                 updateState = updateController.updateState,
-                                onLanguageChange = { viewModel.changeLanguage(it) },
-                                onPreferredChapterLanguageChange = { viewModel.changePreferredChapterLanguage(it) },
-                                onThemeChange = { viewModel.changeTheme(it) },
-                                onAutoJumpToUnreadChange = { viewModel.changeAutoJumpToUnread(it) },
-                                onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
+                                onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
+                                onDownloadUpdate = downloadUpdate,
+                                onInstallUpdate = installUpdate,
+                                onOpenReleasePage = openReleasePage,
+                            )
+                            Screen.SettingsMyAnimeList -> MyAnimeListSettingsScreen(
+                                strings = strings,
+                                malUiState = malUiState,
                                 onMalConnect = {
                                     context.startActivity(
                                         Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.beginMalConnect()))
@@ -700,12 +728,13 @@ fun KomaStream() {
                                 },
                                 onMalSync = { viewModel.syncMalLibraryBothWays() },
                                 onMalDisconnect = { viewModel.disconnectMal() },
-                                onExportBackup = { exportLauncher.launch("KomaStream_Backup.json") },
-                                onImportBackup = { importLauncher.launch(arrayOf("application/json")) },
-                                onCheckForUpdates = { viewModel.checkForUpdates(notifyIfCurrent = true) },
-                                onDownloadUpdate = downloadUpdate,
-                                onInstallUpdate = installUpdate,
-                                onOpenReleasePage = openReleasePage,
+                            )
+                            Screen.SettingsBackup -> BackupSettingsScreen(
+                                strings = strings,
+                                onExportJsonBackup = { exportLauncher.launch("KomaStream_Backup.json") },
+                                onImportJsonBackup = { importLauncher.launch(arrayOf("application/json")) },
+                                onExportDatabaseBackup = { exportDatabaseLauncher.launch("KomaStream_Backup.db") },
+                                onImportDatabaseBackup = { importDatabaseLauncher.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "*/*")) },
                             )
                             is Screen.ProviderPicker -> ProviderPickerScreen(
                                 strings = strings,
@@ -1170,6 +1199,14 @@ private fun Screen.saveableKey(): String = when (this) {
     is Screen.Community -> "community:$providerId:$communityPath"
     Screen.ProviderPicker -> "provider-picker"
     Screen.Settings -> "settings"
+    Screen.SettingsLanguage -> "settings-language"
+    Screen.SettingsTheme -> "settings-theme"
+    Screen.SettingsChapterLanguage -> "settings-chapter-language"
+    Screen.SettingsReader -> "settings-reader"
+    Screen.SettingsContent -> "settings-content"
+    Screen.SettingsUpdates -> "settings-updates"
+    Screen.SettingsMyAnimeList -> "settings-mal"
+    Screen.SettingsBackup -> "settings-backup"
 }
 
 private fun buildReaderTopBarTitle(
