@@ -28,7 +28,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.MangaChapter
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.provider.providers.MangaBallProvider
@@ -148,7 +147,7 @@ fun DetailScreen(
         ) {
             item {
                 Box {
-                    AsyncImage(
+                    MangadotAwareAsyncImage(
                         model = detail.bannerUrl.ifBlank { detail.coverUrl },
                         contentDescription = detail.title,
                         modifier = Modifier
@@ -177,7 +176,7 @@ fun DetailScreen(
                             .align(Alignment.BottomStart),
                         verticalAlignment = Alignment.Bottom,
                     ) {
-                        AsyncImage(
+                        MangadotAwareAsyncImage(
                             model = detail.coverUrl,
                             contentDescription = detail.title,
                             modifier = Modifier

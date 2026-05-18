@@ -26,6 +26,7 @@ import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.provider.providers.MangaBallProvider
+import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
@@ -36,6 +37,9 @@ import com.paudinc.komastream.utils.canonicalChapterKeys
 import com.paudinc.komastream.utils.sameMangaPath
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class KomaViewModel(
     private val context: Context,
@@ -52,6 +56,10 @@ class KomaViewModel(
     readerActionInteractor: ReaderActionInteractor = ReaderActionInteractor(),
 ) : ViewModel() {
     private var backgroundWorkStarted = false
+    private var pendingBrowserBootstrapProviderId: String? = null
+
+    val isAwaitingBrowserBootstrap: Boolean
+        get() = pendingBrowserBootstrapProviderId != null
 
     val navigationController = NavigationController(
         initialStack = initialNavigationStack ?: listOf(
@@ -172,11 +180,21 @@ class KomaViewModel(
     }
 
     fun refreshHome(providerId: String = currentProvider.id, force: Boolean = false) {
-        homeController.refreshHome(providerRegistry.get(providerId), ::showError, force = force)
+        val provider = providerRegistry.get(providerId)
+        if (provider is MangadotProvider && !provider.cloudflareReady) {
+            requestBrowserBootstrap(providerId)
+            return
+        }
+        homeController.refreshHome(provider, ::showError, force = force)
     }
 
     fun refreshCatalogFilterOptions() {
-        catalogController.refreshFilterOptions(currentProvider)
+        val provider = currentProvider
+        if (provider is MangadotProvider && !provider.cloudflareReady) {
+            requestBrowserBootstrap(provider.id)
+            return
+        }
+        catalogController.refreshFilterOptions(provider)
     }
 
     fun searchCatalog(loadMore: Boolean = false) {
@@ -418,25 +436,79 @@ class KomaViewModel(
     }
 
     fun selectProvider(providerId: String) {
-        val previousProviderId = libraryController.uiState.state.selectedProviderId
         libraryController.selectProvider(providerId)
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         navigationController.replaceRoot(RootTab.Home)
-        if (previousProviderId != providerId) {
-            refreshHome(providerId = providerId, force = true)
-        } else {
-            refreshHome(providerId = providerId, force = true)
+        if (providerId == MangadotProvider.PROVIDER_ID) {
+            val provider = providerRegistry.get(providerId) as? MangadotProvider
+            if (provider?.markCloudflareReadyIfCookiesPresent() == true) {
+                pendingBrowserBootstrapProviderId = null
+            } else {
+                pendingBrowserBootstrapProviderId = providerId
+            }
+            return
+        }
+        pendingBrowserBootstrapProviderId = null
+    }
+
+    fun requestBrowserBootstrap(providerId: String) {
+        if (providerId == MangadotProvider.PROVIDER_ID) {
+            val provider = providerRegistry.get(providerId) as? MangadotProvider
+            if (provider?.markCloudflareReadyIfCookiesPresent() == true) {
+                pendingBrowserBootstrapProviderId = null
+            } else {
+                pendingBrowserBootstrapProviderId = providerId
+            }
         }
     }
 
+    fun resumePendingBrowserBootstrap(): Boolean {
+        val providerId = pendingBrowserBootstrapProviderId ?: return false
+        if (providerId != MangadotProvider.PROVIDER_ID) {
+            pendingBrowserBootstrapProviderId = null
+            return false
+        }
+        if (providerRegistry.get(providerId) !is MangadotProvider) {
+            pendingBrowserBootstrapProviderId = null
+            return false
+        }
+        val provider = providerRegistry.get(providerId) as? MangadotProvider ?: run {
+            pendingBrowserBootstrapProviderId = null
+            return false
+        }
+        if (provider.markCloudflareReadyIfCookiesPresent()) {
+            pendingBrowserBootstrapProviderId = null
+            refreshHome(providerId = providerId, force = true)
+            return true
+        }
+        pendingBrowserBootstrapProviderId = null
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    provider.waitForCloudflareCookie()
+                }
+            }.onSuccess {
+                refreshHome(providerId = providerId, force = true)
+            }.onFailure { throwable ->
+                showError(throwable.message ?: "Cloudflare challenge was not fully solved")
+            }
+        }
+        return true
+    }
+
     fun refreshCurrentProviderContent(clearVisibleData: Boolean = false) {
+        val provider = currentProvider
+        if (provider is MangadotProvider && !provider.markCloudflareReadyIfCookiesPresent()) {
+            requestBrowserBootstrap(provider.id)
+            return
+        }
         if (clearVisibleData) {
             homeController.clearFeed()
             catalogController.clearResults()
         }
         refreshCatalogFilterOptions()
-        refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { currentProvider.id })
+        refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { provider.id })
     }
 
     fun updatePageProgress(providerId: String, path: String, index: Int, allowAutoReadMark: Boolean = true) {

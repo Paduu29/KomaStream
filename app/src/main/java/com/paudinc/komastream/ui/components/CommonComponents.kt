@@ -34,7 +34,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.MangaSummary
@@ -87,7 +86,7 @@ fun MangaCoverCard(
             if (constrained) {
                 Column {
                     Box {
-                        AsyncImage(
+                        MangadotAwareAsyncImage(
                             model = manga.coverUrl,
                             contentDescription = manga.title,
                             modifier = Modifier
@@ -187,7 +186,7 @@ fun MangaCoverCard(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    AsyncImage(
+                    MangadotAwareAsyncImage(
                         model = manga.coverUrl,
                         contentDescription = manga.title,
                         modifier = Modifier
@@ -362,7 +361,7 @@ fun ContinueReadingCard(
                     .padding(14.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                AsyncImage(
+                MangadotAwareAsyncImage(
                     model = manga.coverUrl,
                     contentDescription = manga.title,
                     modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)),
@@ -486,7 +485,7 @@ fun FavoriteMangaCard(
                     .padding(14.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                AsyncImage(
+                    MangadotAwareAsyncImage(
                     model = manga.coverUrl,
                     contentDescription = manga.title,
                     modifier = Modifier
@@ -621,7 +620,7 @@ fun ChapterRow(
                     .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AsyncImage(
+                MangadotAwareAsyncImage(
                     model = item.coverUrl,
                     contentDescription = item.mangaTitle,
                     modifier = Modifier

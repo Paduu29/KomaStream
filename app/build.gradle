@@ -55,8 +55,8 @@ android {
         applicationId "com.paudinc.komastream"
         minSdk 24
         targetSdk 36
-        versionCode ciVersionCode ?: 55
-        versionName ciVersionName ?: "2.43"
+        versionCode ciVersionCode ?: 56
+        versionName ciVersionName ?: "2.44"
         buildConfigField "String", "MAL_CLIENT_ID", asBuildConfigString(malClientId)
         buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
         buildConfigField "String", "GITHUB_RELEASE_ASSET_PATTERN", asBuildConfigString(githubReleaseAssetPattern)
@@ -108,6 +108,7 @@ dependencies {
     implementation "androidx.core:core-ktx:1.18.0"
     implementation "androidx.activity:activity-compose:1.13.0"
     implementation "androidx.appcompat:appcompat:1.7.1"
+    implementation "androidx.browser:browser:1.8.0"
     implementation "androidx.work:work-runtime-ktx:2.11.2"
     implementation "androidx.compose.ui:ui"
     implementation "androidx.compose.foundation:foundation"

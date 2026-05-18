@@ -40,10 +40,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.work.WorkManager
 import coil.compose.AsyncImage
+import androidx.browser.customtabs.CustomTabsIntent
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.ui.components.BackupOperationDialog
+import com.paudinc.komastream.ui.components.BrowserBootstrapDialog
 import com.paudinc.komastream.ui.components.DetailLoadingPlaceholder
 import com.paudinc.komastream.ui.components.LoadingPlaceholder
 import com.paudinc.komastream.ui.components.UpdateAvailableDialog
@@ -60,6 +62,11 @@ import com.paudinc.komastream.utils.*
 import kotlinx.coroutines.launch
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.paudinc.komastream.provider.providers.MangadotProvider
+import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,6 +123,7 @@ fun KomaStream() {
     val malUiState = malSyncController.uiState
     val malCallbackUri by AppDeepLinkStore.malCallbackUri.collectAsState()
     val isMalSyncBlocking = malUiState.isSyncing
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri?.let { viewModel.exportBackup(it) }
@@ -137,6 +145,7 @@ fun KomaStream() {
         is AppUpdateUiState.Downloaded -> state.release
         else -> null
     }
+    var browserBootstrapUrl by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(malCallbackUri) {
         if (viewModel.handleMalCallback(malCallbackUri)) {
@@ -145,6 +154,37 @@ fun KomaStream() {
                 activity.intent = Intent(currentIntent).apply { data = null }
             }
         }
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.resumePendingBrowserBootstrap()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val openProviderSite: (String, String) -> Unit = openProviderSite@{ providerId, url ->
+        if (providerId == MangadotProvider.PROVIDER_ID) {
+            val provider = currentProvider as? MangadotProvider
+            if (provider?.markCloudflareReadyIfCookiesPresent() == true) {
+                val activityContext = context as? Activity ?: return@openProviderSite
+                CustomTabsIntent.Builder()
+                    .build()
+                    .launchUrl(activityContext, Uri.parse(url))
+                return@openProviderSite
+            }
+            browserBootstrapUrl = url
+            return@openProviderSite
+        }
+        val activityContext = context as? Activity ?: return@openProviderSite
+        CustomTabsIntent.Builder()
+            .build()
+            .launchUrl(activityContext, Uri.parse(url))
     }
     val openReleasePage: () -> Unit = {
         val release = currentRelease
@@ -173,7 +213,21 @@ fun KomaStream() {
 
     LaunchedEffect(libraryState.selectedProviderId) {
         if (libraryState.selectedProviderId.isNotBlank()) {
-            viewModel.refreshCurrentProviderContent(clearVisibleData = true)
+            if (viewModel.isAwaitingBrowserBootstrap) {
+                viewModel.refreshCatalogFilterOptions()
+            } else {
+                viewModel.refreshCurrentProviderContent(clearVisibleData = true)
+            }
+        }
+    }
+
+    LaunchedEffect(viewModel.isAwaitingBrowserBootstrap, currentProvider.id) {
+        if (viewModel.isAwaitingBrowserBootstrap &&
+            currentProvider is MangadotProvider &&
+            !(currentProvider as MangadotProvider).markCloudflareReadyIfCookiesPresent() &&
+            browserBootstrapUrl == null
+        ) {
+            browserBootstrapUrl = currentProvider.websiteUrl
         }
     }
 
@@ -365,7 +419,7 @@ fun KomaStream() {
                                                 .clip(CircleShape),
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            AsyncImage(
+                                            MangadotAwareAsyncImage(
                                                 model = viewModel.currentProvider.logoUrl,
                                                 contentDescription = viewModel.currentProvider.displayName,
                                                 modifier = Modifier.size(24.dp).clip(CircleShape),
@@ -741,21 +795,29 @@ fun KomaStream() {
                                 selectedProviderId = libraryState.selectedProviderId,
                                 providersByLanguage = providerRegistry.groupedByLanguage(),
                                 onSelectProvider = { providerId -> viewModel.selectProvider(providerId) },
-                                onOpenProviderSite = { url ->
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                }
+                                onOpenProviderSite = openProviderSite,
                             )
                         }
                     }
 
                         if (viewModel.loading && screen !is Screen.Reader) {
                             LoadingPlaceholder()
-                        }
-                    }
                 }
+            }
+        }
 
-                if (isMalSyncBlocking) {
-                    val interactionSource = remember { MutableInteractionSource() }
+        browserBootstrapUrl?.let { url ->
+            BrowserBootstrapDialog(
+                url = url,
+                onClose = {
+                    browserBootstrapUrl = null
+                    viewModel.resumePendingBrowserBootstrap()
+                },
+            )
+        }
+
+        if (isMalSyncBlocking) {
+            val interactionSource = remember { MutableInteractionSource() }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1052,7 +1114,7 @@ private fun MalSyncPendingImportsDialog(
                                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                 ) {
-                                                    AsyncImage(
+                                                    MangadotAwareAsyncImage(
                                                         model = candidate.coverUrl,
                                                         contentDescription = candidate.displayTitle,
                                                         modifier = Modifier

@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.FavoriteMangaStatus
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.SavedManga
@@ -701,7 +700,7 @@ private fun CompactSeriesCardShell(
                     .padding(10.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                AsyncImage(
+                    MangadotAwareAsyncImage(
                     model = manga.coverUrl,
                     contentDescription = manga.title,
                     modifier = Modifier

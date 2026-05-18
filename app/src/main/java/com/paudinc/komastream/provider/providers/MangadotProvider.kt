@@ -1,16 +1,17 @@
 package com.paudinc.komastream.provider.providers
 
+import android.webkit.CookieManager as WebkitCookieManager
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CatalogSearchResult
 import com.paudinc.komastream.data.model.CategoryOption
-import com.paudinc.komastream.data.model.CommunitySpotlightFeed
-import com.paudinc.komastream.data.model.CommunitySpotlightItem
-import com.paudinc.komastream.data.model.CommunitySpotlightRange
+import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.CommunityPageStat
 import com.paudinc.komastream.data.model.CommunityPageType
-import com.paudinc.komastream.data.model.ChapterSummary
+import com.paudinc.komastream.data.model.CommunitySpotlightFeed
+import com.paudinc.komastream.data.model.CommunitySpotlightItem
+import com.paudinc.komastream.data.model.CommunitySpotlightRange
 import com.paudinc.komastream.data.model.FilterOption
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.HomeFeedSection
@@ -23,7 +24,9 @@ import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.chapterValue
 import com.paudinc.komastream.utils.normalizeStoredPath
+import android.util.Log
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.JavaNetCookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -31,16 +34,56 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.net.CookieManager
+import java.net.CookiePolicy
+import java.net.HttpCookie
+import java.net.URI
 
 class MangadotProvider : MangaProvider {
-    override val id: String = "mangadotnet-en"
+    companion object {
+        const val PROVIDER_ID = "mangadotnet-en"
+        private const val TAG = "MangadotProvider"
+        private const val CLOUDFLARE_WAIT_TIMEOUT_MS = 60_000L
+        private const val CLOUDFLARE_POLL_INTERVAL_MS = 500L
+        const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+        val communityNoiseValues = setOf(
+            "avatar_url",
+            "banner_url",
+            "background_pic",
+            "profile_pic",
+            "description",
+            "status",
+            "created_at",
+            "updated_at",
+            "display_name",
+            "owner_username",
+            "level_name",
+            "last_read_date",
+            "bio",
+            "username",
+            "name",
+        )
+    }
+
+    override val id: String = PROVIDER_ID
     override val displayName: String = "Mangadotnet"
     override val language: AppLanguage = AppLanguage.EN
     override val websiteUrl: String = "https://mangadot.net"
     override val logoUrl: String = "https://mangadot.net/mangadotnet-purple.svg"
 
     private val baseUrl = "https://mangadot.net"
-    private val client = OkHttpClient()
+    private val webkitCookieManager = WebkitCookieManager.getInstance()
+    private val cookieManager = CookieManager().apply {
+        setCookiePolicy(CookiePolicy.ACCEPT_ALL)
+    }
+    private val cloudflareLock = Any()
+    private val client = OkHttpClient.Builder()
+        .cookieJar(JavaNetCookieJar(cookieManager))
+        .build()
+    @Volatile
+    var cloudflareReady: Boolean = false
+        private set
 
     override fun fetchHomeFeed(): HomeFeed {
         val homeHtml = getText("/")
@@ -247,6 +290,7 @@ class MangadotProvider : MangaProvider {
     }
 
     override fun downloadBytes(url: String, referer: String?): ByteArray {
+        ensureCloudflareReady()
         val request = Request.Builder()
             .url(url.toAbsoluteUrl())
             .header("User-Agent", USER_AGENT)
@@ -258,6 +302,88 @@ class MangadotProvider : MangaProvider {
             .build()
         client.newCall(request).execute().use { response ->
             return response.body?.bytes() ?: ByteArray(0)
+        }
+    }
+
+    fun waitForCloudflareCookie(timeoutMs: Long = CLOUDFLARE_WAIT_TIMEOUT_MS): Boolean {
+        if (cloudflareReady) return true
+        val deadlineMs = System.currentTimeMillis() + timeoutMs
+        var lastSeenCookieHeader: String = ""
+        while (System.currentTimeMillis() < deadlineMs) {
+            if (markCloudflareReadyIfCookiesPresent()) {
+                return true
+            }
+            val cookieHeader = snapshotWebkitCookies()
+            lastSeenCookieHeader = cookieHeader
+            Log.d(
+                TAG,
+                "Waiting for cf_clearance cookie; hasCfBm=${cookieHeader.contains("__cf_bm=")}"
+            )
+            Thread.sleep(CLOUDFLARE_POLL_INTERVAL_MS)
+        }
+
+        Log.e(
+            TAG,
+            "Timed out waiting for cf_clearance cookie; lastCookies=${lastSeenCookieHeader.take(120)}"
+        )
+        throw IllegalStateException(
+            "Cloudflare challenge was not fully solved before timeout"
+        )
+    }
+
+    fun markCloudflareReadyIfCookiesPresent(): Boolean {
+        if (cloudflareReady) return true
+        val cookieHeader = snapshotWebkitCookies()
+        if (!cookieHeader.contains("cf_clearance=")) {
+            return false
+        }
+        synchronized(cloudflareLock) {
+            if (!cloudflareReady) {
+                syncCookies(cookieHeader)
+                cloudflareReady = true
+                Log.d(TAG, "Cloudflare clearance cookie detected and synced")
+            }
+        }
+        return true
+    }
+
+    private fun ensureCloudflareReady() {
+        if (cloudflareReady) return
+        waitForCloudflareCookie()
+    }
+
+    private fun snapshotWebkitCookies(): String {
+        return runCatching {
+            webkitCookieManager.setAcceptCookie(true)
+            webkitCookieManager.flush()
+            webkitCookieManager.getCookie(baseUrl).orEmpty()
+        }.getOrElse { throwable ->
+            Log.w(TAG, "Unable to read WebView cookies", throwable)
+            ""
+        }
+    }
+
+    private fun syncCookies(cookieHeader: String) {
+        runCatching {
+            val uri = URI(baseUrl)
+            cookieManager.cookieStore.removeAll()
+            cookieHeader.split(';')
+                .asSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() && it.contains('=') }
+                .forEach { token ->
+                    val parts = token.split('=', limit = 2)
+                    val name = parts.getOrNull(0)?.trim().orEmpty()
+                    val value = parts.getOrNull(1)?.trim().orEmpty()
+                    if (name.isBlank() || value.isBlank()) return@forEach
+                    cookieManager.cookieStore.add(
+                        uri,
+                        HttpCookie(name, value).apply {
+                            domain = uri.host
+                            path = "/"
+                        },
+                    )
+                }
         }
     }
 
@@ -968,10 +1094,34 @@ class MangadotProvider : MangaProvider {
     }
 
     private fun getJson(path: String): JSONObject {
-        return JSONObject(getText(path))
+        ensureCloudflareReady()
+        val request = Request.Builder()
+            .url(path.toAbsoluteUrl())
+            .header("User-Agent", USER_AGENT)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header("Referer", baseUrl)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            val trimmed = body.trimStart()
+            if (!trimmed.startsWith("{")) {
+                throw if (looksLikeCloudflareChallenge(trimmed)) {
+                    IllegalStateException(
+                        "Cloudflare challenge still active for $path; received HTML instead of JSON"
+                    )
+                } else {
+                    IllegalStateException(
+                        "Expected JSON from $path but received ${trimmed.take(80)}"
+                    )
+                }
+            }
+            return JSONObject(body)
+        }
     }
 
     private fun getText(path: String): String {
+        ensureCloudflareReady()
         val request = Request.Builder()
             .url(path.toAbsoluteUrl())
             .header("User-Agent", USER_AGENT)
@@ -1001,6 +1151,14 @@ class MangadotProvider : MangaProvider {
             .firstOrNull { (key, _) -> key == name }
             ?.second
             .orEmpty()
+    }
+
+    private fun looksLikeCloudflareChallenge(body: String): Boolean {
+        val lower = body.lowercase()
+        return lower.startsWith("<!doctype html") ||
+            lower.startsWith("<html") ||
+            "just a moment" in lower ||
+            "cloudflare" in lower
     }
 
     private fun JSONArray.toMangaSummaries(): List<MangaSummary> {
@@ -1070,25 +1228,4 @@ class MangadotProvider : MangaProvider {
         return regex.find(html)?.groupValues?.getOrNull(1).orEmpty()
     }
 
-    private companion object {
-        const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-        val communityNoiseValues = setOf(
-            "avatar_url",
-            "banner_url",
-            "background_pic",
-            "profile_pic",
-            "description",
-            "status",
-            "created_at",
-            "updated_at",
-            "display_name",
-            "owner_username",
-            "level_name",
-            "last_read_date",
-            "bio",
-            "username",
-            "name",
-        )
-    }
 }

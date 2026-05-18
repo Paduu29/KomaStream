@@ -19,10 +19,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.paudinc.komastream.R
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.provider.providers.MangadotProvider
+import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.utils.AppStrings
 
@@ -32,7 +33,7 @@ fun ProviderPickerScreen(
     selectedProviderId: String,
     providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
     onSelectProvider: (String) -> Unit,
-    onOpenProviderSite: (String) -> Unit,
+    onOpenProviderSite: (String, String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -88,14 +89,22 @@ fun ProviderPickerScreen(
             items(providers) { provider ->
                 ElevatedCard(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
+                    .fillMaxWidth()
+                    .border(
                             width = 1.dp,
                             color = if (selectedProviderId == provider.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
                             else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                             shape = RoundedCornerShape(26.dp),
                         )
-                        .clickable { onSelectProvider(provider.id) },
+                        .clickable {
+                            if (
+                                provider.id == MangadotProvider.PROVIDER_ID &&
+                                (provider as? MangadotProvider)?.markCloudflareReadyIfCookiesPresent() != true
+                            ) {
+                                onOpenProviderSite(provider.id, provider.websiteUrl)
+                            }
+                            onSelectProvider(provider.id)
+                        },
                     shape = RoundedCornerShape(26.dp),
                     colors = CardDefaults.elevatedCardColors(
                         containerColor = if (selectedProviderId == provider.id) {
@@ -112,7 +121,7 @@ fun ProviderPickerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        AsyncImage(
+                        MangadotAwareAsyncImage(
                             model = provider.logoUrl,
                             contentDescription = provider.displayName,
                             modifier = Modifier.size(44.dp),

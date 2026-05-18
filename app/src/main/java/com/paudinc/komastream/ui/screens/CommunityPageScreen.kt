@@ -34,12 +34,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.CommunityPageType
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.ui.components.ChapterRow
 import com.paudinc.komastream.ui.components.EmptyCard
+import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
 import com.paudinc.komastream.ui.components.MangaCoverCard
 import com.paudinc.komastream.ui.components.TagChip
 import com.paudinc.komastream.utils.AppStrings
@@ -79,7 +79,7 @@ fun CommunityPageScreen(
                         .takeIf { it.isNotBlank() }
 
                     if (bannerModel != null) {
-                        AsyncImage(
+                        MangadotAwareAsyncImage(
                             model = bannerModel,
                             contentDescription = page.title,
                             modifier = Modifier.fillMaxSize(),
@@ -113,7 +113,7 @@ fun CommunityPageScreen(
                             )
                     )
                     page.avatarUrl.takeIf { it.isNotBlank() }?.let { avatarUrl ->
-                        AsyncImage(
+                        MangadotAwareAsyncImage(
                             model = avatarUrl,
                             contentDescription = page.title,
                             modifier = Modifier

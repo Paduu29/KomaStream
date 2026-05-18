@@ -87,6 +87,7 @@ import androidx.compose.ui.zIndex
 import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import android.webkit.CookieManager as WebkitCookieManager
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.ui.components.cardBorder
@@ -907,6 +908,16 @@ private fun offlineReaderFile(
 
 private fun readerRequestHeaders(providerId: String, chapterPath: String): Headers? {
     return when (providerId) {
+        "mangadotnet-en" -> Headers.Builder()
+            .add("User-Agent", com.paudinc.komastream.provider.providers.MangadotProvider.USER_AGENT)
+            .add("Referer", "https://mangadot.net/")
+            .apply {
+                val cookieHeader = WebkitCookieManager.getInstance().getCookie("https://mangadot.net").orEmpty()
+                if (cookieHeader.isNotBlank()) {
+                    add("Cookie", cookieHeader)
+                }
+            }
+            .build()
         "inmanga-es" -> Headers.Builder()
             .add("Referer", "https://inmanga.com$chapterPath")
             .add(

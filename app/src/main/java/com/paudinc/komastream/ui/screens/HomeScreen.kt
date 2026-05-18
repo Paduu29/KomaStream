@@ -31,7 +31,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.ui.components.*
 import com.paudinc.komastream.utils.AppStrings
@@ -308,7 +307,7 @@ private fun CommunitySpotlightHero(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
     ) {
         Box {
-            AsyncImage(
+                                                MangadotAwareAsyncImage(
                 model = items[pagerState.currentPage].coverUrl,
                 contentDescription = items[pagerState.currentPage].title,
                 modifier = Modifier.fillMaxSize(),
@@ -429,7 +428,7 @@ private fun CommunitySpotlightCard(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f),
     ) {
         Box {
-            AsyncImage(
+            MangadotAwareAsyncImage(
                 model = item.coverUrl,
                 contentDescription = item.title,
                 modifier = Modifier.fillMaxSize(),
@@ -561,7 +560,7 @@ private fun FeaturedBanner(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
     ) {
         Box {
-            AsyncImage(
+            MangadotAwareAsyncImage(
                 model = imageUrl,
                 contentDescription = title,
                 modifier = Modifier.fillMaxSize(),
