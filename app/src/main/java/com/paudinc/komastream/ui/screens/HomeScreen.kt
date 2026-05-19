@@ -73,7 +73,11 @@ fun HomeScreen(
                 readChapters.map { canonicalChapterKey(providerId, it) }.toSet()
             }
             val communitySpotlight = feed.communitySpotlight
-            val topCarouselSection = sections.firstOrNull { it.type == HomeSectionType.MANGAS && it.mangas.isNotEmpty() }
+            val topCarouselSection = if (providerId == "marmota-es") {
+                null
+            } else {
+                sections.firstOrNull { it.type == HomeSectionType.MANGAS && it.mangas.isNotEmpty() }
+            }
             val sectionsToRender = if (communitySpotlight == null && topCarouselSection != null) {
                 sections.filterNot { it.id == topCarouselSection.id }
             } else {
