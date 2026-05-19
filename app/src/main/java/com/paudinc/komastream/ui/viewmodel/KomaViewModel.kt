@@ -38,6 +38,7 @@ import com.paudinc.komastream.utils.sameMangaPath
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -57,6 +58,7 @@ class KomaViewModel(
 ) : ViewModel() {
     private var backgroundWorkStarted = false
     private var pendingBrowserBootstrapProviderId: String? = null
+    private var cloudflareBootstrapRetryBlockedUntilMs: Long = 0L
 
     val isAwaitingBrowserBootstrap: Boolean
         get() = pendingBrowserBootstrapProviderId != null
@@ -479,7 +481,11 @@ class KomaViewModel(
         }
         if (provider.markCloudflareReadyIfCookiesPresent()) {
             pendingBrowserBootstrapProviderId = null
-            refreshHome(providerId = providerId, force = true)
+            blockCloudflareBootstrapRetry()
+            viewModelScope.launch {
+                delay(1500)
+                refreshHome(providerId = providerId, force = true)
+            }
             return true
         }
         pendingBrowserBootstrapProviderId = null
@@ -489,6 +495,8 @@ class KomaViewModel(
                     provider.waitForCloudflareCookie()
                 }
             }.onSuccess {
+                blockCloudflareBootstrapRetry()
+                delay(1500)
                 refreshHome(providerId = providerId, force = true)
             }.onFailure { throwable ->
                 showError(throwable.message ?: "Cloudflare challenge was not fully solved")
@@ -616,9 +624,18 @@ class KomaViewModel(
     private fun maybeRequestCloudflareBootstrap(message: String) {
         if (
             currentProvider is MangadotProvider &&
-            message.contains("Cloudflare challenge still active", ignoreCase = true)
+            message.contains("Cloudflare challenge still active", ignoreCase = true) &&
+            !isCloudflareBootstrapRetryBlocked()
         ) {
             requestBrowserBootstrap(MangadotProvider.PROVIDER_ID)
         }
+    }
+
+    private fun blockCloudflareBootstrapRetry(durationMs: Long = 10_000L) {
+        cloudflareBootstrapRetryBlockedUntilMs = System.currentTimeMillis() + durationMs
+    }
+
+    private fun isCloudflareBootstrapRetryBlocked(): Boolean {
+        return System.currentTimeMillis() < cloudflareBootstrapRetryBlockedUntilMs
     }
 }

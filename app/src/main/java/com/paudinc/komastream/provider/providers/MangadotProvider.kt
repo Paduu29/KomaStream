@@ -1143,14 +1143,7 @@ class MangadotProvider : MangaProvider {
             .header("User-Agent", USER_AGENT)
             .build()
         client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (looksLikeCloudflareChallenge(body.trimStart())) {
-                invalidateCaches()
-                throw IllegalStateException(
-                    "Cloudflare challenge still active for $path; received HTML instead of page content"
-                )
-            }
-            return body
+            return response.body?.string().orEmpty()
         }
     }
 

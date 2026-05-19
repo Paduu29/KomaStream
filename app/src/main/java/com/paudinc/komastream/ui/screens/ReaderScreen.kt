@@ -925,6 +925,20 @@ private fun readerRequestHeaders(providerId: String, chapterPath: String): Heade
                 "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
             )
             .build()
+        "marmota-es" -> Headers.Builder()
+            .add("Referer", "https://marmota.me$chapterPath")
+            .add(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+            )
+            .add("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5")
+            .apply {
+                val cookieHeader = WebkitCookieManager.getInstance().getCookie("https://marmota.me").orEmpty()
+                if (cookieHeader.isNotBlank()) {
+                    add("Cookie", cookieHeader)
+                }
+            }
+            .build()
         else -> null
     }
 }

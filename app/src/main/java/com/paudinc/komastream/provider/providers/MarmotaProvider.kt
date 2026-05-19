@@ -208,7 +208,7 @@ class MarmotaProvider : MangaProvider {
                 ReaderPage(
                     id = imageUrl.substringAfterLast('/').substringBefore('?').ifBlank { "page-${index + 1}" },
                     numberLabel = (index + 1).toString(),
-                    imageUrl = imageUrl,
+                    imageUrl = imageUrl.toAbsoluteUrl(),
                 )
             }
             .distinctBy { it.imageUrl }
@@ -238,6 +238,8 @@ class MarmotaProvider : MangaProvider {
             .apply {
                 if (!referer.isNullOrBlank()) {
                     header("Referer", referer.toAbsoluteUrl())
+                } else {
+                    header("Referer", BASE_URL)
                 }
             }
             .build()
@@ -559,7 +561,18 @@ class MarmotaProvider : MangaProvider {
         val value = trim()
         return when {
             value.isBlank() -> BASE_URL
-            value.startsWith("http://") || value.startsWith("https://") -> value
+            value.startsWith("http://") || value.startsWith("https://") -> {
+                if (value.startsWith("http://")) {
+                    val host = Uri.parse(value).host.orEmpty().lowercase()
+                    if (host == "marmota.me" || host.endsWith(".marmota.me")) {
+                        value.replaceFirst("http://", "https://")
+                    } else {
+                        value
+                    }
+                } else {
+                    value
+                }
+            }
             value.startsWith("//") -> "https:$value"
             value.startsWith("/") -> "$BASE_URL$value"
             else -> "$BASE_URL/$value"

@@ -51,6 +51,7 @@ fun BrowserBootstrapDialog(
         while (true) {
             val cookieHeader = WebkitCookieManager.getInstance().getCookie(url).orEmpty()
             if (cookieHeader.contains("cf_clearance=")) {
+                delay(1500)
                 latestOnClose()
                 break
             }
