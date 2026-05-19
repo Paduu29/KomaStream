@@ -305,6 +305,21 @@ class MangadotProvider : MangaProvider {
         }
     }
 
+    override fun invalidateCaches() {
+        synchronized(cloudflareLock) {
+            cloudflareReady = false
+        }
+        runCatching {
+            cookieManager.cookieStore.removeAll()
+        }
+        runCatching {
+            webkitCookieManager.setAcceptCookie(true)
+            webkitCookieManager.removeAllCookies(null)
+            webkitCookieManager.flush()
+        }
+        Log.d(TAG, "Cleared Mangadot Cloudflare state")
+    }
+
     fun waitForCloudflareCookie(timeoutMs: Long = CLOUDFLARE_WAIT_TIMEOUT_MS): Boolean {
         if (cloudflareReady) return true
         val deadlineMs = System.currentTimeMillis() + timeoutMs
@@ -1107,6 +1122,7 @@ class MangadotProvider : MangaProvider {
             val trimmed = body.trimStart()
             if (!trimmed.startsWith("{")) {
                 throw if (looksLikeCloudflareChallenge(trimmed)) {
+                    invalidateCaches()
                     IllegalStateException(
                         "Cloudflare challenge still active for $path; received HTML instead of JSON"
                     )
@@ -1127,7 +1143,14 @@ class MangadotProvider : MangaProvider {
             .header("User-Agent", USER_AGENT)
             .build()
         client.newCall(request).execute().use { response ->
-            return response.body?.string().orEmpty()
+            val body = response.body?.string().orEmpty()
+            if (looksLikeCloudflareChallenge(body.trimStart())) {
+                invalidateCaches()
+                throw IllegalStateException(
+                    "Cloudflare challenge still active for $path; received HTML instead of page content"
+                )
+            }
+            return body
         }
     }
 
