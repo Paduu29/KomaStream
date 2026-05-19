@@ -223,11 +223,12 @@ fun KomaStream() {
 
     LaunchedEffect(viewModel.isAwaitingBrowserBootstrap, currentProvider.id) {
         if (viewModel.isAwaitingBrowserBootstrap &&
-            currentProvider is MangadotProvider &&
-            !(currentProvider as MangadotProvider).markCloudflareReadyIfCookiesPresent() &&
-            browserBootstrapUrl == null
+            currentProvider is MangadotProvider
         ) {
-            browserBootstrapUrl = currentProvider.websiteUrl
+            val provider = currentProvider as MangadotProvider
+            if (!provider.markCloudflareReadyIfCookiesPresent() && browserBootstrapUrl != provider.websiteUrl) {
+                browserBootstrapUrl = provider.websiteUrl
+            }
         }
     }
 

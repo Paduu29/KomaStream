@@ -609,6 +609,16 @@ class KomaViewModel(
 
     private fun showError(message: String) {
         Log.e("KomaStream", message)
+        maybeRequestCloudflareBootstrap(message)
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun maybeRequestCloudflareBootstrap(message: String) {
+        if (
+            currentProvider is MangadotProvider &&
+            message.contains("Cloudflare challenge still active", ignoreCase = true)
+        ) {
+            requestBrowserBootstrap(MangadotProvider.PROVIDER_ID)
+        }
     }
 }
