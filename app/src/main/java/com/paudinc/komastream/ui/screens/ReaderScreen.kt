@@ -63,6 +63,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -94,6 +95,8 @@ import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.OfflineChapterStore
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -696,6 +699,15 @@ fun ZoomableReaderPage(
     val offlineFile = remember(providerId, chapterPath, page.offlineFileName) {
         offlineReaderFile(offlineStore.context, providerId, chapterPath, page.offlineFileName)
     }
+    val offlineImageBytes by produceState<ByteArray?>(initialValue = null, providerId, chapterPath, page.offlineFileName) {
+        value = withContext(Dispatchers.IO) {
+            if (offlineFile?.exists() == true) {
+                offlineStore.loadPageBytes(providerId, chapterPath, page)
+            } else {
+                null
+            }
+        }
+    }
 
     val pageZoomModifier = Modifier
         .fillMaxWidth()
@@ -797,7 +809,7 @@ fun ZoomableReaderPage(
         providerId = providerId,
         chapterPath = chapterPath,
         page = page,
-        offlineFile = offlineFile,
+        offlineImageBytes = offlineImageBytes,
     )
     val minPageHeight = remember(configuration.screenHeightDp) {
         (configuration.screenHeightDp.dp * 0.82f).coerceAtLeast(280.dp)
@@ -848,9 +860,9 @@ private fun rememberReaderImageRequest(
     providerId: String,
     chapterPath: String,
     page: ReaderPage,
-    offlineFile: File?,
+    offlineImageBytes: ByteArray?,
 ): ImageRequest {
-    val imageSource = offlineFile?.takeIf { it.exists() } ?: page.imageUrl
+    val imageSource = offlineImageBytes ?: page.imageUrl
     return ImageRequest.Builder(context)
         .data(imageSource)
         .apply {
@@ -938,6 +950,11 @@ private fun readerRequestHeaders(providerId: String, chapterPath: String): Heade
                     add("Cookie", cookieHeader)
                 }
             }
+            .build()
+        "manhwa-latino-es" -> Headers.Builder()
+            .add("User-Agent", com.paudinc.komastream.provider.providers.ManhwaLatinoProvider.USER_AGENT)
+            .add("Referer", "https://manhwa-latino.com/")
+            .add("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5")
             .build()
         else -> null
     }

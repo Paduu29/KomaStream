@@ -67,6 +67,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
+import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -169,9 +170,13 @@ fun KomaStream() {
     }
 
     val openProviderSite: (String, String) -> Unit = openProviderSite@{ providerId, url ->
-        if (providerId == MangadotProvider.PROVIDER_ID) {
-            val provider = currentProvider as? MangadotProvider
-            if (provider?.markCloudflareReadyIfCookiesPresent() == true) {
+        if (providerId == MangadotProvider.PROVIDER_ID || providerId == ManhwaLatinoProvider.PROVIDER_ID) {
+            val providerReady = when (val provider = currentProvider) {
+                is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
+                is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
+                else -> false
+            }
+            if (providerReady) {
                 val activityContext = context as? Activity ?: return@openProviderSite
                 CustomTabsIntent.Builder()
                     .build()
@@ -223,11 +228,15 @@ fun KomaStream() {
 
     LaunchedEffect(viewModel.isAwaitingBrowserBootstrap, currentProvider.id) {
         if (viewModel.isAwaitingBrowserBootstrap &&
-            currentProvider is MangadotProvider
+            (currentProvider is MangadotProvider || currentProvider is ManhwaLatinoProvider)
         ) {
-            val provider = currentProvider as MangadotProvider
-            if (!provider.markCloudflareReadyIfCookiesPresent() && browserBootstrapUrl != provider.websiteUrl) {
-                browserBootstrapUrl = provider.websiteUrl
+            val providerUrl = when (val provider = currentProvider) {
+                is MangadotProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
+                is ManhwaLatinoProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
+                else -> null
+            }
+            if (providerUrl != null && browserBootstrapUrl != providerUrl) {
+                browserBootstrapUrl = providerUrl
             }
         }
     }
@@ -283,7 +292,22 @@ fun KomaStream() {
                             RootTab.entries.forEach { tab ->
                                 NavigationBarItem(
                                     selected = screen.tab == tab,
-                                    onClick = { viewModel.replaceRoot(tab) },
+                                    onClick = {
+                                        android.util.Log.d(
+                                            "KomaStream",
+                                            "bottomNavHomeClick: tab=$tab currentScreen=$screen"
+                                        )
+                                        if (tab == RootTab.Home && screen is Screen.Root && screen.tab == RootTab.Home) {
+                                            android.util.Log.d("KomaStream", "bottomNavHomeClick: refreshing already-selected Home tab")
+                                            viewModel.refreshCurrentProviderContent(clearVisibleData = true)
+                                        } else {
+                                            viewModel.replaceRoot(tab)
+                                            if (tab == RootTab.Home) {
+                                                android.util.Log.d("KomaStream", "bottomNavHomeClick: switched to Home, refreshing content")
+                                                viewModel.refreshCurrentProviderContent(clearVisibleData = true)
+                                            }
+                                        }
+                                    },
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = MaterialTheme.colorScheme.onPrimary,
                                         selectedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -761,7 +785,9 @@ fun KomaStream() {
                             Screen.SettingsContent -> ContentSettingsScreen(
                                 strings = strings,
                                 mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
+                                manhwaLatinoAdultContentEnabled = libraryState.manhwaLatinoAdultContentEnabled,
                                 onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
+                                onManhwaLatinoAdultContentChange = { viewModel.changeManhwaLatinoAdultContent(it) },
                             )
                             Screen.SettingsUpdates -> UpdatesSettingsScreen(
                                 strings = strings,
@@ -810,6 +836,7 @@ fun KomaStream() {
         browserBootstrapUrl?.let { url ->
             BrowserBootstrapDialog(
                 url = url,
+                title = currentProvider.displayName,
                 onClose = {
                     browserBootstrapUrl = null
                     viewModel.resumePendingBrowserBootstrap()

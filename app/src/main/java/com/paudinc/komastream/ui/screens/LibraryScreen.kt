@@ -855,7 +855,13 @@ private fun libraryProgressText(
 private fun displayReadCount(manga: SavedManga, chapterCount: Int? = null): Int? {
     manga.lastProgressChapterNumber?.let { progressNumber ->
         val completed = ceil(progressNumber).toInt() - 1
-        if (completed >= 0 && (chapterCount == null || completed <= chapterCount)) return completed
+        if (completed >= 0) {
+            return if (chapterCount != null) {
+                completed.coerceIn(0, chapterCount)
+            } else {
+                completed
+            }
+        }
     }
     return manga.lastReadChapterNumber?.takeIf { it > 0 }
 }

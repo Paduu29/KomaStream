@@ -109,6 +109,8 @@ data class AppSettingsEntity(
     val autoJumpToUnread: Boolean = true,
     @ColumnInfo(name = "mangaball_adult_content_enabled")
     val mangaBallAdultContentEnabled: Boolean = false,
+    @ColumnInfo(name = "manhwa_latino_adult_content_enabled")
+    val manhwaLatinoAdultContentEnabled: Boolean = false,
     @ColumnInfo(name = "app_language")
     val appLanguage: String = "EN",
     @ColumnInfo(name = "preferred_chapter_language")

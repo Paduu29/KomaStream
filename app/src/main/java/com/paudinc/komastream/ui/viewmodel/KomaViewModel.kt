@@ -26,6 +26,7 @@ import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.provider.providers.MangaBallProvider
+import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
@@ -183,7 +184,7 @@ class KomaViewModel(
 
     fun refreshHome(providerId: String = currentProvider.id, force: Boolean = false) {
         val provider = providerRegistry.get(providerId)
-        if (provider is MangadotProvider && !provider.cloudflareReady) {
+        if (requiresCloudflareBootstrap(providerId) && !cloudflareReady(providerId)) {
             requestBrowserBootstrap(providerId)
             return
         }
@@ -192,7 +193,7 @@ class KomaViewModel(
 
     fun refreshCatalogFilterOptions() {
         val provider = currentProvider
-        if (provider is MangadotProvider && !provider.cloudflareReady) {
+        if (requiresCloudflareBootstrap(provider.id) && !cloudflareReady(provider.id)) {
             requestBrowserBootstrap(provider.id)
             return
         }
@@ -398,6 +399,18 @@ class KomaViewModel(
         }
     }
 
+    fun changeManhwaLatinoAdultContent(enabled: Boolean) {
+        Log.d("KomaStream", "changeManhwaLatinoAdultContent: enabled=$enabled selectedProvider=${libraryController.uiState.state.selectedProviderId}")
+        libraryController.changeManhwaLatinoAdultContent(enabled)
+        catalogController.resetForProviderChange()
+        if (libraryController.uiState.state.selectedProviderId == ManhwaLatinoProvider.PROVIDER_ID) {
+            Log.d("KomaStream", "changeManhwaLatinoAdultContent: refreshing current provider content")
+            refreshCurrentProviderContent(clearVisibleData = true)
+        } else {
+            Log.d("KomaStream", "changeManhwaLatinoAdultContent: selected provider is not Manhwa Latino, skipping direct home refresh")
+        }
+    }
+
     fun changePreferredChapterLanguage(language: AppLanguage) {
         libraryController.changePreferredChapterLanguage(language)
     }
@@ -442,44 +455,33 @@ class KomaViewModel(
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         navigationController.replaceRoot(RootTab.Home)
-        if (providerId == MangadotProvider.PROVIDER_ID) {
-            val provider = providerRegistry.get(providerId) as? MangadotProvider
-            if (provider?.markCloudflareReadyIfCookiesPresent() == true) {
+        if (requiresCloudflareBootstrap(providerId)) {
+            if (cloudflareReady(providerId)) {
                 pendingBrowserBootstrapProviderId = null
             } else {
                 pendingBrowserBootstrapProviderId = providerId
             }
-            return
+        } else {
+            pendingBrowserBootstrapProviderId = null
         }
-        pendingBrowserBootstrapProviderId = null
     }
 
     fun requestBrowserBootstrap(providerId: String) {
-        if (providerId == MangadotProvider.PROVIDER_ID) {
-            val provider = providerRegistry.get(providerId) as? MangadotProvider
-            if (provider?.markCloudflareReadyIfCookiesPresent() == true) {
-                pendingBrowserBootstrapProviderId = null
-            } else {
-                pendingBrowserBootstrapProviderId = providerId
-            }
+        if (!requiresCloudflareBootstrap(providerId)) return
+        if (cloudflareReady(providerId)) {
+            pendingBrowserBootstrapProviderId = null
+        } else {
+            pendingBrowserBootstrapProviderId = providerId
         }
     }
 
     fun resumePendingBrowserBootstrap(): Boolean {
         val providerId = pendingBrowserBootstrapProviderId ?: return false
-        if (providerId != MangadotProvider.PROVIDER_ID) {
+        if (!requiresCloudflareBootstrap(providerId)) {
             pendingBrowserBootstrapProviderId = null
             return false
         }
-        if (providerRegistry.get(providerId) !is MangadotProvider) {
-            pendingBrowserBootstrapProviderId = null
-            return false
-        }
-        val provider = providerRegistry.get(providerId) as? MangadotProvider ?: run {
-            pendingBrowserBootstrapProviderId = null
-            return false
-        }
-        if (provider.markCloudflareReadyIfCookiesPresent()) {
+        if (markCloudflareReadyIfCookiesPresent(providerId)) {
             pendingBrowserBootstrapProviderId = null
             blockCloudflareBootstrapRetry()
             viewModelScope.launch {
@@ -492,7 +494,7 @@ class KomaViewModel(
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    provider.waitForCloudflareCookie()
+                    waitForCloudflareCookie(providerId)
                 }
             }.onSuccess {
                 blockCloudflareBootstrapRetry()
@@ -507,14 +509,18 @@ class KomaViewModel(
 
     fun refreshCurrentProviderContent(clearVisibleData: Boolean = false) {
         val provider = currentProvider
-        if (provider is MangadotProvider && !provider.markCloudflareReadyIfCookiesPresent()) {
+        Log.d("KomaStream", "refreshCurrentProviderContent: provider=${provider.id} clearVisibleData=$clearVisibleData cloudflareReady=${cloudflareReady(provider.id)}")
+        if (requiresCloudflareBootstrap(provider.id) && !cloudflareReady(provider.id)) {
+            Log.d("KomaStream", "refreshCurrentProviderContent: requesting browser bootstrap for ${provider.id}")
             requestBrowserBootstrap(provider.id)
             return
         }
         if (clearVisibleData) {
+            Log.d("KomaStream", "refreshCurrentProviderContent: clearing home feed and catalog results")
             homeController.clearFeed()
             catalogController.clearResults()
         }
+        Log.d("KomaStream", "refreshCurrentProviderContent: refreshing filters and home for ${libraryController.uiState.state.selectedProviderId.ifBlank { provider.id }}")
         refreshCatalogFilterOptions()
         refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { provider.id })
     }
@@ -623,11 +629,39 @@ class KomaViewModel(
 
     private fun maybeRequestCloudflareBootstrap(message: String) {
         if (
-            currentProvider is MangadotProvider &&
+            requiresCloudflareBootstrap(currentProvider.id) &&
             message.contains("Cloudflare challenge still active", ignoreCase = true) &&
             !isCloudflareBootstrapRetryBlocked()
         ) {
-            requestBrowserBootstrap(MangadotProvider.PROVIDER_ID)
+            requestBrowserBootstrap(currentProvider.id)
+        }
+    }
+
+    private fun requiresCloudflareBootstrap(providerId: String): Boolean {
+        return providerId == MangadotProvider.PROVIDER_ID || providerId == ManhwaLatinoProvider.PROVIDER_ID
+    }
+
+    private fun cloudflareReady(providerId: String): Boolean {
+        return when (val provider = providerRegistry.get(providerId)) {
+            is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            else -> true
+        }
+    }
+
+    private fun markCloudflareReadyIfCookiesPresent(providerId: String): Boolean {
+        return when (val provider = providerRegistry.get(providerId)) {
+            is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            else -> false
+        }
+    }
+
+    private fun waitForCloudflareCookie(providerId: String): Boolean {
+        return when (val provider = providerRegistry.get(providerId)) {
+            is MangadotProvider -> provider.waitForCloudflareCookie()
+            is ManhwaLatinoProvider -> provider.waitForCloudflareCookie()
+            else -> false
         }
     }
 

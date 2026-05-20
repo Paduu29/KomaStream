@@ -182,6 +182,12 @@ fun chapterCountForProvider(providerId: String, chapters: List<MangaChapter>): I
                 .toSet()
             if (uniqueValues.isNotEmpty()) uniqueValues.size else chapters.size
         }
+        "manhwa-latino-es" -> chapters.asSequence()
+            .map(::chapterValue)
+            .filter { it.isFinite() && it != Double.MAX_VALUE }
+            .maxOrNull()
+            ?.let { kotlin.math.ceil(it).toInt() }
+            ?: chapters.size
         else -> chapters.size
     }
 }

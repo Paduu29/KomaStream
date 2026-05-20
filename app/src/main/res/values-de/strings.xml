@@ -150,6 +150,8 @@
     <string name="mangaball_adult_content_warning_title">MangaBall-18+-Inhalte aktivieren?</string>
     <string name="mangaball_adult_content_warning_message">Dadurch können Inhalte für Erwachsene oder explizite Inhalte von MangaBall angezeigt werden. Aktiviere dies nur, wenn du diese Inhalte rechtlich ansehen darfst und sie in der App sehen möchtest.</string>
     <string name="enable_adult_content">Aktivieren</string>
+    <string name="manhwa_latino_adult_content">Manhwa Latino 18+-Inhalte</string>
+    <string name="manhwa_latino_adult_content_description">Aktiviere oder deaktiviere Erwachsenen-Inhalte von Manhwa Latino für diese App. Standardmäßig bleibt dies deaktiviert.</string>
     <string name="cancel">Abbrechen</string>
     <string name="on">An</string>
     <string name="off">Aus</string>

@@ -28,6 +28,7 @@ class HomeController(
             refreshToken += 1L
             refreshToken
         }
+        Log.d("KomaStream", "refreshHome: start provider=${provider.id} force=$force token=$requestToken")
 
         scope.launch {
             uiState = uiState.copy(isRefreshing = true)
@@ -40,11 +41,15 @@ class HomeController(
                             feed = it,
                             isRefreshing = false
                         )
+                        Log.d("KomaStream", "refreshHome: success provider=$providerId token=$requestToken sections=${it.sections.size}")
+                    } else {
+                        Log.d("KomaStream", "refreshHome: stale success dropped provider=$providerId token=$requestToken currentToken=$refreshToken")
                     }
                 }
                 .onFailure {
                     if (requestToken == refreshToken) {
                         uiState = uiState.copy(isRefreshing = false)
+                        Log.e("KomaStream", "refreshHome: failed provider=$providerId token=$requestToken", it)
                         onError(it.message ?: "Could not load home")
                     } else {
                         Log.d("KomaStream", "Dropped stale home refresh for $providerId", it)

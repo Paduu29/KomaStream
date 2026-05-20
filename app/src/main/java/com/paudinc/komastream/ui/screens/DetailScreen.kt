@@ -108,6 +108,7 @@ fun DetailScreen(
     val chapterPathsByLabel = chapterUiData.chapterPathsByLabel
     val sourceFilteredChapters = chapterUiData.sourceFilteredChapters
     val uniqueChapters = chapterUiData.uniqueChapters
+    val chapterCount = chapterCountForProvider(detail.providerId, uniqueChapters)
     val filteredChapters = chapterUiData.filteredChapters
     val targetUnreadChapterPath = chapterUiData.targetUnreadChapterPath
     val targetUnreadIndex = chapterUiData.targetUnreadIndex
@@ -268,7 +269,7 @@ fun DetailScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 DetailStatCard(
                                     modifier = Modifier.weight(1f),
-                                    value = uniqueChapters.size.toString(),
+                                    value = chapterCount.toString(),
                                     label = strings.chapters,
                                     leadingIcon = Icons.AutoMirrored.Filled.MenuBook,
                                 )
@@ -313,7 +314,7 @@ fun DetailScreen(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        strings.chaptersCount(uniqueChapters.size),
+                                        strings.chaptersCount(chapterCount),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                     )
@@ -835,9 +836,11 @@ private fun periodicityTagColor(periodicity: String): Color {
     }
 }
 
-private fun chapterDedupeKey(chapter: com.paudinc.komastream.data.model.MangaChapter): String {
+private fun chapterDedupeKey(providerId: String, chapter: com.paudinc.komastream.data.model.MangaChapter): String {
     val numericValue = chapterValue(chapter)
     return when {
+        providerId == "manhwa-latino-es" && numericValue.isFinite() && numericValue != Double.MAX_VALUE ->
+            "num:${kotlin.math.floor(numericValue).toInt()}"
         numericValue.isFinite() && numericValue != Double.MAX_VALUE -> "num:${numericValue}"
         chapter.chapterNumberUrl.isNotBlank() -> "url:${chapter.chapterNumberUrl.trim().lowercase()}"
         else -> "label:${chapter.chapterLabel.trim().lowercase()}"
@@ -892,13 +895,13 @@ private fun computeDetailChapterUiData(
     } else {
         chapters.filter { chapter -> chapter.languageCode == selectedChapterSourceId }
     }
-    val uniqueChapters = sourceFilteredChapters.distinctBy { chapterDedupeKey(it) }
+    val logicalChapters = sourceFilteredChapters.distinctBy { chapterDedupeKey(providerId, it) }
     val normalizedQuery = chapterQuery.trim().replace(",", ".")
     val trimmedQuery = chapterQuery.trim()
     val filteredChapters = if (normalizedQuery.isBlank()) {
-        uniqueChapters
+        sourceFilteredChapters
     } else {
-        uniqueChapters.filter { chapter ->
+        sourceFilteredChapters.filter { chapter ->
             chapter.chapterLabel.contains(trimmedQuery, ignoreCase = true) ||
                 chapter.chapterNumberUrl.contains(trimmedQuery, ignoreCase = true)
         }
@@ -906,6 +909,11 @@ private fun computeDetailChapterUiData(
     val chapterPathsByLabel = filteredChapters.associate { chapter ->
         val path = buildChapterPath(detailPath, chapter)
         path to chapterReadKey(providerId, detailPath, chapter)
+    }
+    val totalChapterCount = chapterCountForProvider(providerId, logicalChapters)
+    val readChapterCount = logicalChapters.count { chapter ->
+        val path = buildChapterPath(detailPath, chapter)
+        chapterPathsByLabel[path] in canonicalReadChapterKeys
     }
     val targetUnreadChapterPath = if (autoJumpToUnread) {
         resolveTargetUnreadChapterPath(
@@ -930,15 +938,12 @@ private fun computeDetailChapterUiData(
     val lastOpenedChapterLabel = filteredChapters.firstOrNull { chapter ->
         buildChapterPath(detailPath, chapter) == lastOpenedChapterPath
     }?.chapterLabel.orEmpty()
-    val unreadCount = filteredChapters.count { chapter ->
-        val path = buildChapterPath(detailPath, chapter)
-        chapterPathsByLabel[path] !in canonicalReadChapterKeys
-    }
+    val unreadCount = (totalChapterCount - readChapterCount).coerceAtLeast(0)
     return DetailChapterUiData(
         canonicalReadChapterKeys = canonicalReadChapterKeys,
         chapterPathsByLabel = chapterPathsByLabel,
         sourceFilteredChapters = sourceFilteredChapters,
-        uniqueChapters = uniqueChapters,
+        uniqueChapters = logicalChapters,
         filteredChapters = filteredChapters,
         targetUnreadChapterPath = targetUnreadChapterPath,
         targetUnreadIndex = targetUnreadIndex,

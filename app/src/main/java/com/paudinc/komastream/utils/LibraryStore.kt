@@ -57,6 +57,7 @@ class LibraryStore(context: Context) {
             useDarkTheme = settings.useDarkTheme,
             autoJumpToUnread = settings.autoJumpToUnread,
             mangaBallAdultContentEnabled = settings.mangaBallAdultContentEnabled,
+            manhwaLatinoAdultContentEnabled = settings.manhwaLatinoAdultContentEnabled,
             preferredChapterLanguage = AppLanguage.fromStored(settings.preferredChapterLanguage).takeIf {
                 it != AppLanguage.MULTI
             } ?: AppLanguage.EN,
@@ -366,6 +367,10 @@ class LibraryStore(context: Context) {
         updateSettings { it.copy(mangaBallAdultContentEnabled = enabled) }
     }
 
+    fun setManhwaLatinoAdultContentEnabled(enabled: Boolean) {
+        updateSettings { it.copy(manhwaLatinoAdultContentEnabled = enabled) }
+    }
+
     fun setPreferredChapterLanguage(language: AppLanguage) {
         updateSettings { it.copy(preferredChapterLanguage = language.name) }
     }
@@ -377,6 +382,8 @@ class LibraryStore(context: Context) {
     }
 
     fun isMangaBallAdultContentEnabled(): Boolean = readSettings().mangaBallAdultContentEnabled
+
+    fun isManhwaLatinoAdultContentEnabled(): Boolean = readSettings().manhwaLatinoAdultContentEnabled
 
     fun setAppLanguage(language: AppLanguage) {
         updateSettings { it.copy(appLanguage = language.name) }
@@ -431,6 +438,7 @@ class LibraryStore(context: Context) {
                 useDarkTheme = importedSettings?.optBoolean("useDarkTheme", it.useDarkTheme) ?: it.useDarkTheme,
                 autoJumpToUnread = importedSettings?.optBoolean("autoJumpToUnread", it.autoJumpToUnread) ?: it.autoJumpToUnread,
                 mangaBallAdultContentEnabled = importedSettings?.optBoolean("mangaBallAdultContentEnabled", it.mangaBallAdultContentEnabled) ?: it.mangaBallAdultContentEnabled,
+                manhwaLatinoAdultContentEnabled = importedSettings?.optBoolean("manhwaLatinoAdultContentEnabled", it.manhwaLatinoAdultContentEnabled) ?: it.manhwaLatinoAdultContentEnabled,
                 preferredChapterLanguage = importedSettings?.optString("preferredChapterLanguage").orEmpty().ifBlank { it.preferredChapterLanguage },
                 appLanguage = importedSettings?.optString("appLanguage").orEmpty().ifBlank { it.appLanguage },
                 hasSeenProviderPicker = restoredHasSeenProviderPicker || importedPayload.selectedProviderId.isNotBlank(),
@@ -620,6 +628,7 @@ class LibraryStore(context: Context) {
             .put("useDarkTheme", legacyPrefs.getBoolean("useDarkTheme", false))
             .put("autoJumpToUnread", legacyPrefs.getBoolean("autoJumpToUnread", true))
             .put("mangaBallAdultContentEnabled", legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false))
+            .put("manhwaLatinoAdultContentEnabled", false)
             .put("preferredChapterLanguage", AppLanguage.EN.name)
             .put("appLanguage", legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty())
             .put("hasSeenProviderPicker", legacyPrefs.getBoolean("hasSeenProviderPicker", false))
@@ -643,6 +652,7 @@ class LibraryStore(context: Context) {
                 useDarkTheme = legacyPrefs.getBoolean("useDarkTheme", false),
                 autoJumpToUnread = legacyPrefs.getBoolean("autoJumpToUnread", true),
                 mangaBallAdultContentEnabled = legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
+                manhwaLatinoAdultContentEnabled = false,
                 preferredChapterLanguage = AppLanguage.EN.name,
                 appLanguage = legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty(),
                 hasSeenProviderPicker = legacyPrefs.getBoolean("hasSeenProviderPicker", false),
@@ -914,6 +924,7 @@ class LibraryStore(context: Context) {
         useDarkTheme: Boolean = false,
         autoJumpToUnread: Boolean = true,
         mangaBallAdultContentEnabled: Boolean = false,
+        manhwaLatinoAdultContentEnabled: Boolean = false,
         preferredChapterLanguage: String = AppLanguage.EN.name,
         appLanguage: String = AppLanguage.EN.name,
         hasSeenProviderPicker: Boolean = false,
@@ -926,6 +937,7 @@ class LibraryStore(context: Context) {
             useDarkTheme = useDarkTheme,
             autoJumpToUnread = autoJumpToUnread,
             mangaBallAdultContentEnabled = mangaBallAdultContentEnabled,
+            manhwaLatinoAdultContentEnabled = manhwaLatinoAdultContentEnabled,
             preferredChapterLanguage = preferredChapterLanguage,
             appLanguage = appLanguage,
             hasSeenProviderPicker = hasSeenProviderPicker,
@@ -969,6 +981,7 @@ class LibraryStore(context: Context) {
             .put("useDarkTheme", settings.useDarkTheme)
             .put("autoJumpToUnread", settings.autoJumpToUnread)
             .put("mangaBallAdultContentEnabled", settings.mangaBallAdultContentEnabled)
+            .put("manhwaLatinoAdultContentEnabled", settings.manhwaLatinoAdultContentEnabled)
             .put("preferredChapterLanguage", settings.preferredChapterLanguage)
             .put("appLanguage", settings.appLanguage)
             .put("hasSeenProviderPicker", settings.hasSeenProviderPicker)
@@ -1210,6 +1223,7 @@ class LibraryStore(context: Context) {
                 use_dark_theme INTEGER NOT NULL,
                 auto_jump_to_unread INTEGER NOT NULL,
                 mangaball_adult_content_enabled INTEGER NOT NULL,
+                manhwa_latino_adult_content_enabled INTEGER NOT NULL,
                 app_language TEXT NOT NULL,
                 preferred_chapter_language TEXT NOT NULL,
                 has_seen_provider_picker INTEGER NOT NULL,
@@ -1321,6 +1335,7 @@ private fun AppSettingsEntity.toContentValues(): ContentValues = ContentValues()
     put("use_dark_theme", useDarkTheme)
     put("auto_jump_to_unread", autoJumpToUnread)
     put("mangaball_adult_content_enabled", mangaBallAdultContentEnabled)
+    put("manhwa_latino_adult_content_enabled", manhwaLatinoAdultContentEnabled)
     put("app_language", appLanguage)
     put("preferred_chapter_language", preferredChapterLanguage)
     put("has_seen_provider_picker", hasSeenProviderPicker)
@@ -1438,6 +1453,9 @@ private fun SQLiteDatabase.readAppSettingsBackup(): AppSettingsEntity =
             useDarkTheme = cursor.getInt(cursor.getColumnIndexOrThrow("use_dark_theme")) != 0,
             autoJumpToUnread = cursor.getInt(cursor.getColumnIndexOrThrow("auto_jump_to_unread")) != 0,
             mangaBallAdultContentEnabled = cursor.getInt(cursor.getColumnIndexOrThrow("mangaball_adult_content_enabled")) != 0,
+            manhwaLatinoAdultContentEnabled = cursor.getColumnIndex("manhwa_latino_adult_content_enabled").takeIf { it >= 0 }
+                ?.let { cursor.getInt(it) != 0 }
+                ?: false,
             appLanguage = cursor.getString(cursor.getColumnIndexOrThrow("app_language")),
             preferredChapterLanguage = cursor.getString(cursor.getColumnIndexOrThrow("preferred_chapter_language")),
             hasSeenProviderPicker = cursor.getInt(cursor.getColumnIndexOrThrow("has_seen_provider_picker")) != 0,

@@ -44,14 +44,26 @@ fun MangadotAwareAsyncImage(
 
 fun mangadotImageHeaders(url: String): Headers? {
     val host = Uri.parse(url).host.orEmpty().lowercase()
-    if (host != "mangadot.net" && !host.endsWith(".mangadot.net")) {
+    val allowedHosts = setOf(
+        "mangadot.net",
+        "manhwa-latino.com",
+        "zai.manhwa-latino.com",
+        "redhive.cyou",
+    )
+    if (host !in allowedHosts && allowedHosts.none { host.endsWith(".$it") }) {
         return null
     }
 
     val cookieHeader = WebkitCookieManager.getInstance().getCookie(url).orEmpty()
     val builder = Headers.Builder()
         .add("User-Agent", MangadotProvider.USER_AGENT)
-        .add("Referer", "https://mangadot.net/")
+        .add(
+            "Referer",
+            when {
+                host == "mangadot.net" || host.endsWith(".mangadot.net") -> "https://mangadot.net/"
+                else -> "https://manhwa-latino.com/"
+            },
+        )
     if (cookieHeader.isNotBlank()) {
         builder.add("Cookie", cookieHeader)
     }

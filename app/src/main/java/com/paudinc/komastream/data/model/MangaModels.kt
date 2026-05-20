@@ -295,6 +295,7 @@ data class LibraryState(
     val useDarkTheme: Boolean,
     val autoJumpToUnread: Boolean,
     val mangaBallAdultContentEnabled: Boolean,
+    val manhwaLatinoAdultContentEnabled: Boolean,
     val preferredChapterLanguage: AppLanguage,
     val selectedProviderId: String,
     val appLanguage: AppLanguage,

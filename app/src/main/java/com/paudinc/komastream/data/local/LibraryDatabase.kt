@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppSettingsEntity::class,
         MangaDetailCacheEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -35,7 +35,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     "komastream_library.db",
                 )
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .allowMainThreadQueries()
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
@@ -268,6 +268,12 @@ abstract class LibraryDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE app_settings ADD COLUMN preferred_chapter_language TEXT NOT NULL DEFAULT 'EN'")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN manhwa_latino_adult_content_enabled INTEGER NOT NULL DEFAULT 0")
             }
         }
 

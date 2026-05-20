@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.providers.MangaBallProvider
+import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.ui.components.MarkdownReleaseNotes
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.ui.viewmodel.MyAnimeListUiState
@@ -114,10 +115,14 @@ fun SettingsScreen(
                         title = strings.reader,
                         onClick = onOpenReader,
                     )
-                    if (selectedProviderId == MangaBallProvider.PROVIDER_ID) {
+                    if (selectedProviderId == MangaBallProvider.PROVIDER_ID || selectedProviderId == ManhwaLatinoProvider.PROVIDER_ID) {
                         SettingsNavigationItem(
                             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-                            title = strings.mangaBallAdultContentLabel,
+                            title = if (selectedProviderId == ManhwaLatinoProvider.PROVIDER_ID) {
+                                strings.manhwaLatinoAdultContentLabel
+                            } else {
+                                strings.mangaBallAdultContentLabel
+                            },
                             onClick = onOpenContent,
                         )
                     }
@@ -238,27 +243,55 @@ fun ReaderSettingsScreen(
 fun ContentSettingsScreen(
     strings: AppStrings,
     mangaBallAdultContentEnabled: Boolean,
+    manhwaLatinoAdultContentEnabled: Boolean,
     onMangaBallAdultContentChange: (Boolean) -> Unit,
+    onManhwaLatinoAdultContentChange: (Boolean) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        AdultContentSettingCard(
+            strings = strings,
+            title = strings.mangaBallAdultContentLabel,
+            description = strings.mangaBallAdultContentDescription,
+            enabled = mangaBallAdultContentEnabled,
+            onEnabledChange = onMangaBallAdultContentChange,
+        )
+        AdultContentSettingCard(
+            strings = strings,
+            title = strings.manhwaLatinoAdultContentLabel,
+            description = strings.manhwaLatinoAdultContentDescription,
+            enabled = manhwaLatinoAdultContentEnabled,
+            onEnabledChange = onManhwaLatinoAdultContentChange,
+        )
+    }
+}
+
+@Composable
+private fun AdultContentSettingCard(
+    strings: AppStrings,
+    title: String,
+    description: String,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
 ) {
     var showAdultContentDialog by rememberSaveable { mutableStateOf(false) }
 
     SettingsCardScreen {
-        Text(strings.mangaBallAdultContentLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(strings.mangaBallAdultContentDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = if (mangaBallAdultContentEnabled) strings.on else strings.off,
+                text = if (enabled) strings.on else strings.off,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(12.dp))
             Switch(
-                checked = mangaBallAdultContentEnabled,
-                onCheckedChange = { enabled ->
-                    if (enabled) showAdultContentDialog = true else onMangaBallAdultContentChange(false)
+                checked = enabled,
+                onCheckedChange = { nextEnabled ->
+                    if (nextEnabled) showAdultContentDialog = true else onEnabledChange(false)
                 },
             )
         }
@@ -273,7 +306,7 @@ fun ContentSettingsScreen(
                 TextButton(
                     onClick = {
                         showAdultContentDialog = false
-                        onMangaBallAdultContentChange(true)
+                        onEnabledChange(true)
                     },
                 ) {
                     Text(strings.enableAdultContent)

@@ -76,6 +76,8 @@ fun HomeSectionScreen(
             provider.id == "leermangaesp-es" && sectionId == "populares" -> section.mangas.size >= 20
             provider.id == "leermangaesp-es" && sectionId == "capitulos-recientes" -> section.chapters.size >= 20
             provider.id == "mangatube-de" && sectionId == "latest-updates" -> section.chapters.size >= 40
+            provider.id == "manhwa-latino-es" && sectionId == "featured" -> section.mangas.size >= 20
+            provider.id == "manhwa-latino-es" && sectionId == "latest-updates" -> section.chapters.size >= 20
             else -> false
         }
     }
@@ -230,5 +232,6 @@ private fun providerSupportsHomePaging(providerId: String, sectionId: String): B
     when (providerId) {
         "leermangaesp-es" -> sectionId == "populares" || sectionId == "capitulos-recientes"
         "mangatube-de" -> sectionId == "latest-updates"
+        "manhwa-latino-es" -> sectionId == "featured" || sectionId == "latest-updates"
         else -> false
     }

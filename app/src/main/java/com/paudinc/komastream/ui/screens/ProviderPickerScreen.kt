@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.R
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
 import com.paudinc.komastream.ui.components.cardBorder
@@ -98,8 +99,12 @@ fun ProviderPickerScreen(
                         )
                         .clickable {
                             if (
-                                provider.id == MangadotProvider.PROVIDER_ID &&
-                                (provider as? MangadotProvider)?.markCloudflareReadyIfCookiesPresent() != true
+                                (provider.id == MangadotProvider.PROVIDER_ID || provider.id == ManhwaLatinoProvider.PROVIDER_ID) &&
+                                when (provider) {
+                                    is MangadotProvider -> !provider.markCloudflareReadyIfCookiesPresent()
+                                    is ManhwaLatinoProvider -> !provider.markCloudflareReadyIfCookiesPresent()
+                                    else -> false
+                                }
                             ) {
                                 onOpenProviderSite(provider.id, provider.websiteUrl)
                             }

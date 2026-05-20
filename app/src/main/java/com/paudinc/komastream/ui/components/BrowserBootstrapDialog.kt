@@ -40,6 +40,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun BrowserBootstrapDialog(
     url: String,
+    title: String = "Cloudflare",
     onClose: () -> Unit,
 ) {
     var webView by remember(url) { mutableStateOf<WebView?>(null) }
@@ -80,7 +81,7 @@ fun BrowserBootstrapDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = "Mangadot",
+                        text = title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onBackground,
                     )

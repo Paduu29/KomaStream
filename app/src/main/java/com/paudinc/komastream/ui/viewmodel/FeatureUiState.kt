@@ -43,6 +43,7 @@ fun emptyLibraryState(): LibraryState =
         useDarkTheme = false,
         autoJumpToUnread = true,
         mangaBallAdultContentEnabled = false,
+        manhwaLatinoAdultContentEnabled = false,
         preferredChapterLanguage = AppLanguage.EN,
         selectedProviderId = "",
         appLanguage = AppLanguage.EN,

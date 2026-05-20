@@ -16,6 +16,7 @@ import com.paudinc.komastream.utils.CachedMangaDetailSnapshot
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
+import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.canonicalChapterKey
@@ -357,6 +358,10 @@ class ReaderController(
             libraryStore.getCachedMangaDetailSnapshot(providerId, detailPath)
         }
         if (cachedSnapshot != null) {
+            if (providerId == ManhwaLatinoProvider.PROVIDER_ID && cachedSnapshot.detail.chapters.isEmpty()) {
+                refreshDetailCache(providerId, detailPath, cachedSnapshot.detail)
+                return
+            }
             val detail = cachedSnapshot.detail.withSelectedChapterSource(
                 preferredSourceId = preferredSourceId,
                 currentSourceId = currentSourceId,

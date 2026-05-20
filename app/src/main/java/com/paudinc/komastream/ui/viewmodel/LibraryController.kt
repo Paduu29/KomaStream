@@ -337,6 +337,12 @@ class LibraryController(
         refreshState()
     }
 
+    fun changeManhwaLatinoAdultContent(enabled: Boolean) {
+        Log.d("KomaStream", "changeManhwaLatinoAdultContent: storing enabled=$enabled")
+        libraryStore.setManhwaLatinoAdultContentEnabled(enabled)
+        refreshState()
+    }
+
     fun changePreferredChapterLanguage(language: com.paudinc.komastream.data.model.AppLanguage) {
         libraryStore.setPreferredChapterLanguage(language)
         refreshState()
