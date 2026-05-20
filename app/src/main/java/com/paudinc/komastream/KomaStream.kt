@@ -100,6 +100,7 @@ fun KomaStream() {
         )
     }
     val saveableStateHolder = rememberSaveableStateHolder()
+    var previousSaveableScreenKeys by remember { mutableStateOf<List<String>>(emptyList()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -242,6 +243,11 @@ fun KomaStream() {
     }
 
     LaunchedEffect(viewModel.navigationController.navigationStack) {
+        val currentKeys = viewModel.navigationController.navigationStack.map(Screen::saveableKey)
+        previousSaveableScreenKeys
+            .filterNot(currentKeys::contains)
+            .forEach(saveableStateHolder::removeState)
+        previousSaveableScreenKeys = currentKeys
         savedNavigationStack = viewModel.navigationController.navigationStack
     }
 
@@ -395,7 +401,10 @@ fun KomaStream() {
                                                 Screen.SettingsTheme -> strings.theme
                                                 Screen.SettingsChapterLanguage -> strings.preferredChapterLanguage
                                                 Screen.SettingsReader -> strings.reader
-                                                Screen.SettingsContent -> strings.mangaBallAdultContentLabel
+                                                Screen.SettingsContent -> when (libraryState.selectedProviderId) {
+                                                    ManhwaLatinoProvider.PROVIDER_ID -> strings.manhwaLatinoAdultContentLabel
+                                                    else -> strings.mangaBallAdultContentLabel
+                                                }
                                                 Screen.SettingsUpdates -> strings.updates
                                                 Screen.SettingsMyAnimeList -> strings.myAnimeList
                                                 Screen.SettingsBackup -> strings.backup
@@ -784,6 +793,7 @@ fun KomaStream() {
                             )
                             Screen.SettingsContent -> ContentSettingsScreen(
                                 strings = strings,
+                                selectedProviderId = libraryState.selectedProviderId,
                                 mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
                                 manhwaLatinoAdultContentEnabled = libraryState.manhwaLatinoAdultContentEnabled,
                                 onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },

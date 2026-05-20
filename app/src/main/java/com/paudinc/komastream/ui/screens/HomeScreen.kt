@@ -151,7 +151,10 @@ fun HomeScreen(
                                 ) {
                                     val railCardHeight = mangaRailCardHeight(section.mangas) +
                                         if (providerId == "mangadotnet-en" && section.id == "top-rated") 20.dp else 0.dp
-                                    items(section.mangas.take(10), key = { "${it.providerId}:${it.detailPath}" }) { manga ->
+                                    items(
+                                        section.mangas.take(10),
+                                        key = { "${it.providerId}:${homeMangaIdentityKey(providerId, section.id, it)}" },
+                                    ) { manga ->
                                         MangaCoverCard(
                                             manga = manga,
                                             strings = strings,
@@ -203,6 +206,16 @@ fun HomeScreen(
         }
     }
 
+}
+
+private fun homeMangaIdentityKey(
+    providerId: String,
+    sectionId: String,
+    manga: MangaSummary,
+): String = when {
+    providerId == "olympusbiblioteca-es" && sectionId == "nuevos-lanzamientos" ->
+        listOf(manga.detailPath, manga.latestPublication, manga.status).joinToString("|")
+    else -> manga.detailPath
 }
 
 @Composable

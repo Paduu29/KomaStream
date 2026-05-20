@@ -242,26 +242,33 @@ fun ReaderSettingsScreen(
 @Composable
 fun ContentSettingsScreen(
     strings: AppStrings,
+    selectedProviderId: String,
     mangaBallAdultContentEnabled: Boolean,
     manhwaLatinoAdultContentEnabled: Boolean,
     onMangaBallAdultContentChange: (Boolean) -> Unit,
     onManhwaLatinoAdultContentChange: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        AdultContentSettingCard(
-            strings = strings,
-            title = strings.mangaBallAdultContentLabel,
-            description = strings.mangaBallAdultContentDescription,
-            enabled = mangaBallAdultContentEnabled,
-            onEnabledChange = onMangaBallAdultContentChange,
-        )
-        AdultContentSettingCard(
-            strings = strings,
-            title = strings.manhwaLatinoAdultContentLabel,
-            description = strings.manhwaLatinoAdultContentDescription,
-            enabled = manhwaLatinoAdultContentEnabled,
-            onEnabledChange = onManhwaLatinoAdultContentChange,
-        )
+        when (selectedProviderId) {
+            ManhwaLatinoProvider.PROVIDER_ID -> AdultContentSettingCard(
+                strings = strings,
+                title = strings.manhwaLatinoAdultContentLabel,
+                description = strings.manhwaLatinoAdultContentDescription,
+                warningTitle = strings.manhwaLatinoAdultContentLabel,
+                warningMessage = strings.manhwaLatinoAdultContentDescription,
+                enabled = manhwaLatinoAdultContentEnabled,
+                onEnabledChange = onManhwaLatinoAdultContentChange,
+            )
+            else -> AdultContentSettingCard(
+                strings = strings,
+                title = strings.mangaBallAdultContentLabel,
+                description = strings.mangaBallAdultContentDescription,
+                warningTitle = strings.mangaBallAdultContentWarningTitle,
+                warningMessage = strings.mangaBallAdultContentWarningMessage,
+                enabled = mangaBallAdultContentEnabled,
+                onEnabledChange = onMangaBallAdultContentChange,
+            )
+        }
     }
 }
 
@@ -270,6 +277,8 @@ private fun AdultContentSettingCard(
     strings: AppStrings,
     title: String,
     description: String,
+    warningTitle: String,
+    warningMessage: String,
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
@@ -300,8 +309,8 @@ private fun AdultContentSettingCard(
     if (showAdultContentDialog) {
         AlertDialog(
             onDismissRequest = { showAdultContentDialog = false },
-            title = { Text(strings.mangaBallAdultContentWarningTitle) },
-            text = { Text(strings.mangaBallAdultContentWarningMessage) },
+            title = { Text(warningTitle) },
+            text = { Text(warningMessage) },
             confirmButton = {
                 TextButton(
                     onClick = {
