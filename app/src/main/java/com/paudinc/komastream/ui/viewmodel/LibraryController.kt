@@ -318,6 +318,10 @@ class LibraryController(
 
     fun changeLanguage(language: AppLanguage) {
         libraryStore.setAppLanguage(language)
+        context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
+            .edit()
+            .putString("appLanguage", language.name)
+            .commit()
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.toLanguageTag()))
         refreshState()
     }

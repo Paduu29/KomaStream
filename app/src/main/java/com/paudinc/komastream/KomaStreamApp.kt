@@ -24,7 +24,7 @@ class KomaStreamApp : Application(), ImageLoaderFactory {
             ?: prefs.getString("appLanguage", null)
             ?: AppLanguage.defaultForSystem(base.resources.configuration.locales[0]).name
         val appLanguage = AppLanguage.fromStored(appLanguageStr)
-        prefs.edit().putString("appLanguage", appLanguage.name).apply()
+        prefs.edit().putString("appLanguage", appLanguage.name).commit()
         AppCompatDelegate.setApplicationLocales(
             LocaleListCompat.forLanguageTags(appLanguage.toLanguageTag())
         )
