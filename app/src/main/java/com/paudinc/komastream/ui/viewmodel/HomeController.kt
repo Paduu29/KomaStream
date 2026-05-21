@@ -50,6 +50,14 @@ class HomeController(
                     if (requestToken == refreshToken) {
                         uiState = uiState.copy(isRefreshing = false)
                         Log.e("KomaStream", "refreshHome: failed provider=$providerId token=$requestToken", it)
+                        val message = it.message.orEmpty()
+                        if (
+                            message.contains("Cloudflare challenge", ignoreCase = true) ||
+                            message.contains("cf_clearance", ignoreCase = true) ||
+                            message.contains("challenge was not fully solved", ignoreCase = true)
+                        ) {
+                            uiState = uiState.copy(feed = emptyHomeFeed())
+                        }
                         onError(it.message ?: "Could not load home")
                     } else {
                         Log.d("KomaStream", "Dropped stale home refresh for $providerId", it)
@@ -60,5 +68,9 @@ class HomeController(
 
     fun clearFeed() {
         uiState = uiState.copy(feed = null)
+    }
+
+    fun showEmptyFeed() {
+        uiState = uiState.copy(feed = emptyHomeFeed(), isRefreshing = false)
     }
 }

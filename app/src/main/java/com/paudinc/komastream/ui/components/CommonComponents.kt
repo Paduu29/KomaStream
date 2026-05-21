@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -856,15 +857,37 @@ fun DetailLoadingPlaceholder(strings: AppStrings) {
 }
 
 @Composable
-fun EmptyCard(message: String) {
+fun EmptyCard(
+    message: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         border = cardBorder(),
         shape = RoundedCornerShape(24.dp),
     ) {
-        Box(modifier = Modifier.padding(24.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(
+            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            if (actionLabel != null && onAction != null) {
+                OutlinedButton(onClick = onAction) {
+                    Icon(
+                        imageVector = Icons.Default.LockOpen,
+                        contentDescription = null,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(actionLabel)
+                }
+            }
         }
     }
 }

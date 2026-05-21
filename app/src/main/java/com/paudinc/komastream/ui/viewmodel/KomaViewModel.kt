@@ -58,7 +58,7 @@ class KomaViewModel(
     readerActionInteractor: ReaderActionInteractor = ReaderActionInteractor(),
 ) : ViewModel() {
     private var backgroundWorkStarted = false
-    private var pendingBrowserBootstrapProviderId: String? = null
+    private var pendingBrowserBootstrapProviderId by mutableStateOf<String?>(null)
     private var cloudflareBootstrapRetryBlockedUntilMs: Long = 0L
 
     val isAwaitingBrowserBootstrap: Boolean
@@ -415,6 +415,21 @@ class KomaViewModel(
         libraryController.changePreferredChapterLanguage(language)
     }
 
+    fun invalidateCloudflareClearance(providerId: String) {
+        when (val provider = providerRegistry.get(providerId)) {
+            is MangadotProvider -> provider.invalidateCaches()
+            is ManhwaLatinoProvider -> provider.invalidateCaches()
+            else -> Unit
+        }
+    }
+
+    fun invalidateCloudflareClearanceAndRetry(providerId: String) {
+        if (!requiresCloudflareBootstrap(providerId)) return
+        invalidateCloudflareClearance(providerId)
+        resetCloudflareBootstrapRetryBlock()
+        requestBrowserBootstrap(providerId)
+    }
+
     fun exportBackup(uri: Uri) {
         backupController.exportBackup(uri)
     }
@@ -501,6 +516,7 @@ class KomaViewModel(
                 delay(1500)
                 refreshHome(providerId = providerId, force = true)
             }.onFailure { throwable ->
+                homeController.showEmptyFeed()
                 showError(throwable.message ?: "Cloudflare challenge was not fully solved")
             }
         }
@@ -667,6 +683,10 @@ class KomaViewModel(
 
     private fun blockCloudflareBootstrapRetry(durationMs: Long = 10_000L) {
         cloudflareBootstrapRetryBlockedUntilMs = System.currentTimeMillis() + durationMs
+    }
+
+    private fun resetCloudflareBootstrapRetryBlock() {
+        cloudflareBootstrapRetryBlockedUntilMs = 0L
     }
 
     private fun isCloudflareBootstrapRetryBlocked(): Boolean {

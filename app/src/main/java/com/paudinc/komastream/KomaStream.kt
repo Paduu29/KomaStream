@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.work.WorkManager
 import coil.compose.AsyncImage
-import androidx.browser.customtabs.CustomTabsIntent
 import com.paudinc.komastream.data.model.SavedManga
 import com.paudinc.komastream.updater.AppUpdateUiState
 import com.paudinc.komastream.updater.GitHubRelease
@@ -170,28 +169,6 @@ fun KomaStream() {
         }
     }
 
-    val openProviderSite: (String, String) -> Unit = openProviderSite@{ providerId, url ->
-        if (providerId == MangadotProvider.PROVIDER_ID || providerId == ManhwaLatinoProvider.PROVIDER_ID) {
-            val providerReady = when (val provider = currentProvider) {
-                is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
-                is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
-                else -> false
-            }
-            if (providerReady) {
-                val activityContext = context as? Activity ?: return@openProviderSite
-                CustomTabsIntent.Builder()
-                    .build()
-                    .launchUrl(activityContext, Uri.parse(url))
-                return@openProviderSite
-            }
-            browserBootstrapUrl = url
-            return@openProviderSite
-        }
-        val activityContext = context as? Activity ?: return@openProviderSite
-        CustomTabsIntent.Builder()
-            .build()
-            .launchUrl(activityContext, Uri.parse(url))
-    }
     val openReleasePage: () -> Unit = {
         val release = currentRelease
         if (release != null) {
@@ -524,6 +501,12 @@ fun KomaStream() {
                                             }
                                         )
                                     },
+                                    onSolveCloudflare = when (currentProvider) {
+                                        is MangadotProvider, is ManhwaLatinoProvider -> {
+                                            { viewModel.invalidateCloudflareClearanceAndRetry(currentProvider.id) }
+                                        }
+                                        else -> null
+                                    },
                                 )
                                     RootTab.Library -> LibraryScreen(
                                         libraryState = allProvidersLibraryState,
@@ -832,7 +815,6 @@ fun KomaStream() {
                                 selectedProviderId = libraryState.selectedProviderId,
                                 providersByLanguage = providerRegistry.groupedByLanguage(),
                                 onSelectProvider = { providerId -> viewModel.selectProvider(providerId) },
-                                onOpenProviderSite = openProviderSite,
                             )
                         }
                     }

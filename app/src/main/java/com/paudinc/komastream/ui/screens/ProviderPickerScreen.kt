@@ -22,8 +22,6 @@ import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.R
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.provider.MangaProvider
-import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
-import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.utils.AppStrings
@@ -34,7 +32,6 @@ fun ProviderPickerScreen(
     selectedProviderId: String,
     providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
     onSelectProvider: (String) -> Unit,
-    onOpenProviderSite: (String, String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -97,19 +94,7 @@ fun ProviderPickerScreen(
                             else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                             shape = RoundedCornerShape(26.dp),
                         )
-                        .clickable {
-                            if (
-                                (provider.id == MangadotProvider.PROVIDER_ID || provider.id == ManhwaLatinoProvider.PROVIDER_ID) &&
-                                when (provider) {
-                                    is MangadotProvider -> !provider.markCloudflareReadyIfCookiesPresent()
-                                    is ManhwaLatinoProvider -> !provider.markCloudflareReadyIfCookiesPresent()
-                                    else -> false
-                                }
-                            ) {
-                                onOpenProviderSite(provider.id, provider.websiteUrl)
-                            }
-                            onSelectProvider(provider.id)
-                        },
+                        .clickable { onSelectProvider(provider.id) },
                     shape = RoundedCornerShape(26.dp),
                     colors = CardDefaults.elevatedCardColors(
                         containerColor = if (selectedProviderId == provider.id) {

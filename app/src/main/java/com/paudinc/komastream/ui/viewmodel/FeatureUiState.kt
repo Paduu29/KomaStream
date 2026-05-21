@@ -49,6 +49,13 @@ fun emptyLibraryState(): LibraryState =
         appLanguage = AppLanguage.EN,
     )
 
+fun emptyHomeFeed(): HomeFeed =
+    HomeFeed(
+        latestUpdates = emptyList(),
+        popularChapters = emptyList(),
+        popularMangas = emptyList(),
+    )
+
 data class ReaderUiState(
     val selectedDetail: MangaDetail? = null,
     val requestedDetailPath: String = "",

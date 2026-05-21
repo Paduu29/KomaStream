@@ -1120,18 +1120,18 @@ class MangadotProvider : MangaProvider {
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             val trimmed = body.trimStart()
+
             if (!trimmed.startsWith("{")) {
-                throw if (looksLikeCloudflareChallenge(trimmed)) {
+                if (looksLikeCloudflareChallenge(trimmed)) {
                     invalidateCaches()
-                    IllegalStateException(
-                        "Cloudflare challenge still active for $path; received HTML instead of JSON"
-                    )
+                    throw IllegalStateException("Cloudflare challenge still active for $path; received HTML instead of JSON")
                 } else {
-                    IllegalStateException(
+                    throw IllegalStateException(
                         "Expected JSON from $path but received ${trimmed.take(80)}"
                     )
                 }
             }
+
             return JSONObject(body)
         }
     }

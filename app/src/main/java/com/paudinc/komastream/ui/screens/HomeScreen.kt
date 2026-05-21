@@ -55,6 +55,7 @@ fun HomeScreen(
     isFavorite: (String, String) -> Boolean,
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
+    onSolveCloudflare: (() -> Unit)? = null,
 ) {
     if (feed == null) {
         LoadingPlaceholder(strings.loadingProviderHome(providerName))
@@ -66,7 +67,17 @@ fun HomeScreen(
         ) {
             val sections = remember(feed) { feed.sections.filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() } }
             if (sections.isEmpty()) {
-                EmptyCard(strings.emptyProviderHome(providerName))
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EmptyCard(
+                        message = strings.emptyProviderHome(providerName),
+                        actionLabel = onSolveCloudflare?.let { strings.solveCloudflare },
+                        onAction = onSolveCloudflare,
+                    )
+                }
+                return@PullToRefreshBox
             }
 
             val canonicalReadChapterKeys = remember(providerId, readChapters) {
