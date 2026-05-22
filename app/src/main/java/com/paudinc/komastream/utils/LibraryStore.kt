@@ -23,6 +23,7 @@ import com.paudinc.komastream.utils.toProgressChapterNumber
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 data class CachedMangaDetailSnapshot(
     val detail: MangaDetail,
@@ -34,7 +35,8 @@ class LibraryStore(context: Context) {
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
     private val database = LibraryDatabase.getInstance(context)
     private val dao = database.libraryDao()
-    private val defaultProviderId: String = createDefaultProviderRegistry().defaultProvider().id
+    private val providerRegistry = createDefaultProviderRegistry(appContext)
+    private val defaultProviderId: String = providerRegistry.defaultProvider().id
     private val jsonCodec = LibraryJsonCodec(defaultProviderId = defaultProviderId)
     private val backupPayloadCodec = LibraryBackupPayloadCodec()
     private val mangaDetailCacheCodec = MangaDetailCacheCodec()
@@ -46,22 +48,26 @@ class LibraryStore(context: Context) {
     fun read(filterBySelectedProvider: Boolean = true): LibraryState {
         ensureInitialized()
         val settings = readSettings()
+        val disabledProviderIds = parseDisabledProviderIds(settings.disabledProviderIdsJson)
+        val resolvedSelectedProviderId = resolveSelectedProviderId(settings, disabledProviderIds)
         val parsedFavorites = dao.readFavorites().map { it.toSavedManga() }
         val parsedReading = dao.readReading().map { it.toSavedManga() }
         val (allFavorites, allReading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
-        val selectedProviderId = settings.selectedProviderId
         return LibraryState(
-            favorites = if (filterBySelectedProvider) allFavorites.filter { it.providerId == selectedProviderId } else allFavorites,
-            reading = if (filterBySelectedProvider) allReading.filter { it.providerId == selectedProviderId } else allReading,
-            readChapters = dao.readChaptersForProvider(selectedProviderId).map { it.chapterPath }.toSet(),
+            favorites = if (filterBySelectedProvider) allFavorites.filter { it.providerId == resolvedSelectedProviderId } else allFavorites,
+            reading = if (filterBySelectedProvider) allReading.filter { it.providerId == resolvedSelectedProviderId } else allReading,
+            readChapters = dao.readChaptersForProvider(resolvedSelectedProviderId).map { it.chapterPath }.toSet(),
             useDarkTheme = settings.useDarkTheme,
             autoJumpToUnread = settings.autoJumpToUnread,
-            mangaBallAdultContentEnabled = settings.mangaBallAdultContentEnabled,
-            manhwaLatinoAdultContentEnabled = settings.manhwaLatinoAdultContentEnabled,
+            adultContentEnabled = settings.adultContentEnabled,
+            adultOnlyProvidersEnabled = settings.adultOnlyProvidersEnabled,
+            disabledProviderIds = disabledProviderIds,
+            mangaBallAdultContentEnabled = settings.adultContentEnabled,
+            manhwaLatinoAdultContentEnabled = settings.adultContentEnabled,
             preferredChapterLanguage = AppLanguage.fromStored(settings.preferredChapterLanguage).takeIf {
                 it != AppLanguage.MULTI
             } ?: AppLanguage.EN,
-            selectedProviderId = selectedProviderId,
+            selectedProviderId = resolvedSelectedProviderId,
             appLanguage = AppLanguage.fromStored(settings.appLanguage),
         )
     }
@@ -364,11 +370,51 @@ class LibraryStore(context: Context) {
     }
 
     fun setMangaBallAdultContentEnabled(enabled: Boolean) {
-        updateSettings { it.copy(mangaBallAdultContentEnabled = enabled) }
+        setAdultContentEnabled(enabled)
     }
 
     fun setManhwaLatinoAdultContentEnabled(enabled: Boolean) {
-        updateSettings { it.copy(manhwaLatinoAdultContentEnabled = enabled) }
+        setAdultContentEnabled(enabled)
+    }
+
+    fun setAdultContentEnabled(enabled: Boolean) {
+        updateSettings {
+            it.copy(
+                adultContentEnabled = enabled,
+                mangaBallAdultContentEnabled = enabled,
+                manhwaLatinoAdultContentEnabled = enabled,
+            )
+        }
+    }
+
+    fun setAdultOnlyProvidersEnabled(enabled: Boolean) {
+        updateSettings {
+            val updated = it.copy(adultOnlyProvidersEnabled = enabled)
+            updated.copy(
+                selectedProviderId = resolveSelectedProviderId(
+                    updated,
+                    parseDisabledProviderIds(updated.disabledProviderIdsJson),
+                )
+            )
+        }
+    }
+
+    fun adultOnlyProvidersEnabled(): Boolean = readSettings().adultOnlyProvidersEnabled
+
+    fun adultContentPinIsConfigured(): Boolean = readSettings().adultContentPinHash.isNotBlank()
+
+    fun setAdultContentPin(pin: String) {
+        updateSettings { it.copy(adultContentPinHash = hashPin(pin)) }
+    }
+
+    fun clearAdultContentPin() {
+        updateSettings { it.copy(adultContentPinHash = "") }
+    }
+
+    fun verifyAdultContentPin(pin: String): Boolean {
+        val storedHash = readSettings().adultContentPinHash
+        if (storedHash.isBlank()) return true
+        return storedHash == hashPin(pin)
     }
 
     fun setPreferredChapterLanguage(language: AppLanguage) {
@@ -381,18 +427,40 @@ class LibraryStore(context: Context) {
         } ?: AppLanguage.EN
     }
 
-    fun isMangaBallAdultContentEnabled(): Boolean = readSettings().mangaBallAdultContentEnabled
+    fun isMangaBallAdultContentEnabled(): Boolean = readSettings().adultContentEnabled
 
-    fun isManhwaLatinoAdultContentEnabled(): Boolean = readSettings().manhwaLatinoAdultContentEnabled
+    fun isManhwaLatinoAdultContentEnabled(): Boolean = readSettings().adultContentEnabled
 
     fun setAppLanguage(language: AppLanguage) {
         updateSettings { it.copy(appLanguage = language.name) }
     }
 
-    fun selectedProviderId(): String = readSettings().selectedProviderId
+    fun selectedProviderId(): String {
+        val settings = readSettings()
+        return resolveSelectedProviderId(settings, parseDisabledProviderIds(settings.disabledProviderIdsJson))
+    }
 
     fun setSelectedProviderId(providerId: String) {
-        updateSettings { it.copy(selectedProviderId = providerId) }
+        updateSettings {
+            val disabledProviderIds = parseDisabledProviderIds(it.disabledProviderIdsJson)
+            val resolved = if (providerRegistry.isSelectable(providerId, disabledProviderIds, it.adultOnlyProvidersEnabled)) providerId else resolveSelectedProviderId(it, disabledProviderIds)
+            it.copy(selectedProviderId = resolved)
+        }
+    }
+
+    fun setProviderEnabled(providerId: String, enabled: Boolean) {
+        updateSettings {
+            val currentDisabled = parseDisabledProviderIds(it.disabledProviderIdsJson).toMutableSet()
+            if (enabled) currentDisabled.remove(providerId) else currentDisabled.add(providerId)
+            val resolvedSelectedProviderId = resolveSelectedProviderId(
+                it.copy(disabledProviderIdsJson = encodeDisabledProviderIds(currentDisabled)),
+                currentDisabled,
+            )
+            it.copy(
+                disabledProviderIdsJson = encodeDisabledProviderIds(currentDisabled),
+                selectedProviderId = resolvedSelectedProviderId,
+            )
+        }
     }
 
     fun hasSeenProviderPicker(): Boolean = readSettings().hasSeenProviderPicker
@@ -433,15 +501,38 @@ class LibraryStore(context: Context) {
             val restoredHasSeenProviderPicker =
                 importedSettings?.optBoolean("hasSeenProviderPicker", it.hasSeenProviderPicker)
                     ?: it.hasSeenProviderPicker
-            it.copy(
+            val importedAdultContentEnabled = importedSettings?.optBoolean("adultContentEnabled", it.adultContentEnabled) ?: it.adultContentEnabled
+            val importedDisabledProviderIds = importedSettings?.optString("disabledProviderIdsJson").orEmpty().takeIf { value -> value.isNotBlank() }
+                ?.let(::parseDisabledProviderIds)
+                ?: parseDisabledProviderIds(it.disabledProviderIdsJson)
+            val updatedSettings = it.copy(
                 selectedProviderId = importedPayload.selectedProviderId,
                 useDarkTheme = importedSettings?.optBoolean("useDarkTheme", it.useDarkTheme) ?: it.useDarkTheme,
                 autoJumpToUnread = importedSettings?.optBoolean("autoJumpToUnread", it.autoJumpToUnread) ?: it.autoJumpToUnread,
-                mangaBallAdultContentEnabled = importedSettings?.optBoolean("mangaBallAdultContentEnabled", it.mangaBallAdultContentEnabled) ?: it.mangaBallAdultContentEnabled,
-                manhwaLatinoAdultContentEnabled = importedSettings?.optBoolean("manhwaLatinoAdultContentEnabled", it.manhwaLatinoAdultContentEnabled) ?: it.manhwaLatinoAdultContentEnabled,
+                adultContentEnabled = importedAdultContentEnabled,
+                adultContentPinHash = importedSettings?.optString("adultContentPinHash").orEmpty().ifBlank { it.adultContentPinHash },
+                adultOnlyProvidersEnabled = importedSettings?.optBoolean("adultOnlyProvidersEnabled", it.adultOnlyProvidersEnabled) ?: it.adultOnlyProvidersEnabled,
+                disabledProviderIdsJson = encodeDisabledProviderIds(importedDisabledProviderIds),
+                mangaBallAdultContentEnabled = importedAdultContentEnabled,
+                manhwaLatinoAdultContentEnabled = importedAdultContentEnabled,
                 preferredChapterLanguage = importedSettings?.optString("preferredChapterLanguage").orEmpty().ifBlank { it.preferredChapterLanguage },
                 appLanguage = importedSettings?.optString("appLanguage").orEmpty().ifBlank { it.appLanguage },
                 hasSeenProviderPicker = restoredHasSeenProviderPicker || importedPayload.selectedProviderId.isNotBlank(),
+                legacyPrefsMigrated = true,
+            )
+            it.copy(
+                selectedProviderId = resolveSelectedProviderId(updatedSettings, importedDisabledProviderIds),
+                useDarkTheme = updatedSettings.useDarkTheme,
+                autoJumpToUnread = updatedSettings.autoJumpToUnread,
+                adultContentEnabled = updatedSettings.adultContentEnabled,
+                adultContentPinHash = updatedSettings.adultContentPinHash,
+                adultOnlyProvidersEnabled = updatedSettings.adultOnlyProvidersEnabled,
+                disabledProviderIdsJson = updatedSettings.disabledProviderIdsJson,
+                mangaBallAdultContentEnabled = updatedSettings.mangaBallAdultContentEnabled,
+                manhwaLatinoAdultContentEnabled = updatedSettings.manhwaLatinoAdultContentEnabled,
+                preferredChapterLanguage = updatedSettings.preferredChapterLanguage,
+                appLanguage = updatedSettings.appLanguage,
+                hasSeenProviderPicker = updatedSettings.hasSeenProviderPicker,
                 legacyPrefsMigrated = true,
             )
         }
@@ -627,8 +718,12 @@ class LibraryStore(context: Context) {
             .put("selectedProviderId", legacyPrefs.getString("selectedProviderId", "").orEmpty())
             .put("useDarkTheme", legacyPrefs.getBoolean("useDarkTheme", false))
             .put("autoJumpToUnread", legacyPrefs.getBoolean("autoJumpToUnread", true))
+            .put("adultContentEnabled", legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false))
+            .put("adultContentPinHash", "")
+            .put("adultOnlyProvidersEnabled", false)
+            .put("disabledProviderIdsJson", "[]")
             .put("mangaBallAdultContentEnabled", legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false))
-            .put("manhwaLatinoAdultContentEnabled", false)
+            .put("manhwaLatinoAdultContentEnabled", legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false))
             .put("preferredChapterLanguage", AppLanguage.EN.name)
             .put("appLanguage", legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty())
             .put("hasSeenProviderPicker", legacyPrefs.getBoolean("hasSeenProviderPicker", false))
@@ -651,8 +746,12 @@ class LibraryStore(context: Context) {
                 selectedProviderId = legacyPrefs.getString("selectedProviderId", "").orEmpty(),
                 useDarkTheme = legacyPrefs.getBoolean("useDarkTheme", false),
                 autoJumpToUnread = legacyPrefs.getBoolean("autoJumpToUnread", true),
+                adultContentEnabled = legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
+                adultContentPinHash = "",
+                adultOnlyProvidersEnabled = false,
+                disabledProviderIdsJson = "[]",
                 mangaBallAdultContentEnabled = legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
-                manhwaLatinoAdultContentEnabled = false,
+                manhwaLatinoAdultContentEnabled = legacyPrefs.getBoolean(KEY_MANGABALL_ADULT_CONTENT, false),
                 preferredChapterLanguage = AppLanguage.EN.name,
                 appLanguage = legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty(),
                 hasSeenProviderPicker = legacyPrefs.getBoolean("hasSeenProviderPicker", false),
@@ -919,10 +1018,46 @@ class LibraryStore(context: Context) {
         return settings ?: defaultSettings(legacyPrefsMigrated = false)
     }
 
+    private fun resolveSelectedProviderId(settings: AppSettingsEntity, disabledProviderIds: Set<String>): String {
+        val selected = settings.selectedProviderId
+        if (providerRegistry.isSelectable(selected, disabledProviderIds, settings.adultOnlyProvidersEnabled)) {
+            return selected
+        }
+        return providerRegistry.selectableProviderId(disabledProviderIds, settings.adultOnlyProvidersEnabled)
+    }
+
+    private fun parseDisabledProviderIds(value: String): Set<String> {
+        return runCatching {
+            JSONArray(value).let { array ->
+                buildSet {
+                    for (index in 0 until array.length()) {
+                        array.optString(index).trim().takeIf { it.isNotBlank() }?.let(::add)
+                    }
+                }
+            }
+        }.getOrDefault(emptySet())
+    }
+
+    private fun encodeDisabledProviderIds(ids: Set<String>): String =
+        JSONArray().apply {
+            ids.sorted().forEach(::put)
+        }.toString()
+
+    private fun hashPin(pin: String): String {
+        val normalized = pin.trim()
+        if (normalized.isBlank()) return ""
+        val digest = MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
     private fun defaultSettings(
         selectedProviderId: String = "",
         useDarkTheme: Boolean = false,
         autoJumpToUnread: Boolean = true,
+        adultContentEnabled: Boolean = false,
+        adultContentPinHash: String = "",
+        adultOnlyProvidersEnabled: Boolean = false,
+        disabledProviderIdsJson: String = "[]",
         mangaBallAdultContentEnabled: Boolean = false,
         manhwaLatinoAdultContentEnabled: Boolean = false,
         preferredChapterLanguage: String = AppLanguage.EN.name,
@@ -936,6 +1071,10 @@ class LibraryStore(context: Context) {
             selectedProviderId = selectedProviderId,
             useDarkTheme = useDarkTheme,
             autoJumpToUnread = autoJumpToUnread,
+            adultContentEnabled = adultContentEnabled,
+            adultContentPinHash = adultContentPinHash,
+            adultOnlyProvidersEnabled = adultOnlyProvidersEnabled,
+            disabledProviderIdsJson = disabledProviderIdsJson,
             mangaBallAdultContentEnabled = mangaBallAdultContentEnabled,
             manhwaLatinoAdultContentEnabled = manhwaLatinoAdultContentEnabled,
             preferredChapterLanguage = preferredChapterLanguage,
@@ -980,6 +1119,10 @@ class LibraryStore(context: Context) {
             .put("selectedProviderId", settings.selectedProviderId)
             .put("useDarkTheme", settings.useDarkTheme)
             .put("autoJumpToUnread", settings.autoJumpToUnread)
+            .put("adultContentEnabled", settings.adultContentEnabled)
+            .put("adultContentPinHash", settings.adultContentPinHash)
+            .put("adultOnlyProvidersEnabled", settings.adultOnlyProvidersEnabled)
+            .put("disabledProviderIdsJson", settings.disabledProviderIdsJson)
             .put("mangaBallAdultContentEnabled", settings.mangaBallAdultContentEnabled)
             .put("manhwaLatinoAdultContentEnabled", settings.manhwaLatinoAdultContentEnabled)
             .put("preferredChapterLanguage", settings.preferredChapterLanguage)
@@ -1334,6 +1477,10 @@ private fun AppSettingsEntity.toContentValues(): ContentValues = ContentValues()
     put("selected_provider_id", selectedProviderId)
     put("use_dark_theme", useDarkTheme)
     put("auto_jump_to_unread", autoJumpToUnread)
+    put("adult_content_enabled", adultContentEnabled)
+    put("adult_content_pin_hash", adultContentPinHash)
+    put("adult_only_providers_enabled", adultOnlyProvidersEnabled)
+    put("disabled_provider_ids_json", disabledProviderIdsJson)
     put("mangaball_adult_content_enabled", mangaBallAdultContentEnabled)
     put("manhwa_latino_adult_content_enabled", manhwaLatinoAdultContentEnabled)
     put("app_language", appLanguage)
@@ -1452,6 +1599,18 @@ private fun SQLiteDatabase.readAppSettingsBackup(): AppSettingsEntity =
             selectedProviderId = cursor.getString(cursor.getColumnIndexOrThrow("selected_provider_id")),
             useDarkTheme = cursor.getInt(cursor.getColumnIndexOrThrow("use_dark_theme")) != 0,
             autoJumpToUnread = cursor.getInt(cursor.getColumnIndexOrThrow("auto_jump_to_unread")) != 0,
+            adultContentEnabled = cursor.getColumnIndex("adult_content_enabled").takeIf { it >= 0 }
+                ?.let { cursor.getInt(it) != 0 }
+                ?: false,
+            adultContentPinHash = cursor.getColumnIndex("adult_content_pin_hash").takeIf { it >= 0 }
+                ?.let { cursor.getString(it).orEmpty() }
+                ?: "",
+            adultOnlyProvidersEnabled = cursor.getColumnIndex("adult_only_providers_enabled").takeIf { it >= 0 }
+                ?.let { cursor.getInt(it) != 0 }
+                ?: false,
+            disabledProviderIdsJson = cursor.getColumnIndex("disabled_provider_ids_json").takeIf { it >= 0 }
+                ?.let { cursor.getString(it).orEmpty() }
+                ?: "[]",
             mangaBallAdultContentEnabled = cursor.getInt(cursor.getColumnIndexOrThrow("mangaball_adult_content_enabled")) != 0,
             manhwaLatinoAdultContentEnabled = cursor.getColumnIndex("manhwa_latino_adult_content_enabled").takeIf { it >= 0 }
                 ?.let { cursor.getInt(it) != 0 }

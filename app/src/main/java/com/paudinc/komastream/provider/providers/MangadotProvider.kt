@@ -24,7 +24,6 @@ import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.chapterValue
 import com.paudinc.komastream.utils.normalizeStoredPath
-import android.util.Log
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.JavaNetCookieJar
 import okhttp3.OkHttpClient
@@ -317,7 +316,6 @@ class MangadotProvider : MangaProvider {
             webkitCookieManager.removeAllCookies(null)
             webkitCookieManager.flush()
         }
-        Log.d(TAG, "Cleared Mangadot Cloudflare state")
     }
 
     fun waitForCloudflareCookie(timeoutMs: Long = CLOUDFLARE_WAIT_TIMEOUT_MS): Boolean {
@@ -330,17 +328,9 @@ class MangadotProvider : MangaProvider {
             }
             val cookieHeader = snapshotWebkitCookies()
             lastSeenCookieHeader = cookieHeader
-            Log.d(
-                TAG,
-                "Waiting for cf_clearance cookie; hasCfBm=${cookieHeader.contains("__cf_bm=")}"
-            )
             Thread.sleep(CLOUDFLARE_POLL_INTERVAL_MS)
         }
 
-        Log.e(
-            TAG,
-            "Timed out waiting for cf_clearance cookie; lastCookies=${lastSeenCookieHeader.take(120)}"
-        )
         throw IllegalStateException(
             "Cloudflare challenge was not fully solved before timeout"
         )
@@ -356,7 +346,6 @@ class MangadotProvider : MangaProvider {
             if (!cloudflareReady) {
                 syncCookies(cookieHeader)
                 cloudflareReady = true
-                Log.d(TAG, "Cloudflare clearance cookie detected and synced")
             }
         }
         return true
@@ -373,7 +362,6 @@ class MangadotProvider : MangaProvider {
             webkitCookieManager.flush()
             webkitCookieManager.getCookie(baseUrl).orEmpty()
         }.getOrElse { throwable ->
-            Log.w(TAG, "Unable to read WebView cookies", throwable)
             ""
         }
     }

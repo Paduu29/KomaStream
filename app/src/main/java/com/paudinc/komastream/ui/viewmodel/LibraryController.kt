@@ -1,7 +1,6 @@
 package com.paudinc.komastream.ui.viewmodel
 
 import android.content.Context
-import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.getValue
@@ -158,7 +157,6 @@ class LibraryController(
                 refreshOfflineDownloads()
                 Toast.makeText(context, strings.chapterRemoved, Toast.LENGTH_SHORT).show()
             }.onFailure {
-                Log.e("KomaStream", "Could not remove downloaded chapter", it)
                 onError(it.message ?: strings.couldNotRemoveDownload)
             }
         }
@@ -337,13 +335,22 @@ class LibraryController(
     }
 
     fun changeMangaBallAdultContent(enabled: Boolean) {
-        libraryStore.setMangaBallAdultContentEnabled(enabled)
+        libraryStore.setAdultContentEnabled(enabled)
         refreshState()
     }
 
     fun changeManhwaLatinoAdultContent(enabled: Boolean) {
-        Log.d("KomaStream", "changeManhwaLatinoAdultContent: storing enabled=$enabled")
-        libraryStore.setManhwaLatinoAdultContentEnabled(enabled)
+        libraryStore.setAdultContentEnabled(enabled)
+        refreshState()
+    }
+
+    fun changeAdultContentEnabled(enabled: Boolean) {
+        libraryStore.setAdultContentEnabled(enabled)
+        refreshState()
+    }
+
+    fun changeAdultOnlyProvidersEnabled(enabled: Boolean) {
+        libraryStore.setAdultOnlyProvidersEnabled(enabled)
         refreshState()
     }
 
@@ -386,9 +393,13 @@ class LibraryController(
     }
 
     fun selectProvider(providerId: String) {
-        android.util.Log.d("LibraryController", "selectProvider: $providerId")
         libraryStore.setSelectedProviderId(providerId)
         libraryStore.setHasSeenProviderPicker(true)
+        refreshState(filterBySelectedProvider = true)
+    }
+
+    fun setProviderEnabled(providerId: String, enabled: Boolean) {
+        libraryStore.setProviderEnabled(providerId, enabled)
         refreshState(filterBySelectedProvider = true)
     }
 

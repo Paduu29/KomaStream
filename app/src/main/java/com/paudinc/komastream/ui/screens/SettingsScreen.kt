@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
@@ -43,12 +44,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,7 +59,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.paudinc.komastream.data.model.AppLanguage
+import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.ui.components.MarkdownReleaseNotes
@@ -69,7 +74,6 @@ import com.paudinc.komastream.utils.AppStrings
 @Composable
 fun SettingsScreen(
     strings: AppStrings,
-    selectedProviderId: String,
     onOpenLanguage: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenChapterLanguage: () -> Unit,
@@ -115,17 +119,11 @@ fun SettingsScreen(
                         title = strings.reader,
                         onClick = onOpenReader,
                     )
-                    if (selectedProviderId == MangaBallProvider.PROVIDER_ID || selectedProviderId == ManhwaLatinoProvider.PROVIDER_ID) {
-                        SettingsNavigationItem(
-                            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-                            title = if (selectedProviderId == ManhwaLatinoProvider.PROVIDER_ID) {
-                                strings.manhwaLatinoAdultContentLabel
-                            } else {
-                                strings.mangaBallAdultContentLabel
-                            },
-                            onClick = onOpenContent,
-                        )
-                    }
+                    SettingsNavigationItem(
+                        icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+                        title = strings.contentAccess,
+                        onClick = onOpenContent,
+                    )
                     SettingsNavigationItem(
                         icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
                         title = strings.updates,
@@ -242,51 +240,62 @@ fun ReaderSettingsScreen(
 @Composable
 fun ContentSettingsScreen(
     strings: AppStrings,
-    selectedProviderId: String,
-    mangaBallAdultContentEnabled: Boolean,
-    manhwaLatinoAdultContentEnabled: Boolean,
-    onMangaBallAdultContentChange: (Boolean) -> Unit,
-    onManhwaLatinoAdultContentChange: (Boolean) -> Unit,
+    adultContentEnabled: Boolean,
+    adultOnlyProvidersEnabled: Boolean,
+    adultContentPinIsConfigured: Boolean,
+    providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
+    disabledProviderIds: Set<String>,
+    onAdultContentEnabledChange: (Boolean) -> Unit,
+    onAdultOnlyProvidersEnabledChange: (Boolean) -> Unit,
+    onSetAdultContentPin: (String) -> Unit,
+    onVerifyAdultContentPin: (String) -> Boolean,
+    onProviderEnabledChange: (String, Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        when (selectedProviderId) {
-            ManhwaLatinoProvider.PROVIDER_ID -> AdultContentSettingCard(
-                strings = strings,
-                title = strings.manhwaLatinoAdultContentLabel,
-                description = strings.manhwaLatinoAdultContentDescription,
-                warningTitle = strings.manhwaLatinoAdultContentLabel,
-                warningMessage = strings.manhwaLatinoAdultContentDescription,
-                enabled = manhwaLatinoAdultContentEnabled,
-                onEnabledChange = onManhwaLatinoAdultContentChange,
-            )
-            else -> AdultContentSettingCard(
-                strings = strings,
-                title = strings.mangaBallAdultContentLabel,
-                description = strings.mangaBallAdultContentDescription,
-                warningTitle = strings.mangaBallAdultContentWarningTitle,
-                warningMessage = strings.mangaBallAdultContentWarningMessage,
-                enabled = mangaBallAdultContentEnabled,
-                onEnabledChange = onMangaBallAdultContentChange,
-            )
-        }
+        AdultAccessSettingCard(
+            strings = strings,
+            enabled = adultContentEnabled,
+            adultOnlyProvidersEnabled = adultOnlyProvidersEnabled,
+            pinConfigured = adultContentPinIsConfigured,
+            onEnabledChange = onAdultContentEnabledChange,
+            onAdultOnlyProvidersEnabledChange = onAdultOnlyProvidersEnabledChange,
+            onSetAdultContentPin = onSetAdultContentPin,
+            onVerifyAdultContentPin = onVerifyAdultContentPin,
+        )
+        ProviderAccessSettingCard(
+            strings = strings,
+            providersByLanguage = providersByLanguage,
+            disabledProviderIds = disabledProviderIds,
+            adultOnlyProvidersEnabled = adultOnlyProvidersEnabled,
+            adultContentPinIsConfigured = adultContentPinIsConfigured,
+            onSetAdultContentPin = onSetAdultContentPin,
+            onVerifyAdultContentPin = onVerifyAdultContentPin,
+            onProviderEnabledChange = onProviderEnabledChange,
+        )
     }
 }
 
 @Composable
-private fun AdultContentSettingCard(
+private fun AdultAccessSettingCard(
     strings: AppStrings,
-    title: String,
-    description: String,
-    warningTitle: String,
-    warningMessage: String,
     enabled: Boolean,
+    adultOnlyProvidersEnabled: Boolean,
+    pinConfigured: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    onAdultOnlyProvidersEnabledChange: (Boolean) -> Unit,
+    onSetAdultContentPin: (String) -> Unit,
+    onVerifyAdultContentPin: (String) -> Boolean,
 ) {
-    var showAdultContentDialog by rememberSaveable { mutableStateOf(false) }
+    var showPinDialog by rememberSaveable { mutableStateOf(false) }
+    var pinMode by remember { mutableStateOf(PinMode.NONE) }
+    var pendingTarget by remember { mutableStateOf(ContentPinTarget.NONE) }
+    var pinValue by rememberSaveable { mutableStateOf("") }
+    var pinConfirmation by rememberSaveable { mutableStateOf("") }
+    var pinError by rememberSaveable { mutableStateOf("") }
 
     SettingsCardScreen {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(strings.contentAccess, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(strings.contentAccessDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -300,34 +309,287 @@ private fun AdultContentSettingCard(
             Switch(
                 checked = enabled,
                 onCheckedChange = { nextEnabled ->
-                    if (nextEnabled) showAdultContentDialog = true else onEnabledChange(false)
+                    pinError = ""
+                    pinValue = ""
+                    pinConfirmation = ""
+                    pendingTarget = ContentPinTarget.ADULT_CONTENT
+                    if (pinConfigured) {
+                        pinMode = PinMode.VERIFY
+                        showPinDialog = true
+                    } else if (nextEnabled) {
+                        onEnabledChange(true)
+                    } else {
+                        onEnabledChange(false)
+                    }
                 },
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = strings.adultOnlyProviders,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = adultOnlyProvidersEnabled,
+                onCheckedChange = { nextEnabled ->
+                    pinError = ""
+                    pinValue = ""
+                    pinConfirmation = ""
+                    pendingTarget = ContentPinTarget.ADULT_ONLY_PROVIDERS
+                    if (pinConfigured) {
+                        pinMode = PinMode.VERIFY
+                        showPinDialog = true
+                    } else if (nextEnabled) {
+                        onAdultOnlyProvidersEnabledChange(true)
+                    } else {
+                        onAdultOnlyProvidersEnabledChange(false)
+                    }
+                },
+            )
+        }
+        Text(
+            strings.adultOnlyProvidersDescription,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 
-    if (showAdultContentDialog) {
+    if (showPinDialog) {
         AlertDialog(
-            onDismissRequest = { showAdultContentDialog = false },
-            title = { Text(warningTitle) },
-            text = { Text(warningMessage) },
+            onDismissRequest = { showPinDialog = false },
+            title = {
+                Text(
+                    when (pinMode) {
+                        PinMode.CREATE -> strings.setParentalPin
+                        PinMode.VERIFY -> strings.enterParentalPin
+                        PinMode.NONE -> strings.setParentalPin
+                    }
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        when (pinMode) {
+                            PinMode.CREATE -> strings.setParentalPinDescription
+                            PinMode.VERIFY -> strings.enterParentalPinDescription
+                            PinMode.NONE -> strings.setParentalPinDescription
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = pinValue,
+                        onValueChange = { pinValue = it; pinError = "" },
+                        label = { Text(strings.parentalPin) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                    if (pinMode == PinMode.CREATE) {
+                        OutlinedTextField(
+                            value = pinConfirmation,
+                            onValueChange = { pinConfirmation = it; pinError = "" },
+                            label = { Text(strings.confirmParentalPin) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                        )
+                    }
+                    if (pinError.isNotBlank()) {
+                        Text(pinError, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showAdultContentDialog = false
-                        onEnabledChange(true)
+                        when (pinMode) {
+                            PinMode.CREATE -> {
+                                val trimmedPin = pinValue.trim()
+                                if (trimmedPin.length < 4) {
+                                    pinError = strings.parentalPinTooShort
+                                    return@TextButton
+                                }
+                                if (trimmedPin != pinConfirmation.trim()) {
+                                    pinError = strings.parentalPinMismatch
+                                    return@TextButton
+                                }
+                                onSetAdultContentPin(trimmedPin)
+                                when (pendingTarget) {
+                                    ContentPinTarget.ADULT_CONTENT -> onEnabledChange(true)
+                                    ContentPinTarget.ADULT_ONLY_PROVIDERS -> onAdultOnlyProvidersEnabledChange(true)
+                                    ContentPinTarget.NONE -> Unit
+                                }
+                                showPinDialog = false
+                            }
+                            PinMode.VERIFY -> {
+                                if (onVerifyAdultContentPin(pinValue)) {
+                                    when (pendingTarget) {
+                                        ContentPinTarget.ADULT_CONTENT -> onEnabledChange(!enabled)
+                                        ContentPinTarget.ADULT_ONLY_PROVIDERS -> onAdultOnlyProvidersEnabledChange(!adultOnlyProvidersEnabled)
+                                        ContentPinTarget.NONE -> Unit
+                                    }
+                                    showPinDialog = false
+                                } else {
+                                    pinError = strings.parentalPinInvalid
+                                }
+                            }
+                            PinMode.NONE -> showPinDialog = false
+                        }
                     },
                 ) {
                     Text(strings.enableAdultContent)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAdultContentDialog = false }) {
+                TextButton(onClick = { showPinDialog = false }) {
                     Text(strings.cancel)
                 }
             },
         )
     }
+}
+
+private enum class ContentPinTarget {
+    NONE,
+    ADULT_CONTENT,
+    ADULT_ONLY_PROVIDERS,
+}
+
+@Composable
+private fun ProviderAccessSettingCard(
+    strings: AppStrings,
+    providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
+    disabledProviderIds: Set<String>,
+    adultOnlyProvidersEnabled: Boolean,
+    adultContentPinIsConfigured: Boolean,
+    onSetAdultContentPin: (String) -> Unit,
+    onVerifyAdultContentPin: (String) -> Boolean,
+    onProviderEnabledChange: (String, Boolean) -> Unit,
+) {
+    var showPinDialog by rememberSaveable { mutableStateOf(false) }
+    var pinMode by remember { mutableStateOf(PinMode.NONE) }
+    var pendingProviderId by rememberSaveable { mutableStateOf("") }
+    var pendingProviderEnabled by rememberSaveable { mutableStateOf(false) }
+    var pinValue by rememberSaveable { mutableStateOf("") }
+    var pinConfirmation by rememberSaveable { mutableStateOf("") }
+    var pinError by rememberSaveable { mutableStateOf("") }
+
+    SettingsCardScreen {
+        Text(strings.providerAccess, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(strings.providerAccessDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+            AppLanguage.entries.forEach { language ->
+                val providers = providersByLanguage[language].orEmpty()
+                if (providers.isEmpty()) return@forEach
+                Text(
+                    text = when (language) {
+                        AppLanguage.EN -> strings.english
+                        AppLanguage.ES -> strings.spanish
+                        AppLanguage.DE -> strings.german
+                        AppLanguage.MULTI -> strings.multilingual
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    providers.forEach { provider ->
+                        val providerEnabled = provider.id !in disabledProviderIds
+                        val providerAccessLocked = provider.isAdultOnly && !adultOnlyProvidersEnabled
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = provider.displayName,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            if (provider.isAdultOnly) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = providerEnabled,
+                                enabled = !providerAccessLocked,
+                                onCheckedChange = { nextEnabled ->
+                                    if (!nextEnabled) {
+                                        onProviderEnabledChange(provider.id, false)
+                                    } else {
+                                        pinError = ""
+                                        pinValue = ""
+                                        pinConfirmation = ""
+                                        pendingProviderId = provider.id
+                                        pendingProviderEnabled = true
+                                        pinMode = if (adultContentPinIsConfigured) PinMode.VERIFY else PinMode.CREATE
+                                        showPinDialog = true
+                                    }
+                                },
+                            )
+                        }
+                        if (providerAccessLocked) {
+                            Text(
+                                text = strings.adultOnlyProvidersDescription,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showPinDialog) {
+        AlertDialog(
+            onDismissRequest = { showPinDialog = false },
+            title = { Text(strings.enterParentalPin) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.enterParentalPinDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = pinValue,
+                        onValueChange = { pinValue = it; pinError = "" },
+                        label = { Text(strings.parentalPin) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                    if (pinError.isNotBlank()) {
+                        Text(pinError, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (onVerifyAdultContentPin(pinValue)) {
+                            onProviderEnabledChange(pendingProviderId, pendingProviderEnabled)
+                            showPinDialog = false
+                        } else {
+                            pinError = strings.parentalPinInvalid
+                        }
+                    }
+                ) {
+                    Text(strings.save)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPinDialog = false }) {
+                    Text(strings.cancel)
+                }
+            },
+        )
+    }
+}
+
+private enum class PinMode {
+    NONE,
+    CREATE,
+    VERIFY,
 }
 
 @Composable

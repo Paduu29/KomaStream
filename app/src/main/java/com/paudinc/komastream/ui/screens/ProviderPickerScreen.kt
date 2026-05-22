@@ -7,11 +7,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -25,14 +37,26 @@ import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.utils.AppStrings
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 
 @Composable
 fun ProviderPickerScreen(
     strings: AppStrings,
     selectedProviderId: String,
+    adultOnlyProvidersEnabled: Boolean,
+    adultContentPinIsConfigured: Boolean,
+    disabledProviderIds: Set<String>,
     providersByLanguage: Map<AppLanguage, List<MangaProvider>>,
     onSelectProvider: (String) -> Unit,
+    onToggleProviderEnabled: (String, Boolean) -> Unit,
+    onVerifyAdultContentPin: (String) -> Boolean,
 ) {
+    var showPinDialog by rememberSaveable { mutableStateOf(false) }
+    var pinValue by rememberSaveable { mutableStateOf("") }
+    var pinError by rememberSaveable { mutableStateOf("") }
+    var pendingProviderId by rememberSaveable { mutableStateOf("") }
+    var pendingProviderEnabled by rememberSaveable { mutableStateOf(false) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -85,22 +109,27 @@ fun ProviderPickerScreen(
                 )
             }
             items(providers) { provider ->
+                val providerEnabled = provider.id !in disabledProviderIds
+                val providerAccessLocked = provider.isAdultOnly && !adultOnlyProvidersEnabled
                 ElevatedCard(
                     modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
+                        .fillMaxWidth()
+                        .border(
                             width = 1.dp,
-                            color = if (selectedProviderId == provider.id) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            color = when {
+                                selectedProviderId == provider.id && providerEnabled -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                providerEnabled -> MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+                            },
                             shape = RoundedCornerShape(26.dp),
                         )
-                        .clickable { onSelectProvider(provider.id) },
+                        .clickable(enabled = providerEnabled && !providerAccessLocked) { onSelectProvider(provider.id) },
                     shape = RoundedCornerShape(26.dp),
                     colors = CardDefaults.elevatedCardColors(
-                        containerColor = if (selectedProviderId == provider.id) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surface
+                        containerColor = when {
+                            selectedProviderId == provider.id && providerEnabled -> MaterialTheme.colorScheme.primaryContainer
+                            providerEnabled -> MaterialTheme.colorScheme.surface
+                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
                         }
                     ),
                 ) {
@@ -134,17 +163,89 @@ fun ProviderPickerScreen(
 
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text(
-                                provider.displayName,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    provider.displayName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (provider.isAdultContent) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Lock,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
                         }
+
+                        Switch(
+                            checked = providerEnabled,
+                            onCheckedChange = { enabled ->
+                                if (!enabled) {
+                                    onToggleProviderEnabled(provider.id, false)
+                                } else if (adultContentPinIsConfigured) {
+                                    pinError = ""
+                                    pinValue = ""
+                                    pendingProviderId = provider.id
+                                    pendingProviderEnabled = true
+                                    showPinDialog = true
+                                } else {
+                                    onToggleProviderEnabled(provider.id, true)
+                                }
+                            },
+                            enabled = !providerAccessLocked,
+                        )
                     }
                 }
             }
         }
+    }
+
+    if (showPinDialog) {
+        AlertDialog(
+            onDismissRequest = { showPinDialog = false },
+            title = { Text(strings.enterParentalPin) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(strings.enterParentalPinDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = pinValue,
+                        onValueChange = { pinValue = it; pinError = "" },
+                        label = { Text(strings.parentalPin) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                    if (pinError.isNotBlank()) {
+                        Text(pinError, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (onVerifyAdultContentPin(pinValue)) {
+                            onToggleProviderEnabled(pendingProviderId, pendingProviderEnabled)
+                            showPinDialog = false
+                        } else {
+                            pinError = strings.parentalPinInvalid
+                        }
+                    }
+                ) {
+                    Text(strings.save)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPinDialog = false }) {
+                    Text(strings.cancel)
+                }
+            },
+        )
     }
 }

@@ -29,6 +29,19 @@ class ProviderRegistry(
         providersById[providerId] ?: orderedProviders.first()
 
     fun defaultProvider(): MangaProvider = orderedProviders.first()
+
+    fun isSelectable(providerId: String, disabledProviderIds: Set<String>, adultOnlyProvidersEnabled: Boolean): Boolean {
+        val provider = providersById[providerId] ?: return false
+        if (providerId in disabledProviderIds) return false
+        if (provider.isAdultOnly && !adultOnlyProvidersEnabled) return false
+        return true
+    }
+
+    fun firstSelectableProvider(disabledProviderIds: Set<String>, adultOnlyProvidersEnabled: Boolean): MangaProvider? =
+        orderedProviders.firstOrNull { isSelectable(it.id, disabledProviderIds, adultOnlyProvidersEnabled) }
+
+    fun selectableProviderId(disabledProviderIds: Set<String>, adultOnlyProvidersEnabled: Boolean): String =
+        firstSelectableProvider(disabledProviderIds, adultOnlyProvidersEnabled)?.id.orEmpty()
 }
 
 fun createDefaultProviderRegistry(): ProviderRegistry =
@@ -44,7 +57,7 @@ fun createDefaultProviderRegistry(context: Context?): ProviderRegistry =
             add(MangaFireProvider(context))
             add(MarmotaProvider())
             add(MangadotProvider())
-            add(ManhwaLatinoProvider())
+            context?.let { add(ManhwaLatinoProvider(it)) }
             context?.let { add(MangaBallProvider(it)) }
             context?.let { add(AkaiComicProvider(it)) }
         }

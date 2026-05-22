@@ -3,7 +3,6 @@ package com.paudinc.komastream.provider.providers
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.webkit.CookieManager as WebkitCookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -71,7 +70,6 @@ class MangaTubeProvider(
         val homeHtml = homeDocument.outerHtml()
         val routeData = extractRouteData(homeHtml)
         logHtmlPreview("fetchHomeFeed:okhttpHome", homeHtml)
-        Log.d(TAG, "fetchHomeFeed: routeData=${routeData != null}")
         var latestUpdates = routeData?.optJSONArray("published").toHomeChapterSummaries()
             .ifEmpty {
                 runCatching { fetchLatestUpdates(offset = 0) }
@@ -88,7 +86,6 @@ class MangaTubeProvider(
             if (renderedDocument != null) {
                 logHtmlPreview("fetchHomeFeed:webViewHome", renderedDocument.outerHtml())
                 val renderedRouteData = extractRouteData(renderedDocument.outerHtml())
-                Log.d(TAG, "fetchHomeFeed: renderedRouteData=${renderedRouteData != null}")
                 latestUpdates = renderedRouteData?.optJSONArray("published").toHomeChapterSummaries()
                     .ifEmpty { parseLatestUpdatesFromHtml(renderedDocument) }
                 popularMangas = renderedRouteData?.optJSONArray("top-manga").toMangaSummaries()
@@ -99,10 +96,6 @@ class MangaTubeProvider(
                     .ifEmpty { parseNewMangasFromHtml(renderedDocument) }
             }
         }
-        Log.d(
-            TAG,
-            "fetchHomeFeed: latest=${latestUpdates.size} popular=${popularMangas.size} new=${newMangas.size}"
-        )
         val sections = listOf(
             HomeFeedSection(
                 id = "new-on-mangatube",
@@ -308,7 +301,6 @@ class MangaTubeProvider(
                 settings.userAgentString = USER_AGENT
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
-                        Log.d(TAG, "getRenderedDocument:onPageFinished url=$url")
                         if (url.isNullOrBlank() || !url.startsWith(baseUrl)) return
                         if (!settled) {
                             settled = true
@@ -330,7 +322,6 @@ class MangaTubeProvider(
             webView?.destroy()
         }
         if (html == null) {
-            Log.w(TAG, "getRenderedDocument: no HTML captured for path=$path")
         }
         return html?.takeIf { it.contains("<html", ignoreCase = true) }
             ?.let { Jsoup.parse(it, baseUrl) }
@@ -491,38 +482,12 @@ class MangaTubeProvider(
 
     private fun fetchTopManga(): List<MangaSummary> =
         getJson("/api/home/top-manga")
-            .also { response ->
-                Log.d(
-                    TAG,
-                    "fetchTopManga: keys=${response.keys().asSequence().toList()} dataType=${response.opt("data")?.javaClass?.simpleName}"
-                )
-                response.optJSONObject("data")?.let { data ->
-                    Log.d(
-                        TAG,
-                        "fetchTopManga:data keys=${data.keys().asSequence().toList()}"
-                    )
-                }
-            }
             .extractHomeMangaArray("top-manga")
-            .also { array -> Log.d(TAG, "fetchTopManga: extracted=${array?.length() ?: -1}") }
             .toMangaSummaries()
 
     private fun fetchNewManga(): List<MangaSummary> =
         getJson("/api/home/new-manga")
-            .also { response ->
-                Log.d(
-                    TAG,
-                    "fetchNewManga: keys=${response.keys().asSequence().toList()} dataType=${response.opt("data")?.javaClass?.simpleName}"
-                )
-                response.optJSONObject("data")?.let { data ->
-                    Log.d(
-                        TAG,
-                        "fetchNewManga:data keys=${data.keys().asSequence().toList()}"
-                    )
-                }
-            }
             .extractHomeMangaArray("new-manga")
-            .also { array -> Log.d(TAG, "fetchNewManga: extracted=${array?.length() ?: -1}") }
             .toMangaSummaries()
 
     private fun getDocument(path: String): org.jsoup.nodes.Document {
@@ -534,10 +499,6 @@ class MangaTubeProvider(
             .build()
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
-            Log.d(
-                TAG,
-                "getDocument: path=$path code=${response.code} finalUrl=${response.request.url}"
-            )
             logHtmlPreview("getDocument:$path", body)
             return Jsoup.parse(body, baseUrl)
         }
@@ -569,10 +530,6 @@ class MangaTubeProvider(
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             val trimmed = body.trimStart()
-            Log.d(
-                TAG,
-                "getJson: path=$path code=${response.code} finalUrl=${response.request.url} startsWith=${trimmed.take(20)}"
-            )
             if (!trimmed.startsWith("{")) {
                 logHtmlPreview("getJson:$path", body)
                 throw IllegalStateException(
@@ -600,10 +557,6 @@ class MangaTubeProvider(
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             val trimmed = body.trimStart()
-            Log.d(
-                TAG,
-                "postFormJson: path=$path code=${response.code} finalUrl=${response.request.url} startsWith=${trimmed.take(20)}"
-            )
             if (!trimmed.startsWith("{")) {
                 logHtmlPreview("postFormJson:$path", body)
             }
@@ -618,10 +571,6 @@ class MangaTubeProvider(
         val html = getDocument("/").outerHtml()
         csrfToken = extractJsStringValue(html, "window.laravel={\"_token\": \"")
             ?: Regex("""window\.laravel=\{"_token":\s*"([^"]+)"""").find(html)?.groupValues?.getOrNull(1)
-        Log.d(
-            TAG,
-            "ensureSession: csrf=${!csrfToken.isNullOrBlank()} xsrf=${xsrfCookie() != null} cookies=${cookieHeader(baseUrl).take(LOG_PREVIEW_LENGTH)}"
-        )
     }
 
     private fun bootstrapWebSession() {
@@ -643,7 +592,6 @@ class MangaTubeProvider(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         if (!url.isNullOrBlank() && url.startsWith(baseUrl)) {
-                            Log.d(TAG, "bootstrapWebSession:onPageFinished url=$url")
                             if (!settled) {
                                 settled = true
                                 waitForUsablePage(view, latch, waitState)
@@ -662,10 +610,6 @@ class MangaTubeProvider(
             webView?.stopLoading()
             webView?.destroy()
         }
-        Log.d(
-            TAG,
-            "bootstrapWebSession: done cookies=${webkitCookieManager.getCookie(baseUrl).orEmpty().take(LOG_PREVIEW_LENGTH)}"
-        )
     }
 
     private fun waitForUsablePage(
@@ -701,10 +645,6 @@ class MangaTubeProvider(
             val text = payload?.optString("text").orEmpty()
             val html = payload?.optString("html").orEmpty()
             val blocked = isVerificationPage(title, text, html)
-            Log.d(
-                TAG,
-                "waitForUsablePage: attempt=$attempt blocked=$blocked title='$title' text='${text.take(180)}'"
-            )
             if (!blocked && html.contains("<html", ignoreCase = true)) {
                 onHtmlReady?.invoke(html)
                 latch.countDown()
@@ -783,11 +723,9 @@ class MangaTubeProvider(
     private fun logHtmlPreview(label: String, body: String) {
         val trimmed = body.replace(Regex("\\s+"), " ").trim()
         if (trimmed.isBlank()) {
-            Log.d(TAG, "$label: <blank>")
             return
         }
         val title = runCatching { Jsoup.parse(body).title() }.getOrDefault("")
-        Log.d(TAG, "$label: title='$title' preview='${trimmed.take(LOG_PREVIEW_LENGTH)}'")
     }
 
     private fun JSONObject.extractHomeMangaArray(key: String): JSONArray? {

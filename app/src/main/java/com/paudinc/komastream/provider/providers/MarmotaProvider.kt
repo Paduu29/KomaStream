@@ -2,7 +2,6 @@ package com.paudinc.komastream.provider.providers
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CatalogSearchResult
@@ -330,13 +329,11 @@ class MarmotaProvider : MangaProvider {
             .build()
         val html = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                Log.w("MarmotaProvider", "Chapter request failed for $path with HTTP ${response.code}")
                 return emptyList()
             }
             response.body?.string().orEmpty()
         }
         if (html.isBlank()) {
-            Log.w("MarmotaProvider", "Chapter request returned an empty body for $path")
             return emptyList()
         }
         val document = Jsoup.parse(html, BASE_URL)

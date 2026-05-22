@@ -107,6 +107,14 @@ data class AppSettingsEntity(
     val useDarkTheme: Boolean = false,
     @ColumnInfo(name = "auto_jump_to_unread")
     val autoJumpToUnread: Boolean = true,
+    @ColumnInfo(name = "adult_content_enabled")
+    val adultContentEnabled: Boolean = false,
+    @ColumnInfo(name = "adult_content_pin_hash")
+    val adultContentPinHash: String = "",
+    @ColumnInfo(name = "adult_only_providers_enabled")
+    val adultOnlyProvidersEnabled: Boolean = false,
+    @ColumnInfo(name = "disabled_provider_ids_json")
+    val disabledProviderIdsJson: String = "[]",
     @ColumnInfo(name = "mangaball_adult_content_enabled")
     val mangaBallAdultContentEnabled: Boolean = false,
     @ColumnInfo(name = "manhwa_latino_adult_content_enabled")

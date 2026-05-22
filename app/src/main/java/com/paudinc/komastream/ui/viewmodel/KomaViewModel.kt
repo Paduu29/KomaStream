@@ -2,7 +2,6 @@ package com.paudinc.komastream.ui.viewmodel
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -183,6 +182,10 @@ class KomaViewModel(
     }
 
     fun refreshHome(providerId: String = currentProvider.id, force: Boolean = false) {
+        providerAccessError(providerId)?.let {
+            showError(it)
+            return
+        }
         val provider = providerRegistry.get(providerId)
         if (requiresCloudflareBootstrap(providerId) && !cloudflareReady(providerId)) {
             requestBrowserBootstrap(providerId)
@@ -193,6 +196,10 @@ class KomaViewModel(
 
     fun refreshCatalogFilterOptions() {
         val provider = currentProvider
+        providerAccessError(provider.id)?.let {
+            showError(it)
+            return
+        }
         if (requiresCloudflareBootstrap(provider.id) && !cloudflareReady(provider.id)) {
             requestBrowserBootstrap(provider.id)
             return
@@ -201,6 +208,10 @@ class KomaViewModel(
     }
 
     fun searchCatalog(loadMore: Boolean = false) {
+        providerAccessError(currentProvider.id)?.let {
+            showError(it)
+            return
+        }
         catalogController.search(
             provider = currentProvider,
             loadMore = loadMore,
@@ -210,6 +221,10 @@ class KomaViewModel(
     }
 
     fun openDetail(providerId: String, path: String) {
+        providerAccessError(providerId)?.let {
+            showError(it)
+            return
+        }
         readerController.openDetail(
             providerId = providerId,
             path = path,
@@ -220,6 +235,10 @@ class KomaViewModel(
     }
 
     fun openReader(providerId: String, path: String, replace: Boolean = false, resumeProgress: Boolean = true) {
+        providerAccessError(providerId)?.let {
+            showError(it)
+            return
+        }
         readerController.openReader(
             providerId = providerId,
             path = path,
@@ -235,6 +254,10 @@ class KomaViewModel(
     }
 
     fun openCommunity(providerId: String, path: String) {
+        providerAccessError(providerId)?.let {
+            showError(it)
+            return
+        }
         readerController.openCommunity(
             providerId = providerId,
             path = path,
@@ -389,30 +412,46 @@ class KomaViewModel(
     }
 
     fun changeMangaBallAdultContent(enabled: Boolean) {
-        libraryController.changeMangaBallAdultContent(enabled)
-        providerRegistry.get(MangaBallProvider.PROVIDER_ID).invalidateCaches()
-        homeController.clearFeed()
-        catalogController.resetForProviderChange()
-        if (currentProvider.id == MangaBallProvider.PROVIDER_ID) {
-            refreshHome(providerId = MangaBallProvider.PROVIDER_ID, force = true)
-            catalogController.refreshFilterOptions(currentProvider)
-        }
+        changeAdultContentEnabled(enabled)
     }
 
     fun changeManhwaLatinoAdultContent(enabled: Boolean) {
-        Log.d("KomaStream", "changeManhwaLatinoAdultContent: enabled=$enabled selectedProvider=${libraryController.uiState.state.selectedProviderId}")
-        libraryController.changeManhwaLatinoAdultContent(enabled)
-        catalogController.resetForProviderChange()
-        if (libraryController.uiState.state.selectedProviderId == ManhwaLatinoProvider.PROVIDER_ID) {
-            Log.d("KomaStream", "changeManhwaLatinoAdultContent: refreshing current provider content")
-            refreshCurrentProviderContent(clearVisibleData = true)
-        } else {
-            Log.d("KomaStream", "changeManhwaLatinoAdultContent: selected provider is not Manhwa Latino, skipping direct home refresh")
-        }
+        changeAdultContentEnabled(enabled)
     }
 
     fun changePreferredChapterLanguage(language: AppLanguage) {
         libraryController.changePreferredChapterLanguage(language)
+    }
+
+    fun changeAdultContentEnabled(enabled: Boolean) {
+        libraryController.changeAdultContentEnabled(enabled)
+        providerRegistry.get(MangaBallProvider.PROVIDER_ID).invalidateCaches()
+        providerRegistry.get(ManhwaLatinoProvider.PROVIDER_ID).invalidateCaches()
+        homeController.clearFeed()
+        catalogController.resetForProviderChange()
+        if (currentProvider.isAdultContent) {
+            refreshCurrentProviderContent(clearVisibleData = true)
+        }
+    }
+
+    fun changeAdultOnlyProvidersEnabled(enabled: Boolean) {
+        libraryController.changeAdultOnlyProvidersEnabled(enabled)
+        if (!enabled && currentProvider.isAdultOnly) {
+            homeController.clearFeed()
+            catalogController.resetForProviderChange()
+        }
+    }
+
+    fun adultContentPinIsConfigured(): Boolean = libraryStore.adultContentPinIsConfigured()
+
+    fun setAdultContentPin(pin: String) {
+        libraryStore.setAdultContentPin(pin)
+    }
+
+    fun verifyAdultContentPin(pin: String): Boolean = libraryStore.verifyAdultContentPin(pin)
+
+    fun setProviderEnabled(providerId: String, enabled: Boolean) {
+        libraryController.setProviderEnabled(providerId, enabled)
     }
 
     fun invalidateCloudflareClearance(providerId: String) {
@@ -525,18 +564,22 @@ class KomaViewModel(
 
     fun refreshCurrentProviderContent(clearVisibleData: Boolean = false) {
         val provider = currentProvider
-        Log.d("KomaStream", "refreshCurrentProviderContent: provider=${provider.id} clearVisibleData=$clearVisibleData cloudflareReady=${cloudflareReady(provider.id)}")
+        providerAccessError(provider.id)?.let {
+            if (clearVisibleData) {
+                homeController.clearFeed()
+                catalogController.clearResults()
+            }
+            showError(it)
+            return
+        }
         if (requiresCloudflareBootstrap(provider.id) && !cloudflareReady(provider.id)) {
-            Log.d("KomaStream", "refreshCurrentProviderContent: requesting browser bootstrap for ${provider.id}")
             requestBrowserBootstrap(provider.id)
             return
         }
         if (clearVisibleData) {
-            Log.d("KomaStream", "refreshCurrentProviderContent: clearing home feed and catalog results")
             homeController.clearFeed()
             catalogController.clearResults()
         }
-        Log.d("KomaStream", "refreshCurrentProviderContent: refreshing filters and home for ${libraryController.uiState.state.selectedProviderId.ifBlank { provider.id }}")
         refreshCatalogFilterOptions()
         refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { provider.id })
     }
@@ -638,7 +681,6 @@ class KomaViewModel(
         private set
 
     private fun showError(message: String) {
-        Log.e("KomaStream", message)
         maybeRequestCloudflareBootstrap(message)
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
@@ -691,5 +733,13 @@ class KomaViewModel(
 
     private fun isCloudflareBootstrapRetryBlocked(): Boolean {
         return System.currentTimeMillis() < cloudflareBootstrapRetryBlockedUntilMs
+    }
+
+    private fun providerAccessError(providerId: String): String? {
+        val state = libraryController.currentState()
+        val provider = providerRegistry.all().firstOrNull { it.id == providerId } ?: return strings.couldNotOpenManga
+        if (providerId in state.disabledProviderIds) return strings.couldNotOpenManga
+        if (provider.isAdultOnly && !state.adultOnlyProvidersEnabled) return strings.adultOnlyProviderLocked
+        return null
     }
 }

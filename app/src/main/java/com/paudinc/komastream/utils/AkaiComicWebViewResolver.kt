@@ -3,7 +3,6 @@ package com.paudinc.komastream.utils
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -25,8 +24,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
     private val cookieManager = CookieManager.getInstance()
     private var cloudflareSolved = false
     private var webView: WebView? = null
-
-    init { Log.d("AkaiWebView", "=== init resolver ===") }
 
     fun fetchLatestChapters(): List<ChapterSummary> {
         solveCloudflare()
@@ -74,7 +71,7 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                 ))
             }
             chapters.sortedByDescending { it.registrationLabel }
-        } catch (e: Exception) { Log.e("AkaiWebView", "fetchLatestChapters error: ${e.message}"); emptyList() }
+        } catch (e: Exception) { emptyList() }
     }
 
     fun fetchHomeSections(): Map<String, List<MangaSummary>> {
@@ -85,7 +82,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
             result["recent"] = fetchRecent()
             result["popular"] = fetchPopular()
         } catch (e: Exception) {
-            Log.e("AkaiWebView", "fetchHomeSections error: ${e.message}")
         }
         return result
     }
@@ -102,7 +98,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
                 val cover = m.optString("cover_url", "")
                 val status = m.optString("status", "")
                 val views = m.optString("views", "")
-                Log.d("AkaiWebView", ">>> featured[$i]: name=$name cover=$cover")
                 MangaSummary("akaicomic-en", name, "/manga/${id.lowercase(Locale.ROOT)}", cover, status, "", "", "", views)
             }
         } catch (e: Exception) { emptyList() }
@@ -151,7 +146,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
         solveCloudflare()
         return try {
             val body = httpGet("/api/manga/list?limit=$limit&page=$page" + if (query.isNotBlank()) "&search=$query" else "")
-            Log.d("AkaiWebView", ">>> search response: $body")
             body
         } catch (e: Exception) { "{}" }
     }
@@ -177,7 +171,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
         solveCloudflare()
         return try {
             val body = httpGet("/api/manga/$mangaId")
-            Log.d("AkaiWebView", ">>> manga detail response: $body")
             body
         } catch (e: Exception) { "{}" }
     }
@@ -186,7 +179,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
         solveCloudflare()
         return try {
             val body = httpGet("/api/manga/$mangaId/chapters")
-            Log.d("AkaiWebView", ">>> chapters response: $body")
             body
         } catch (e: Exception) { "{}" }
     }
@@ -196,7 +188,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
         return try {
             val json = JSONObject(httpGet("/api/manga/$mangaId/chapter/$chapterNum/pages"))
             val arr = json.optJSONArray("pages") ?: JSONArray()
-            Log.d("AkaiWebView", ">>> pages response: $arr")
             (0 until arr.length()).map { i ->
                 val path = arr.optString(i) ?: return@map null
                 val fullUrl = "https://akaicomic.org$path"
@@ -220,7 +211,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
 
     private fun solveCloudflare() {
         if (cloudflareSolved) return
-        Log.d("AkaiWebView", ">>> solveCloudflare START")
         val latch = CountDownLatch(1)
         mainHandler.post {
             try {
@@ -244,10 +234,8 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
 
     private fun httpGet(path: String): String {
         val url = "https://akaicomic.org$path"
-        Log.d("AkaiWebView", ">>> httpGet: $url")
         return try {
             client.newCall(Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Accept", "application/json").build()).execute().use {
-                Log.d("AkaiWebView", ">>> ${it.code}")
                 it.body?.string() ?: "{}"
             }
         } catch (e: Exception) { "{}" }
@@ -255,7 +243,6 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
 
     private fun httpPost(path: String, body: String): String {
         val url = "https://akaicomic.org$path"
-        Log.d("AkaiWebView", ">>> httpPost: $url body=$body")
         return try {
             client.newCall(Request.Builder().url(url)
                 .header("User-Agent", USER_AGENT)

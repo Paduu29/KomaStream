@@ -1,7 +1,6 @@
 package com.paudinc.komastream.ui.viewmodel
 
 import android.net.Uri
-import android.util.Log
 import com.paudinc.komastream.data.model.BackupFormat
 import com.paudinc.komastream.data.model.BackupOperationType
 import com.paudinc.komastream.data.model.BackupOperationUiState
@@ -78,7 +77,6 @@ class BackupController(
                     message = strings.backupExportSuccess,
                 )
             }.onFailure {
-                Log.e("KomaStream", "Export failed", it)
                 _operationState.value = BackupOperationUiState.Completed(
                     type = BackupOperationType.EXPORT,
                     success = false,
@@ -178,7 +176,6 @@ class BackupController(
                     message = strings.backupImportSuccess,
                 )
             }.onFailure {
-                Log.e("KomaStream", "Import failed", it)
                 _operationState.value = BackupOperationUiState.Completed(
                     type = BackupOperationType.IMPORT,
                     success = false,

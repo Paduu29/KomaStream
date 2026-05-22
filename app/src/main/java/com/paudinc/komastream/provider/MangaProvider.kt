@@ -8,6 +8,8 @@ interface MangaProvider {
     val language: AppLanguage
     val websiteUrl: String
     val logoUrl: String
+    val isAdultContent: Boolean get() = false
+    val isAdultOnly: Boolean get() = false
 
     fun fetchHomeFeed(): HomeFeed
     fun fetchHomeSectionPage(sectionId: String, page: Int): HomeSectionPageResult? = null

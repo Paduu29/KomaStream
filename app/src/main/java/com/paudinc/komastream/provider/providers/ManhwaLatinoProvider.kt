@@ -1,6 +1,6 @@
 package com.paudinc.komastream.provider.providers
 
-import android.util.Log
+import android.content.Context
 import android.webkit.CookieManager as WebkitCookieManager
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
@@ -31,7 +31,9 @@ import java.net.CookiePolicy
 import java.net.HttpCookie
 import java.net.URI
 
-class ManhwaLatinoProvider : MangaProvider {
+class ManhwaLatinoProvider(
+    context: Context,
+) : MangaProvider {
     companion object {
         const val PROVIDER_ID = "manhwa-latino-es"
         private const val TAG = "ManhwaLatinoProvider"
@@ -47,6 +49,7 @@ class ManhwaLatinoProvider : MangaProvider {
     override val websiteUrl: String = "https://manhwa-latino.com"
     override val logoUrl: String = "https://zai.manhwa-latino.com/wp-content/uploads/2023/05/icon-l.png"
 
+    private val appContext = context.applicationContext
     private val baseUrl = websiteUrl
     private val webkitCookieManager = WebkitCookieManager.getInstance()
     private val cookieManager = CookieManager().apply {
@@ -62,9 +65,10 @@ class ManhwaLatinoProvider : MangaProvider {
         private set
 
     override fun fetchHomeFeed(): HomeFeed {
+        val adultContentEnabled = isAdultContentEnabled()
         val document = getDocument("/")
-        val featuredMangas = parseFeaturedMangaCards(document)
-        val cards = parseMangaCards(document)
+        val featuredMangas = parseFeaturedMangaCards(document, adultContentEnabled)
+        val cards = parseMangaCards(document, adultContentEnabled)
         val mangas = cards.map { it.manga }
         val latestUpdates = cards.mapNotNull { card ->
             card.latestChapterPath?.toChapterSummary(card.manga.title, card.manga.detailPath, card.manga.coverUrl)
@@ -96,9 +100,10 @@ class ManhwaLatinoProvider : MangaProvider {
 
     override fun fetchHomeSectionPage(sectionId: String, page: Int): HomeSectionPageResult? {
         if (page < 1) return null
+        val adultContentEnabled = isAdultContentEnabled()
         val document = getDocument(pagePath(page))
-        val featuredMangas = parseFeaturedMangaCards(document)
-        val cards = parseMangaCards(document)
+        val featuredMangas = parseFeaturedMangaCards(document, adultContentEnabled)
+        val cards = parseMangaCards(document, adultContentEnabled)
         val mangas = cards.map { it.manga }
         val latestUpdates = cards.mapNotNull { card ->
             card.latestChapterPath?.toChapterSummary(card.manga.title, card.manga.detailPath, card.manga.coverUrl)
@@ -135,22 +140,14 @@ class ManhwaLatinoProvider : MangaProvider {
         skip: Int,
         take: Int,
     ): CatalogSearchResult {
+        val adultContentEnabled = isAdultContentEnabled()
         val pageSize = take.coerceAtLeast(1)
         val page = (skip / pageSize) + 1
         val localSkip = skip % pageSize
-        Log.d(
-            TAG,
-            "searchCatalog: query='$query' skip=$skip take=$take page=$page localSkip=$localSkip sortBy='$sortBy' status='$broadcastStatus' onlyFavorites=$onlyFavorites categories=${categoryIds.joinToString()}"
-        )
         val searchPath = buildSearchPath(query = query, page = page)
-        Log.d(TAG, "searchCatalog: loading page=$page path='$searchPath'")
         val document = getDocument(searchPath)
-        val pageItems = parseMangaCards(document).map { it.manga }
+        val pageItems = parseMangaCards(document, adultContentEnabled).map { it.manga }
         val hasMore = hasNextPage(document)
-        Log.d(
-            TAG,
-            "searchCatalog: page=$page parsed=${pageItems.size} hasMore=$hasMore titles=${pageItems.take(5).joinToString { it.title }}"
-        )
         return CatalogSearchResult(
             items = pageItems.drop(localSkip).take(pageSize),
             hasMore = hasMore || localSkip + pageSize < pageItems.size,
@@ -163,7 +160,7 @@ class ManhwaLatinoProvider : MangaProvider {
             normalizedPath.trim('/').substringAfterLast('/')
         }
         val document = getDocument("/manga/$slug/")
-        val title = document.selectFirst("h1")?.text()?.trim().orEmpty()
+        val title = document.selectFirst("h1")?.let(::extractDisplayTitle).orEmpty()
             .ifBlank { document.selectFirst("meta[property=og:title]")?.attr("content")?.trim().orEmpty() }
             .ifBlank { slug.replace('-', ' ') }
         val coverUrl = listOf(
@@ -184,13 +181,6 @@ class ManhwaLatinoProvider : MangaProvider {
         val status = extractStatus(document)
         val publicationDate = document.selectFirst("meta[property=article:modified_time]")?.attr("content")?.trim().orEmpty()
         val chapters = fetchMangaChapters(document, normalizedPath)
-        Log.d(
-            TAG,
-            "fetchMangaDetail: path='$normalizedPath' slug='$slug' title='$title' chapters=${chapters.size} cover='${coverUrl.take(120)}' banner='${bannerUrl.take(120)}'"
-        )
-        if (chapters.isEmpty()) {
-            Log.w(TAG, "fetchMangaDetail: no chapters parsed for '$normalizedPath'")
-        }
         return MangaDetail(
             providerId = id,
             identification = slug,
@@ -220,10 +210,6 @@ class ManhwaLatinoProvider : MangaProvider {
         val currentIndex = chapterOptions.indexOfFirst { sameChapterPath(id, it.path, normalizedPath) }
         val previousChapterPath = chapterOptions.getOrNull(currentIndex + 1)?.path
         val nextChapterPath = chapterOptions.getOrNull(currentIndex - 1)?.path
-        Log.d(
-            TAG,
-            "fetchReaderData: path='$normalizedPath' title='$chapterTitle' mangaTitle='$mangaTitle' mangaDetailPath='$mangaDetailPath' chapterOptions=${chapterOptions.size} currentIndex=$currentIndex"
-        )
         val pages = document.select(
             "#wp-manga-current-chap + div > p > img, " +
                 ".wp-manga-chapter-img, " +
@@ -298,7 +284,6 @@ class ManhwaLatinoProvider : MangaProvider {
             webkitCookieManager.removeAllCookies(null)
             webkitCookieManager.flush()
         }
-        Log.d(TAG, "Cleared Manhwa Latino Cloudflare state")
     }
 
     fun waitForCloudflareCookie(timeoutMs: Long = CLOUDFLARE_WAIT_TIMEOUT_MS): Boolean {
@@ -311,10 +296,8 @@ class ManhwaLatinoProvider : MangaProvider {
             }
             val cookieHeader = snapshotWebkitCookies()
             lastSeenCookieHeader = cookieHeader
-            Log.d(TAG, "Waiting for cf_clearance cookie; hasCfBm=${cookieHeader.contains("__cf_bm=")}")
             Thread.sleep(CLOUDFLARE_POLL_INTERVAL_MS)
         }
-        Log.e(TAG, "Timed out waiting for cf_clearance cookie; lastCookies=${lastSeenCookieHeader.take(120)}")
         throw IllegalStateException("Cloudflare challenge was not fully solved before timeout")
     }
 
@@ -328,7 +311,6 @@ class ManhwaLatinoProvider : MangaProvider {
             if (!cloudflareReady) {
                 syncCookies(cookieHeader)
                 cloudflareReady = true
-                Log.d(TAG, "Cloudflare clearance cookie detected and synced")
             }
         }
         return true
@@ -345,7 +327,6 @@ class ManhwaLatinoProvider : MangaProvider {
             webkitCookieManager.flush()
             webkitCookieManager.getCookie(baseUrl).orEmpty()
         }.getOrElse { throwable ->
-            Log.w(TAG, "Unable to read WebView cookies", throwable)
             ""
         }
     }
@@ -374,20 +355,21 @@ class ManhwaLatinoProvider : MangaProvider {
         }
     }
 
-    private fun parseMangaCards(document: Document): List<ParsedMangaCard> {
+    private fun parseMangaCards(document: Document, adultContentEnabled: Boolean): List<ParsedMangaCard> {
         return buildList {
             document.select(".page-listing-item .page-item-detail").forEach { card ->
-                parseArchiveMangaCard(card)?.let(::add)
+                parseArchiveMangaCard(card, adultContentEnabled)?.let(::add)
             }
             document.select(".search-wrap .tab-content-wrap .c-tabs-item__content, .search-wrap .c-tabs-item__content").forEach { card ->
-                parseSearchMangaCard(card)?.let(::add)
+                parseSearchMangaCard(card, adultContentEnabled)?.let(::add)
             }
         }.distinctBy { it.manga.detailPath }
     }
 
-    private fun parseFeaturedMangaCards(document: Document): List<MangaSummary> {
+    private fun parseFeaturedMangaCards(document: Document, adultContentEnabled: Boolean): List<MangaSummary> {
         return document.select(".widget-manga-slider .slider__item")
             .mapNotNull { slide ->
+                if (!adultContentEnabled && isAdultMarked(slide)) return@mapNotNull null
                 val titleLink = slide.selectFirst(".slider__content .post-title a[href*='/manga/'], .slider__thumb a[href*='/manga/']") ?: return@mapNotNull null
                 val detailPath = titleLink.attr("href").normalizePath()
                 val title = titleLink.text().trim().ifBlank {
@@ -407,7 +389,8 @@ class ManhwaLatinoProvider : MangaProvider {
             .distinctBy { it.detailPath }
     }
 
-    private fun parseArchiveMangaCard(card: Element): ParsedMangaCard? {
+    private fun parseArchiveMangaCard(card: Element, adultContentEnabled: Boolean): ParsedMangaCard? {
+        if (!adultContentEnabled && isAdultMarked(card)) return null
         val titleLink = card.selectFirst(".post-title a[href*='/manga/']") ?: return null
         return buildMangaCard(
             rootElement = card,
@@ -423,7 +406,8 @@ class ManhwaLatinoProvider : MangaProvider {
         )
     }
 
-    private fun parseSearchMangaCard(card: Element): ParsedMangaCard? {
+    private fun parseSearchMangaCard(card: Element, adultContentEnabled: Boolean): ParsedMangaCard? {
+        if (!adultContentEnabled && isAdultMarked(card)) return null
         val titleLink = card.selectFirst(".tab-summary .post-title a[href*='/manga/']") ?: return null
         val latestChapterPath = card.selectFirst(".tab-meta .latest-chap .chapter a[href*='/manga/']")?.attr("href")?.normalizePath()
         val contentType = card.selectFirst(".tab-thumb .translation_tag")?.text()?.trim().orEmpty()
@@ -486,17 +470,19 @@ class ManhwaLatinoProvider : MangaProvider {
         )
     }
 
+    private fun isAdultMarked(element: Element): Boolean {
+        return element.selectFirst(".adult, .adult.badge-round, .adult.badge-round.custom, .manga-title-badges .adult") != null ||
+            element.text().contains("18+", ignoreCase = true)
+    }
+
     private fun fetchMangaChapters(document: Document, detailPath: String): List<MangaChapter> {
         val chapterElements = selectChapterElements(document)
-        Log.d(TAG, "fetchMangaChapters: detailPath='$detailPath' directSelectorCount=${chapterElements.size}")
         val parsedChapters = parseChapterElements(chapterElements)
         if (parsedChapters.isNotEmpty()) {
-            Log.d(TAG, "fetchMangaChapters: parsed ${parsedChapters.size} chapters from direct selectors for '$detailPath'")
             return parsedChapters
         }
 
         val mangaId = extractMangaId(document, detailPath)
-        Log.d(TAG, "fetchMangaChapters: no direct chapters for '$detailPath', extracted mangaId='$mangaId'")
         if (mangaId.isBlank()) return emptyList()
 
         val ajaxDocument = runCatching {
@@ -507,22 +493,18 @@ class ManhwaLatinoProvider : MangaProvider {
                 .header("X-Requested-With", "XMLHttpRequest")
                 .build()
             client.newCall(request).execute().use { response ->
-                Log.d(TAG, "fetchMangaChapters: ajax response for mangaId='$mangaId' http=${response.code} contentType='${response.body?.contentType()}'")
                 response.body?.string().orEmpty()
             }
         }.getOrElse {
-            Log.w(TAG, "Failed to load chapter ajax for $detailPath", it)
             ""
         }
 
         if (ajaxDocument.isBlank()) {
-            Log.w(TAG, "fetchMangaChapters: ajax chapter body was empty for '$detailPath' mangaId='$mangaId'")
             return emptyList()
         }
         val ajaxChapters = parseChapterElements(
             Jsoup.parseBodyFragment(ajaxDocument, baseUrl).select("*"),
         )
-        Log.d(TAG, "fetchMangaChapters: parsed ${ajaxChapters.size} chapters from ajax for '$detailPath'")
         return ajaxChapters
     }
 
@@ -546,11 +528,9 @@ class ManhwaLatinoProvider : MangaProvider {
         for (selector in selectors) {
             val elements = document.select(selector)
             if (elements.isNotEmpty()) {
-                Log.d(TAG, "selectChapterElements: selector='$selector' count=${elements.size}")
                 return elements
             }
         }
-        Log.d(TAG, "selectChapterElements: no chapter elements matched")
         return org.jsoup.select.Elements()
     }
 
@@ -586,25 +566,6 @@ class ManhwaLatinoProvider : MangaProvider {
                 element.text().trim(),
             ).firstOrNull { it.isNotBlank() }
                 ?: normalizedPath.trim('/').substringAfterLast('/').replace('-', ' ')
-            if (index < 3) {
-                Log.d(
-                    TAG,
-                    buildString {
-                        append("parseChapterElements: raw[")
-                        append(index)
-                        append("] tag=")
-                        append(element.tagName())
-                        append(" class='")
-                        append(element.className())
-                        append("' path='")
-                        append(normalizedPath)
-                        append("' label='")
-                        append(chapterLabel)
-                        append("' hrefs=")
-                        append(element.select("a[href]").take(3).joinToString { it.attr("href") })
-                    },
-                )
-            }
             if (normalizedPath.isBlank() || chapterLabel.isBlank()) return@mapIndexedNotNull null
             val chapterId = normalizedPath.trim('/').substringAfterLast('/')
             MangaChapter(
@@ -621,17 +582,6 @@ class ManhwaLatinoProvider : MangaProvider {
                 compareByDescending<MangaChapter> { chapterValue(it) }
                     .thenByDescending { it.path },
             )
-        if (parsed.isEmpty()) {
-            Log.d(TAG, "parseChapterElements: no chapter nodes parsed from ${chapterElements.size} candidate elements")
-        } else {
-            val sample = parsed.take(5).joinToString { chapter ->
-                "${chapter.chapterLabel} -> ${chapter.path}"
-            }
-            Log.d(
-                TAG,
-                "parseChapterElements: parsed ${parsed.size} chapters sample=$sample"
-            )
-        }
         return parsed
     }
 
@@ -699,6 +649,24 @@ class ManhwaLatinoProvider : MangaProvider {
         return candidates.firstOrNull { it.isNotBlank() }
             .orEmpty()
     }
+
+    private fun extractDisplayTitle(element: Element): String {
+        val cloned = element.clone()
+        cloned.select(".adult, .badge-round, .manga-title-badges, .translation_tag, .new, .new-tag").remove()
+        return cloned.text()
+            .replace(Regex("\\b18\\+\\b", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\bNEW\\b", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s{2,}"), " ")
+            .trim()
+    }
+
+    private fun isAdultContentEnabled(): Boolean =
+        com.paudinc.komastream.data.local.LibraryDatabase
+            .getInstance(appContext)
+            .libraryDao()
+            .readSettings()
+            ?.adultContentEnabled
+            ?: false
 
     private fun buildSearchPath(query: String, page: Int): String {
         val encodedQuery = query.trim().takeIf { it.isNotBlank() }?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8.name()) }

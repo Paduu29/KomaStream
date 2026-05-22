@@ -6,7 +6,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Handler
-import android.util.Log
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
@@ -85,13 +84,8 @@ class MangaFireWebViewResolver(
 
     fun searchCatalog(providerId: String, query: String, skip: Int, take: Int): List<MangaSummary> {
         val resolvedUrl = resolveSearchUrl(query)
-        Log.d("MangaFireWebView", "searchCatalog: query='$query' resolvedUrl='$resolvedUrl'")
         val document = getDocumentAbsolute(resolvedUrl, referer = BASE_URL)
         val items = parseCatalogCards(document, providerId)
-        Log.d(
-            "MangaFireWebView",
-            "searchCatalog: query='$query' parsed=${items.size} titles=${items.take(5).joinToString { it.title }}"
-        )
         return items.drop(skip).take(take)
     }
 

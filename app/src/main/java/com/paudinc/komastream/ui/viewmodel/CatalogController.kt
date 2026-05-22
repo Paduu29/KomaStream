@@ -1,6 +1,5 @@
 package com.paudinc.komastream.ui.viewmodel
 
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -33,7 +32,7 @@ class CatalogController(
                         selectedStatusOptionId = selectionState.selectedStatusOptionId,
                     )
                 }
-                .onFailure { Log.e("KomaStream", "Could not fetch catalog filters", it) }
+                .onFailure { }
         }
     }
 
@@ -73,7 +72,6 @@ class CatalogController(
                     isLoadingMore = false,
                 )
             }.onFailure {
-                Log.e("KomaStream", "Search failed", it)
                 onError(it.message ?: "Could not search catalog")
             }.also {
                 if (loadMore) {

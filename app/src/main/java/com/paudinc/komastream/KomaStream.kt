@@ -195,7 +195,14 @@ fun KomaStream() {
     }
 
     LaunchedEffect(libraryState.selectedProviderId) {
-        if (libraryState.selectedProviderId.isNotBlank()) {
+        if (libraryState.selectedProviderId.isBlank()) {
+            if (screen !is Screen.ProviderPicker) {
+                viewModel.pushScreen(Screen.ProviderPicker)
+            }
+        } else {
+            if (screen is Screen.ProviderPicker) {
+                viewModel.replaceRoot(RootTab.Home)
+            }
             if (viewModel.isAwaitingBrowserBootstrap) {
                 viewModel.refreshCatalogFilterOptions()
             } else {
@@ -276,17 +283,11 @@ fun KomaStream() {
                                 NavigationBarItem(
                                     selected = screen.tab == tab,
                                     onClick = {
-                                        android.util.Log.d(
-                                            "KomaStream",
-                                            "bottomNavHomeClick: tab=$tab currentScreen=$screen"
-                                        )
                                         if (tab == RootTab.Home && screen is Screen.Root && screen.tab == RootTab.Home) {
-                                            android.util.Log.d("KomaStream", "bottomNavHomeClick: refreshing already-selected Home tab")
                                             viewModel.refreshCurrentProviderContent(clearVisibleData = true)
                                         } else {
                                             viewModel.replaceRoot(tab)
                                             if (tab == RootTab.Home) {
-                                                android.util.Log.d("KomaStream", "bottomNavHomeClick: switched to Home, refreshing content")
                                                 viewModel.refreshCurrentProviderContent(clearVisibleData = true)
                                             }
                                         }
@@ -378,10 +379,7 @@ fun KomaStream() {
                                                 Screen.SettingsTheme -> strings.theme
                                                 Screen.SettingsChapterLanguage -> strings.preferredChapterLanguage
                                                 Screen.SettingsReader -> strings.reader
-                                                Screen.SettingsContent -> when (libraryState.selectedProviderId) {
-                                                    ManhwaLatinoProvider.PROVIDER_ID -> strings.manhwaLatinoAdultContentLabel
-                                                    else -> strings.mangaBallAdultContentLabel
-                                                }
+                                                Screen.SettingsContent -> strings.contentAccess
                                                 Screen.SettingsUpdates -> strings.updates
                                                 Screen.SettingsMyAnimeList -> strings.myAnimeList
                                                 Screen.SettingsBackup -> strings.backup
@@ -450,6 +448,13 @@ fun KomaStream() {
                                                 ),
                                             )
                                         }
+                                    }
+                                } else if (screen is Screen.ProviderPicker) {
+                                    IconButton(onClick = { viewModel.pushScreen(Screen.SettingsContent) }) {
+                                        Icon(Icons.Default.Lock, contentDescription = null)
+                                    }
+                                    IconButton(onClick = { viewModel.pushScreen(Screen.Settings) }) {
+                                        Icon(Icons.Default.Settings, contentDescription = null)
                                     }
                                 }
                             }
@@ -604,7 +609,6 @@ fun KomaStream() {
                             )
                                     RootTab.Settings -> SettingsScreen(
                                         strings = strings,
-                                        selectedProviderId = libraryState.selectedProviderId,
                                         onOpenLanguage = { viewModel.pushScreen(Screen.SettingsLanguage) },
                                         onOpenTheme = { viewModel.pushScreen(Screen.SettingsTheme) },
                                         onOpenChapterLanguage = { viewModel.pushScreen(Screen.SettingsChapterLanguage) },
@@ -744,7 +748,6 @@ fun KomaStream() {
                             )
                             is Screen.Settings -> SettingsScreen(
                                 strings = strings,
-                                selectedProviderId = libraryState.selectedProviderId,
                                 onOpenLanguage = { viewModel.pushScreen(Screen.SettingsLanguage) },
                                 onOpenTheme = { viewModel.pushScreen(Screen.SettingsTheme) },
                                 onOpenChapterLanguage = { viewModel.pushScreen(Screen.SettingsChapterLanguage) },
@@ -776,11 +779,16 @@ fun KomaStream() {
                             )
                             Screen.SettingsContent -> ContentSettingsScreen(
                                 strings = strings,
-                                selectedProviderId = libraryState.selectedProviderId,
-                                mangaBallAdultContentEnabled = libraryState.mangaBallAdultContentEnabled,
-                                manhwaLatinoAdultContentEnabled = libraryState.manhwaLatinoAdultContentEnabled,
-                                onMangaBallAdultContentChange = { viewModel.changeMangaBallAdultContent(it) },
-                                onManhwaLatinoAdultContentChange = { viewModel.changeManhwaLatinoAdultContent(it) },
+                                adultContentEnabled = libraryState.adultContentEnabled,
+                                adultOnlyProvidersEnabled = libraryState.adultOnlyProvidersEnabled,
+                                adultContentPinIsConfigured = viewModel.adultContentPinIsConfigured(),
+                                providersByLanguage = providerRegistry.groupedByLanguage(),
+                                disabledProviderIds = libraryState.disabledProviderIds,
+                                onAdultContentEnabledChange = { viewModel.changeAdultContentEnabled(it) },
+                                onAdultOnlyProvidersEnabledChange = { viewModel.changeAdultOnlyProvidersEnabled(it) },
+                                onSetAdultContentPin = { viewModel.setAdultContentPin(it) },
+                                onVerifyAdultContentPin = { pin -> viewModel.verifyAdultContentPin(pin) },
+                                onProviderEnabledChange = { providerId, enabled -> viewModel.setProviderEnabled(providerId, enabled) },
                             )
                             Screen.SettingsUpdates -> UpdatesSettingsScreen(
                                 strings = strings,
@@ -813,8 +821,13 @@ fun KomaStream() {
                             is Screen.ProviderPicker -> ProviderPickerScreen(
                                 strings = strings,
                                 selectedProviderId = libraryState.selectedProviderId,
+                                adultOnlyProvidersEnabled = libraryState.adultOnlyProvidersEnabled,
+                                adultContentPinIsConfigured = viewModel.adultContentPinIsConfigured(),
+                                disabledProviderIds = libraryState.disabledProviderIds,
                                 providersByLanguage = providerRegistry.groupedByLanguage(),
                                 onSelectProvider = { providerId -> viewModel.selectProvider(providerId) },
+                                onToggleProviderEnabled = { providerId, enabled -> viewModel.setProviderEnabled(providerId, enabled) },
+                                onVerifyAdultContentPin = { pin -> viewModel.verifyAdultContentPin(pin) },
                             )
                         }
                     }

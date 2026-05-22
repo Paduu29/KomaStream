@@ -1,7 +1,6 @@
 package com.paudinc.komastream.ui.screens
 
 import android.graphics.BitmapFactory
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -148,7 +147,6 @@ fun ReaderScreen(
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
 
     LaunchedEffect(zoomedPageKey) {
-        Log.d(READER_GESTURE_TAG, "zoomedPageKey=$zoomedPageKey chapter=${reader.chapterPath}")
     }
 
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
@@ -716,7 +714,6 @@ fun ZoomableReaderPage(
         .pointerInput(providerId, chapterPath, page.id) {
             detectTapGestures(
                 onDoubleTap = {
-                    Log.d(READER_GESTURE_TAG, "double-tap page=$pageKey scaleBefore=$scale")
                     if (scale > 1f) {
                         scale = 1f
                         offset = androidx.compose.ui.geometry.Offset.Zero
@@ -735,7 +732,6 @@ fun ZoomableReaderPage(
             clip = false,
         )
         .pointerInput(providerId, chapterPath, page.id) {
-            Log.d(READER_GESTURE_TAG, "attach-raw-gestures page=$pageKey")
             awaitEachGesture {
                 do {
                     val event = awaitPointerEvent()
@@ -770,10 +766,6 @@ fun ZoomableReaderPage(
                             if (kotlin.math.abs(zoomChange - 1f) > 0.001f ||
                                 panChange != androidx.compose.ui.geometry.Offset.Zero
                             ) {
-                                Log.d(
-                                    READER_GESTURE_TAG,
-                                    "raw-transform page=$pageKey pointers=${pressed.size} span=$currentSpan zoomChange=$zoomChange pan=(${panChange.x},${panChange.y}) scale=$scale->$updatedScale"
-                                )
                             }
                             scale = updatedScale
                             offset = if (updatedScale > 1f) {
@@ -789,10 +781,6 @@ fun ZoomableReaderPage(
                             val panChange = change.position - change.previousPosition
                             if (panChange != androidx.compose.ui.geometry.Offset.Zero) {
                                 val appliedPan = panChange * ZOOM_PAN_SPEED_MULTIPLIER
-                                Log.d(
-                                    READER_GESTURE_TAG,
-                                    "raw-drag page=$pageKey pan=(${panChange.x},${panChange.y}) scale=$scale"
-                                )
                                 offset += appliedPan
                                 change.consume()
                             }
@@ -997,10 +985,8 @@ fun Modifier.edgeSwipeGesture(
                 triggered = true
                 event.changes.forEach { it.consume() }
                 if (totalDragX < 0) {
-                    Log.d(READER_GESTURE_TAG, "swipe LEFT triggered dragX=$totalDragX")
                     onSwipeLeft()
                 } else {
-                    Log.d(READER_GESTURE_TAG, "swipe RIGHT triggered dragX=$totalDragX")
                     onSwipeRight()
                 }
                 break

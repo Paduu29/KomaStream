@@ -1,6 +1,5 @@
 package com.paudinc.komastream.provider.providers
 
-import android.util.Log
 import android.content.Context
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
@@ -138,7 +137,6 @@ class MangaFireProvider(
         val linkMore = result?.optString("linkMore").orEmpty()
         val html = result?.optString("html").orEmpty()
         if (html.isBlank()) {
-            Log.w("MangaFireProvider", "searchByQuery: empty html for query='$query' count=$count linkMore='$linkMore'")
             return emptyList()
         }
         val document = Jsoup.parseBodyFragment(html, baseUrl)
@@ -155,10 +153,6 @@ class MangaFireProvider(
                 )
             }
         }
-        Log.d(
-            "MangaFireProvider",
-            "searchByQuery: query='$query' count=$count parsed=${items.size} linkMore='$linkMore' titles=${items.take(5).joinToString { it.title }}"
-        )
         return items
     }
 
@@ -382,10 +376,6 @@ class MangaFireProvider(
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                Log.w(
-                    "MangaFireProvider",
-                    "getDocument: path='$path' code=${response.code} body='${body.take(LOG_BODY_PREVIEW_LENGTH)}'"
-                )
             }
             return Jsoup.parse(body, baseUrl)
         }
@@ -400,10 +390,6 @@ class MangaFireProvider(
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                Log.w(
-                    "MangaFireProvider",
-                    "getJson: path='$path' code=${response.code} body='${body.take(LOG_BODY_PREVIEW_LENGTH)}'"
-                )
             }
             return JSONObject(body)
         }

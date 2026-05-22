@@ -1,6 +1,5 @@
 package com.paudinc.komastream.ui.viewmodel
 
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -184,7 +183,6 @@ class ReaderController(
                 }
             }
             .onFailure {
-                Log.d("KomaStream", "Could not refresh cached manga detail", it)
             }
     }
 
@@ -396,7 +394,6 @@ class ReaderController(
                 onSuccess()
             }
             .onFailure {
-                Log.e("KomaStream", "Could not fetch manga detail", it)
                 uiState = uiState.copy(
                     requestedDetailPath = detailPath,
                     isChapterLoading = false,
@@ -430,7 +427,6 @@ class ReaderController(
                 onSuccess()
             }
             .onFailure {
-                Log.e("KomaStream", "Could not fetch community page", it)
                 uiState = uiState.copy(
                     requestedCommunityPath = path,
                     isCommunityLoading = false,
@@ -461,7 +457,6 @@ class ReaderController(
             withContext(Dispatchers.IO) { provider.fetchReaderData(path) }
         }.getOrElse {
             uiState = uiState.copy(isChapterLoading = false)
-            Log.e("KomaStream", "Could not open chapter $providerId:$path", it)
             onError(it.message ?: "Could not open chapter")
             return
         }

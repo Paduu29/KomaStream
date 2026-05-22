@@ -1,7 +1,6 @@
 package com.paudinc.komastream.provider.providers
 
 import android.content.Context
-import android.util.Log
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.AkaiComicWebViewResolver
@@ -21,11 +20,9 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
     private val webViewResolver by lazy { AkaiComicWebViewResolver(context.applicationContext, http) }
 
     override fun fetchHomeFeed(): HomeFeed {
-        Log.d("AkaiProvider", ">>> fetchHomeFeed")
         return try {
             val sections = webViewResolver.fetchHomeSections()
             val latestChapters = webViewResolver.fetchLatestChapters()
-            Log.d("AkaiProvider", "<<< sections: ${sections.keys}, featured=${sections["featured"]?.size}, recent=${sections["recent"]?.size}, popular=${sections["popular"]?.size}, chapters=${latestChapters.size}")
             
             val feedSections = mutableListOf<HomeFeedSection>()
             
@@ -49,7 +46,6 @@ class AkaiComicProvider(private val context: Context) : MangaProvider {
                 sections = feedSections
             )
         } catch (e: Exception) {
-            Log.e("AkaiProvider", "error: ${e.message}")
             emptyFeed()
         }
     }
