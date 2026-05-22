@@ -309,17 +309,19 @@ private fun AdultAccessSettingCard(
             Switch(
                 checked = enabled,
                 onCheckedChange = { nextEnabled ->
-                    pinError = ""
-                    pinValue = ""
-                    pinConfirmation = ""
-                    pendingTarget = ContentPinTarget.ADULT_CONTENT
-                    if (pinConfigured) {
-                        pinMode = PinMode.VERIFY
-                        showPinDialog = true
-                    } else if (nextEnabled) {
-                        onEnabledChange(true)
-                    } else {
+                    if (!nextEnabled) {
                         onEnabledChange(false)
+                    } else {
+                        pinError = ""
+                        pinValue = ""
+                        pinConfirmation = ""
+                        pendingTarget = ContentPinTarget.ADULT_CONTENT
+                        if (pinConfigured) {
+                            pinMode = PinMode.VERIFY
+                            showPinDialog = true
+                        } else {
+                            onEnabledChange(true)
+                        }
                     }
                 },
             )
@@ -337,17 +339,19 @@ private fun AdultAccessSettingCard(
             Switch(
                 checked = adultOnlyProvidersEnabled,
                 onCheckedChange = { nextEnabled ->
-                    pinError = ""
-                    pinValue = ""
-                    pinConfirmation = ""
-                    pendingTarget = ContentPinTarget.ADULT_ONLY_PROVIDERS
-                    if (pinConfigured) {
-                        pinMode = PinMode.VERIFY
-                        showPinDialog = true
-                    } else if (nextEnabled) {
-                        onAdultOnlyProvidersEnabledChange(true)
-                    } else {
+                    if (!nextEnabled) {
                         onAdultOnlyProvidersEnabledChange(false)
+                    } else {
+                        pinError = ""
+                        pinValue = ""
+                        pinConfirmation = ""
+                        pendingTarget = ContentPinTarget.ADULT_ONLY_PROVIDERS
+                        if (pinConfigured) {
+                            pinMode = PinMode.VERIFY
+                            showPinDialog = true
+                        } else {
+                            onAdultOnlyProvidersEnabledChange(true)
+                        }
                     }
                 },
             )
@@ -426,8 +430,8 @@ private fun AdultAccessSettingCard(
                             PinMode.VERIFY -> {
                                 if (onVerifyAdultContentPin(pinValue)) {
                                     when (pendingTarget) {
-                                        ContentPinTarget.ADULT_CONTENT -> onEnabledChange(!enabled)
-                                        ContentPinTarget.ADULT_ONLY_PROVIDERS -> onAdultOnlyProvidersEnabledChange(!adultOnlyProvidersEnabled)
+                                        ContentPinTarget.ADULT_CONTENT -> onEnabledChange(true)
+                                        ContentPinTarget.ADULT_ONLY_PROVIDERS -> onAdultOnlyProvidersEnabledChange(true)
                                         ContentPinTarget.NONE -> Unit
                                     }
                                     showPinDialog = false

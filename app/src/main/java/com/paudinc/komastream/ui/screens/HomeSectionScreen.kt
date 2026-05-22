@@ -288,6 +288,12 @@ private fun providerSupportsHomePaging(providerId: String, sectionId: String): B
     when (providerId) {
         "leermangaesp-es" -> sectionId == "populares" || sectionId == "capitulos-recientes"
         "mangatube-de" -> sectionId == "latest-updates"
+        "manhwa18-en" ->
+            sectionId == "popular-manga" ||
+                sectionId == "latest-update-manhwa" ||
+                sectionId == "latest-raw-sub-kor" ||
+                sectionId == "latest-update-art" ||
+                sectionId == "new-manhwa"
         "manhwa-latino-es" -> sectionId == "featured" || sectionId == "latest-updates"
         "olympusbiblioteca-es" -> sectionId == "nuevos-lanzamientos" || sectionId == "top-series"
         else -> false

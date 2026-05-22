@@ -174,7 +174,7 @@ fun ProviderPickerScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                                if (provider.isAdultContent) {
+                                if (provider.isAdultContent || provider.isAdultOnly) {
                                     Icon(
                                         imageVector = Icons.Filled.Lock,
                                         contentDescription = null,
