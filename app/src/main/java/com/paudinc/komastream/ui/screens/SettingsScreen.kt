@@ -320,7 +320,8 @@ private fun AdultAccessSettingCard(
                             pinMode = PinMode.VERIFY
                             showPinDialog = true
                         } else {
-                            onEnabledChange(true)
+                            pinMode = PinMode.CREATE
+                            showPinDialog = true
                         }
                     }
                 },
@@ -350,7 +351,8 @@ private fun AdultAccessSettingCard(
                             pinMode = PinMode.VERIFY
                             showPinDialog = true
                         } else {
-                            onAdultOnlyProvidersEnabledChange(true)
+                            pinMode = PinMode.CREATE
+                            showPinDialog = true
                         }
                     }
                 },
