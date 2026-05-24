@@ -575,7 +575,7 @@ Introduce immutable route `UiState` models, migrate critical controllers to `Sta
 - `FIX-003`
 
 ### Status
-Pending
+Done
 
 ---
 
@@ -1104,12 +1104,12 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-002` completed under the updated migration validation policy.
 - `FIX-002B` completed: targeted Room migration coverage was added and the Android test artifact now validates the persistence change path at build time.
 - `FIX-003` completed: composition-time storage calls were replaced with immutable lookup state prepared by the controller layer.
+- `FIX-004` completed: root and controller state now use flow-backed immutable outputs collected with lifecycle awareness.
 
 ### In Progress
 - None
 
 ### Pending Tasks
-- `FIX-004`
 - `FIX-005`
 - `FIX-006`
 - `FIX-007`
@@ -1154,27 +1154,34 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt` - added immutable lookup state for composition-safe library lookups
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/LibraryController.kt` - populated immutable lookup state from background-loaded storage snapshots
 - `app/src/androidTest/java/com/paudinc/komastream/data/local/LibraryDatabaseMigrationTest.kt` - added targeted migration coverage for the Room v10 to v11 settings/data preservation path
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/NavigationController.kt` - converted navigation stack exposure to `StateFlow`
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/HomeController.kt` - converted route state exposure to `StateFlow`
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/CatalogController.kt` - converted route state exposure to `StateFlow`
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/ReaderController.kt` - converted route state exposure to `StateFlow`
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-002B`
+- Current fix ID: `FIX-004`
 - Current phase: Completed
 - Completed validations:
   - `./gradlew :app:assembleDebug` - Passed
   - `./gradlew :app:testDebugUnitTest` - Passed
-  - `./gradlew :app:assembleDebugAndroidTest` - Passed
 - Changed files:
-  - `app/build.gradle`
-  - `app/src/androidTest/java/com/paudinc/komastream/data/local/LibraryDatabaseMigrationTest.kt`
+  - `app/src/main/java/com/paudinc/komastream/KomaStream.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/CatalogController.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/HomeController.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/KomaViewModel.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/LibraryController.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/NavigationController.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/ReaderController.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - Migration coverage currently targets the validated v10 to v11 path; deeper historical migration combinations remain future hardening work
-  - Instrumentation execution on device/emulator is still optional and was not required for this checkpoint
+  - `MalSyncController` and `UpdateController` still expose mutable state directly; this slice narrowed the main recomposition surface but did not migrate every controller
+  - Runtime screen-transition smoke remains recommended to confirm no behavior drift from the flow-backed state holders
 - Benchmark deltas:
-  - Not applicable for `FIX-002B`
+  - Not applicable for `FIX-004`
 - Remaining fixes:
-  - `FIX-004`
   - `FIX-005`
   - `FIX-006`
   - `FIX-007`
@@ -1184,7 +1191,7 @@ For every fix, perform the following validation categories as applicable:
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-002B`
+  - No rollback required for `FIX-004`
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`

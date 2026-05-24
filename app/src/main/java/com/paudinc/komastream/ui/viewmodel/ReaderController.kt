@@ -1,8 +1,5 @@
 package com.paudinc.komastream.ui.viewmodel
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
@@ -26,6 +23,10 @@ import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.toProgressChapterNumber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -38,8 +39,8 @@ class ReaderController(
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
 ) {
-    var uiState by mutableStateOf(ReaderUiState())
-        private set
+    private val _uiState = MutableStateFlow(ReaderUiState())
+    val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     private val readerDataCache = ConcurrentHashMap<String, CachedReaderData>()
 
@@ -52,11 +53,13 @@ class ReaderController(
     ) {
         scope.launch {
             val resolvedPath = resolvePreferredDetailPath(providerId, path)
-            uiState = uiState.copy(
-                selectedDetail = null,
-                requestedDetailPath = resolvedPath,
-                isChapterLoading = false,
-            )
+            _uiState.update {
+                it.copy(
+                    selectedDetail = null,
+                    requestedDetailPath = resolvedPath,
+                    isChapterLoading = false,
+                )
+            }
             navigationController.pushScreen(Screen.Detail(providerId, resolvedPath))
             loadDetail(
                 providerId = providerId,
@@ -82,14 +85,16 @@ class ReaderController(
         if (screen.detailPath != resolvedPath) {
             navigationController.replaceTop(screen.copy(detailPath = resolvedPath))
         }
-        if (uiState.selectedDetail?.let { it.providerId == providerId && it.detailPath == resolvedPath } == true) return
-        if (uiState.requestedDetailPath == resolvedPath && uiState.selectedDetail?.detailPath != resolvedPath) return
+        if (_uiState.value.selectedDetail?.let { it.providerId == providerId && it.detailPath == resolvedPath } == true) return
+        if (_uiState.value.requestedDetailPath == resolvedPath && _uiState.value.selectedDetail?.detailPath != resolvedPath) return
         scope.launch {
-            uiState = uiState.copy(
-                selectedDetail = null,
-                requestedDetailPath = resolvedPath,
-                isChapterLoading = false,
-            )
+            _uiState.update {
+                it.copy(
+                    selectedDetail = null,
+                    requestedDetailPath = resolvedPath,
+                    isChapterLoading = false,
+                )
+            }
             loadDetail(
                 providerId = providerId,
                 path = resolvedPath,
@@ -108,11 +113,13 @@ class ReaderController(
     ) {
         scope.launch {
             val resolvedPath = resolvePreferredCommunityPath(path)
-            uiState = uiState.copy(
-                selectedCommunityPage = null,
-                requestedCommunityPath = resolvedPath,
-                isCommunityLoading = true,
-            )
+            _uiState.update {
+                it.copy(
+                    selectedCommunityPage = null,
+                    requestedCommunityPath = resolvedPath,
+                    isCommunityLoading = true,
+                )
+            }
             onLoadingChange(true)
             navigationController.pushScreen(Screen.Community(providerId, resolvedPath))
             loadCommunity(
@@ -140,14 +147,16 @@ class ReaderController(
         if (screen.communityPath != resolvedPath) {
             navigationController.replaceTop(screen.copy(communityPath = resolvedPath))
         }
-        if (uiState.selectedCommunityPage?.providerId == providerId && uiState.requestedCommunityPath == resolvedPath) return
-        if (uiState.requestedCommunityPath == resolvedPath && uiState.selectedCommunityPage?.providerId == providerId) return
+        if (_uiState.value.selectedCommunityPage?.providerId == providerId && _uiState.value.requestedCommunityPath == resolvedPath) return
+        if (_uiState.value.requestedCommunityPath == resolvedPath && _uiState.value.selectedCommunityPage?.providerId == providerId) return
         scope.launch {
-            uiState = uiState.copy(
-                selectedCommunityPage = null,
-                requestedCommunityPath = resolvedPath,
-                isCommunityLoading = true,
-            )
+            _uiState.update {
+                it.copy(
+                    selectedCommunityPage = null,
+                    requestedCommunityPath = resolvedPath,
+                    isCommunityLoading = true,
+                )
+            }
             onLoadingChange(true)
             loadCommunity(
                 providerId = providerId,
@@ -169,7 +178,7 @@ class ReaderController(
         val provider = providerRegistry.get(providerId)
         runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(path) } }
             .onSuccess { detail ->
-                val currentSourceId = uiState.selectedDetail
+                val currentSourceId = _uiState.value.selectedDetail
                     ?.takeIf { it.providerId == providerId && it.detailPath == path }
                     ?.selectedChapterSourceId
                 val resolvedDetail = detail.withSelectedChapterSource(
@@ -179,8 +188,8 @@ class ReaderController(
                 val changed = withContext(Dispatchers.IO) {
                     libraryStore.cacheMangaDetail(resolvedDetail)
                 }
-                if (changed || uiState.selectedDetail == null || uiState.selectedDetail?.detailPath == cachedDetail.detailPath) {
-                    uiState = uiState.copy(selectedDetail = resolvedDetail)
+                if (changed || _uiState.value.selectedDetail == null || _uiState.value.selectedDetail?.detailPath == cachedDetail.detailPath) {
+                    _uiState.update { it.copy(selectedDetail = resolvedDetail) }
                 }
             }
             .onFailure {
@@ -200,7 +209,7 @@ class ReaderController(
         onError: (String) -> Unit,
     ) {
         scope.launch {
-            uiState = uiState.copy(isChapterLoading = true)
+            _uiState.update { it.copy(isChapterLoading = true) }
             onLoadingChange(true)
             loadReader(
                 providerId = providerId,
@@ -228,13 +237,15 @@ class ReaderController(
         detailPath: String,
         sourceId: String,
     ) {
-        val selectedDetail = uiState.selectedDetail ?: return
+        val selectedDetail = _uiState.value.selectedDetail ?: return
         if (selectedDetail.providerId != providerId || selectedDetail.detailPath != detailPath) return
         if (selectedDetail.selectedChapterSourceId == sourceId) return
         if (selectedDetail.chapterSources.isNotEmpty() && selectedDetail.chapterSources.none { it.id == sourceId }) return
-        uiState = uiState.copy(
-            selectedDetail = selectedDetail.copy(selectedChapterSourceId = sourceId),
-        )
+        _uiState.update {
+            it.copy(
+                selectedDetail = selectedDetail.copy(selectedChapterSourceId = sourceId),
+            )
+        }
     }
 
     fun restoreReader(
@@ -246,10 +257,10 @@ class ReaderController(
         onLoadingChange: (Boolean) -> Unit,
         onError: (String) -> Unit,
     ) {
-        val currentReader = uiState.readerData
+        val currentReader = _uiState.value.readerData
         if (currentReader?.providerId == providerId && currentReader.chapterPath == path) return
         scope.launch {
-            uiState = uiState.copy(isChapterLoading = true)
+            _uiState.update { it.copy(isChapterLoading = true) }
             onLoadingChange(true)
             loadReader(
                 providerId = providerId,
@@ -276,16 +287,16 @@ class ReaderController(
         allowAutoReadMark: Boolean,
         onChapterMarkedRead: () -> Unit,
     ) {
-        uiState = uiState.copy(currentPageIndex = index.coerceAtLeast(0))
+        _uiState.update { it.copy(currentPageIndex = index.coerceAtLeast(0)) }
         libraryStore.saveChapterProgress(providerId, path, index)
-        val totalPages = uiState.readerData
+        val totalPages = _uiState.value.readerData
             ?.takeIf { it.providerId == providerId && it.chapterPath == path }
             ?.pages
             ?.size
             ?: 0
         if (allowAutoReadMark && totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
-            val detail = uiState.selectedDetail?.takeIf {
-                it.providerId == providerId && it.detailPath == uiState.readerData?.mangaDetailPath
+            val detail = _uiState.value.selectedDetail?.takeIf {
+                it.providerId == providerId && it.detailPath == _uiState.value.readerData?.mangaDetailPath
             }
             val chaptersToMark = detail?.let {
                 resolveReadThroughChapterPaths(
@@ -296,7 +307,7 @@ class ReaderController(
                 )
             } ?: listOf(path)
             libraryStore.setChaptersRead(providerId, chaptersToMark, true)
-            detail?.let { syncReadingSnapshot(providerId, it, path, uiState.readerData?.chapterTitle.orEmpty()) }
+            detail?.let { syncReadingSnapshot(providerId, it, path, _uiState.value.readerData?.chapterTitle.orEmpty()) }
             onChapterMarkedRead()
         }
     }
@@ -346,13 +357,15 @@ class ReaderController(
     ) {
         val detailPath = resolvePreferredDetailPath(providerId, path)
         val preferredSourceId = preferredChapterSourceId(providerId)
-        val currentSourceId = uiState.selectedDetail
+        val currentSourceId = _uiState.value.selectedDetail
             ?.takeIf { it.providerId == providerId && it.detailPath == detailPath }
             ?.selectedChapterSourceId
-        uiState = uiState.copy(
-            requestedDetailPath = detailPath,
-            isChapterLoading = false,
-        )
+        _uiState.update {
+            it.copy(
+                requestedDetailPath = detailPath,
+                isChapterLoading = false,
+            )
+        }
         val cachedSnapshot = withContext(Dispatchers.IO) {
             libraryStore.getCachedMangaDetailSnapshot(providerId, detailPath)
         }
@@ -370,10 +383,12 @@ class ReaderController(
                 preferredSourceId = preferredSourceId,
                 currentSourceId = currentSourceId,
             )
-            uiState = uiState.copy(
-                selectedDetail = detail,
-                requestedDetailPath = detailPath,
-            )
+            _uiState.update {
+                it.copy(
+                    selectedDetail = detail,
+                    requestedDetailPath = detailPath,
+                )
+            }
             onSuccess()
             if (isDetailSnapshotStale(cachedSnapshot)) {
                 scope.launch {
@@ -393,17 +408,21 @@ class ReaderController(
                 withContext(Dispatchers.IO) {
                     libraryStore.cacheMangaDetail(resolvedDetail)
                 }
-                uiState = uiState.copy(
-                    selectedDetail = resolvedDetail,
-                    requestedDetailPath = detailPath,
-                )
+                _uiState.update {
+                    it.copy(
+                        selectedDetail = resolvedDetail,
+                        requestedDetailPath = detailPath,
+                    )
+                }
                 onSuccess()
             }
             .onFailure {
-                uiState = uiState.copy(
-                    requestedDetailPath = detailPath,
-                    isChapterLoading = false,
-                )
+                _uiState.update {
+                    it.copy(
+                        requestedDetailPath = detailPath,
+                        isChapterLoading = false,
+                    )
+                }
                 onError(it.message ?: "Could not open manga")
             }
     }
@@ -418,25 +437,31 @@ class ReaderController(
         runCatching { withContext(Dispatchers.IO) { provider.fetchCommunityPage(path) } }
             .onSuccess { page ->
                 if (page == null) {
-                    uiState = uiState.copy(
-                        requestedCommunityPath = path,
-                        isCommunityLoading = false,
-                    )
+                    _uiState.update {
+                        it.copy(
+                            requestedCommunityPath = path,
+                            isCommunityLoading = false,
+                        )
+                    }
                     onError("Could not open community page")
                     return@onSuccess
                 }
-                uiState = uiState.copy(
-                    selectedCommunityPage = page,
-                    requestedCommunityPath = path,
-                    isCommunityLoading = false,
-                )
+                _uiState.update {
+                    it.copy(
+                        selectedCommunityPage = page,
+                        requestedCommunityPath = path,
+                        isCommunityLoading = false,
+                    )
+                }
                 onSuccess()
             }
             .onFailure {
-                uiState = uiState.copy(
-                    requestedCommunityPath = path,
-                    isCommunityLoading = false,
-                )
+                _uiState.update {
+                    it.copy(
+                        requestedCommunityPath = path,
+                        isCommunityLoading = false,
+                    )
+                }
                 onError(it.message ?: "Could not open community page")
             }
     }
@@ -462,7 +487,7 @@ class ReaderController(
             val provider = providerRegistry.get(providerId)
             withContext(Dispatchers.IO) { provider.fetchReaderData(path) }
         }.getOrElse {
-            uiState = uiState.copy(isChapterLoading = false)
+            _uiState.update { it.copy(isChapterLoading = false) }
             onError(it.message ?: "Could not open chapter")
             return
         }
@@ -476,7 +501,7 @@ class ReaderController(
             readerData = readerResult,
             reading = libraryState.reading,
             favorites = libraryState.favorites,
-            selectedDetail = uiState.selectedDetail,
+            selectedDetail = _uiState.value.selectedDetail,
             homeFeed = homeFeed,
         )
         val resolvedDetailPath = readerActionInteractor.chooseCanonicalDetailPath(
@@ -491,12 +516,14 @@ class ReaderController(
         } else {
             0
         }
-        uiState = uiState.copy(
-            readerData = resolvedData,
-            initialPageIndex = initialPageIndex,
-            currentPageIndex = initialPageIndex,
-            isChapterLoading = false,
-        )
+        _uiState.update {
+            it.copy(
+                readerData = resolvedData,
+                initialPageIndex = initialPageIndex,
+                currentPageIndex = initialPageIndex,
+                isChapterLoading = false,
+            )
+        }
         libraryStore.upsertReading(
             readerActionInteractor.buildReadingEntry(
                 providerId = providerId,

@@ -63,6 +63,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
@@ -108,7 +109,6 @@ fun KomaStream() {
     val coroutineScope = rememberCoroutineScope()
     var lastRootBackPressAt by rememberSaveable { mutableLongStateOf(0L) }
 
-    val screen = viewModel.screen
     val libraryController = viewModel.libraryController
     val catalogController = viewModel.catalogController
     val readerController = viewModel.readerController
@@ -117,16 +117,18 @@ fun KomaStream() {
     val backupController = viewModel.backupController
     val malSyncController = viewModel.malSyncController
 
-    val libraryUiState = libraryController.uiState
+    val navigationStack by viewModel.navigationController.navigationStack.collectAsStateWithLifecycle()
+    val screen = navigationStack.last()
+    val libraryUiState by libraryController.uiState.collectAsStateWithLifecycle()
     val libraryState = libraryUiState.state
     val allProvidersLibraryState = libraryUiState.allProvidersState
     val libraryLookupState = libraryUiState.lookup
-    val catalogUiState = catalogController.uiState
-    val readerUiState = readerController.uiState
-    val homeUiState = homeController.uiState
-    val backupOperationState by backupController.operationState.collectAsState()
+    val catalogUiState by catalogController.uiState.collectAsStateWithLifecycle()
+    val readerUiState by readerController.uiState.collectAsStateWithLifecycle()
+    val homeUiState by homeController.uiState.collectAsStateWithLifecycle()
+    val backupOperationState by backupController.operationState.collectAsStateWithLifecycle()
     val malUiState = malSyncController.uiState
-    val malCallbackUri by AppDeepLinkStore.malCallbackUri.collectAsState()
+    val malCallbackUri by AppDeepLinkStore.malCallbackUri.collectAsStateWithLifecycle()
     val isMalSyncBlocking = malUiState.isSyncing
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -242,13 +244,13 @@ fun KomaStream() {
         }
     }
 
-    LaunchedEffect(viewModel.navigationController.navigationStack) {
-        val currentKeys = viewModel.navigationController.navigationStack.map(Screen::saveableKey)
+    LaunchedEffect(navigationStack) {
+        val currentKeys = navigationStack.map(Screen::saveableKey)
         previousSaveableScreenKeys
             .filterNot(currentKeys::contains)
             .forEach(saveableStateHolder::removeState)
         previousSaveableScreenKeys = currentKeys
-        savedNavigationStack = viewModel.navigationController.navigationStack
+        savedNavigationStack = navigationStack
     }
 
     LaunchedEffect(screen, readerUiState.readerData, readerUiState.selectedDetail) {
@@ -479,7 +481,6 @@ fun KomaStream() {
                 }
                 ) { padding ->
                     Box(modifier = Modifier.padding(padding)) {
-                        val homeUiState = homeController.uiState
                         saveableStateHolder.SaveableStateProvider(screen.saveableKey()) {
                             when (screen) {
                             is Screen.Root -> {

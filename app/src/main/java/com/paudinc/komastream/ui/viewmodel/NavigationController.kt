@@ -1,35 +1,35 @@
 package com.paudinc.komastream.ui.viewmodel
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.paudinc.komastream.ui.navigation.RootTab
 import com.paudinc.komastream.ui.navigation.Screen
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class NavigationController(
     initialStack: List<Screen>,
 ) {
-    var navigationStack by mutableStateOf(initialStack.ifEmpty { listOf(Screen.ProviderPicker) })
-        private set
+    private val _navigationStack = MutableStateFlow(initialStack.ifEmpty { listOf(Screen.ProviderPicker) })
+    val navigationStack: StateFlow<List<Screen>> = _navigationStack.asStateFlow()
 
     val screen: Screen
-        get() = navigationStack.last()
+        get() = _navigationStack.value.last()
 
     fun pushScreen(next: Screen) {
-        navigationStack = navigationStack + next
+        _navigationStack.value = _navigationStack.value + next
     }
 
     fun replaceRoot(tab: RootTab) {
-        navigationStack = listOf(Screen.Root(tab))
+        _navigationStack.value = listOf(Screen.Root(tab))
     }
 
     fun replaceTop(next: Screen) {
-        navigationStack = navigationStack.dropLast(1) + next
+        _navigationStack.value = _navigationStack.value.dropLast(1) + next
     }
 
     fun goBack(): Boolean {
-        return if (navigationStack.size > 1) {
-            navigationStack = navigationStack.dropLast(1)
+        return if (_navigationStack.value.size > 1) {
+            _navigationStack.value = _navigationStack.value.dropLast(1)
             true
         } else {
             false

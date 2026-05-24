@@ -118,7 +118,7 @@ class KomaViewModel(
         get() = navigationController.screen
 
     val currentProvider
-        get() = providerRegistry.get(libraryController.uiState.state.selectedProviderId)
+        get() = providerRegistry.get(libraryController.uiState.value.state.selectedProviderId)
 
     fun startBackgroundWork() {
         if (backgroundWorkStarted) return
@@ -152,7 +152,7 @@ class KomaViewModel(
                 providerId = screen.providerId,
                 path = screen.chapterPath,
                 libraryState = libraryController.currentState(),
-                homeFeed = homeController.uiState.feed,
+                homeFeed = homeController.uiState.value.feed,
                 onLibraryChanged = { libraryController.refreshState() },
                 onLoadingChange = ::updateLoadingState,
                 onError = { showError(it.ifBlank { strings.couldNotOpenChapter }) },
@@ -246,7 +246,7 @@ class KomaViewModel(
             replace = replace,
             navigationController = navigationController,
             libraryState = libraryController.currentState(),
-            homeFeed = homeController.uiState.feed,
+            homeFeed = homeController.uiState.value.feed,
             onLibraryChanged = { libraryController.refreshState() },
             onLoadingChange = ::updateLoadingState,
             onError = { showError(it.ifBlank { strings.couldNotOpenChapter }) },
@@ -480,11 +480,11 @@ class KomaViewModel(
     fun importBackup(uri: Uri) {
         backupController.importBackup(
             uri = uri,
-            selectedProviderIdFallback = libraryController.uiState.state.selectedProviderId,
+            selectedProviderIdFallback = libraryController.uiState.value.state.selectedProviderId,
         ) {
             libraryController.refreshState()
             libraryController.changeLanguage(libraryController.currentState().appLanguage)
-            refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { currentProvider.id }, force = true)
+            refreshHome(providerId = libraryController.uiState.value.state.selectedProviderId.ifBlank { currentProvider.id }, force = true)
         }
     }
 
@@ -492,7 +492,7 @@ class KomaViewModel(
         backupController.importBackup(
             uri = uri,
             format = BackupFormat.DATABASE,
-            selectedProviderIdFallback = libraryController.uiState.state.selectedProviderId,
+            selectedProviderIdFallback = libraryController.uiState.value.state.selectedProviderId,
         ) {
             libraryController.refreshState()
             libraryController.changeLanguage(libraryController.currentState().appLanguage)
@@ -581,7 +581,7 @@ class KomaViewModel(
             catalogController.clearResults()
         }
         refreshCatalogFilterOptions()
-        refreshHome(providerId = libraryController.uiState.state.selectedProviderId.ifBlank { provider.id })
+        refreshHome(providerId = libraryController.uiState.value.state.selectedProviderId.ifBlank { provider.id })
     }
 
     fun updatePageProgress(providerId: String, path: String, index: Int, allowAutoReadMark: Boolean = true) {
@@ -595,13 +595,13 @@ class KomaViewModel(
     }
 
     fun openAdjacentChapter(providerId: String, currentPath: String, targetPath: String, markCurrentRead: Boolean) {
-        val activeChapterPath = readerController.uiState.readerData
+        val activeChapterPath = readerController.uiState.value.readerData
             ?.takeIf { it.providerId == providerId }
             ?.chapterPath
             ?.takeIf { it.isNotBlank() }
             ?: currentPath
-        val activeDetail = readerController.uiState.selectedDetail?.takeIf {
-            it.providerId == providerId && sameMangaPath(providerId, it.detailPath, readerController.uiState.readerData?.mangaDetailPath.orEmpty())
+        val activeDetail = readerController.uiState.value.selectedDetail?.takeIf {
+            it.providerId == providerId && sameMangaPath(providerId, it.detailPath, readerController.uiState.value.readerData?.mangaDetailPath.orEmpty())
         }
         readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
         if (markCurrentRead && activeDetail != null) {
@@ -609,7 +609,7 @@ class KomaViewModel(
                 providerId = providerId,
                 detail = activeDetail,
                 chapterPath = activeChapterPath,
-                chapterTitle = readerController.uiState.readerData?.chapterTitle.orEmpty(),
+                chapterTitle = readerController.uiState.value.readerData?.chapterTitle.orEmpty(),
             )
         }
         libraryController.refreshState()
@@ -627,7 +627,7 @@ class KomaViewModel(
     private fun syncMalFavoriteState(manga: SavedManga, isFavorite: Boolean) {
         if (!malSyncController.uiState.isConnected) return
         val state = libraryController.currentState()
-        val detail = readerController.uiState.selectedDetail?.takeIf {
+        val detail = readerController.uiState.value.selectedDetail?.takeIf {
             it.providerId == manga.providerId && it.detailPath == manga.detailPath
         }
         val existingEntry = (state.reading + state.favorites).firstOrNull {
@@ -652,7 +652,7 @@ class KomaViewModel(
 
     private fun syncMalChapterReadState(providerId: String) {
         if (!malSyncController.uiState.isConnected) return
-        val detail = readerController.uiState.selectedDetail?.takeIf { it.providerId == providerId } ?: return
+        val detail = readerController.uiState.value.selectedDetail?.takeIf { it.providerId == providerId } ?: return
         val providerReadChapters = libraryStore.readChaptersForProvider(providerId)
         val state = libraryController.currentState()
         val existingEntry = (state.reading + state.favorites).firstOrNull {

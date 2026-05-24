@@ -1,19 +1,20 @@
 package com.paudinc.komastream.ui.viewmodel
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.paudinc.komastream.provider.MangaProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class HomeController(
     private val scope: CoroutineScope,
 ) {
-    var uiState by mutableStateOf(HomeUiState())
-        private set
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     @Volatile
     private var refreshToken: Long = 0L
@@ -23,34 +24,36 @@ class HomeController(
         onError: (String) -> Unit,
         force: Boolean = false,
     ) {
-        if (uiState.isRefreshing && !force) return
+        if (_uiState.value.isRefreshing && !force) return
         val requestToken = synchronized(this) {
             refreshToken += 1L
             refreshToken
         }
 
         scope.launch {
-            uiState = uiState.copy(isRefreshing = true)
+            _uiState.update { it.copy(isRefreshing = true) }
 
             runCatching { withContext(Dispatchers.IO) { provider.fetchHomeFeed() } }
                 .onSuccess { feed ->
                     if (requestToken == refreshToken) {
-                        uiState = uiState.copy(
+                        _uiState.update {
+                            it.copy(
                             feed = feed,
                             isRefreshing = false,
                         )
+                        }
                     }
                 }
                 .onFailure {
                     if (requestToken == refreshToken) {
-                        uiState = uiState.copy(isRefreshing = false)
+                        _uiState.update { state -> state.copy(isRefreshing = false) }
                         val message = it.message.orEmpty()
                         if (
                             message.contains("Cloudflare challenge", ignoreCase = true) ||
                             message.contains("cf_clearance", ignoreCase = true) ||
                             message.contains("challenge was not fully solved", ignoreCase = true)
                         ) {
-                            uiState = uiState.copy(feed = emptyHomeFeed())
+                            _uiState.update { state -> state.copy(feed = emptyHomeFeed()) }
                         }
                         onError(it.message ?: "Could not load home")
                     }
@@ -59,10 +62,10 @@ class HomeController(
     }
 
     fun clearFeed() {
-        uiState = uiState.copy(feed = null)
+        _uiState.update { it.copy(feed = null) }
     }
 
     fun showEmptyFeed() {
-        uiState = uiState.copy(feed = emptyHomeFeed(), isRefreshing = false)
+        _uiState.update { it.copy(feed = emptyHomeFeed(), isRefreshing = false) }
     }
 }

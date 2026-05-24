@@ -1,12 +1,13 @@
 package com.paudinc.komastream.ui.viewmodel
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.paudinc.komastream.data.repository.CatalogStateInteractor
 import com.paudinc.komastream.provider.MangaProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -14,8 +15,8 @@ class CatalogController(
     private val scope: CoroutineScope,
     private val catalogStateInteractor: CatalogStateInteractor,
 ) {
-    var uiState by mutableStateOf(CatalogUiState())
-        private set
+    private val _uiState = MutableStateFlow(CatalogUiState())
+    val uiState: StateFlow<CatalogUiState> = _uiState.asStateFlow()
 
     fun refreshFilterOptions(provider: MangaProvider) {
         scope.launch {
@@ -23,14 +24,16 @@ class CatalogController(
                 .onSuccess { options ->
                     val selectionState = catalogStateInteractor.normalizeSelection(
                         options = options,
-                        selectedSortOptionId = uiState.selectedSortOptionId,
-                        selectedStatusOptionId = uiState.selectedStatusOptionId,
+                        selectedSortOptionId = _uiState.value.selectedSortOptionId,
+                        selectedStatusOptionId = _uiState.value.selectedStatusOptionId,
                     )
-                    uiState = uiState.copy(
-                        filterOptions = options,
-                        selectedSortOptionId = selectionState.selectedSortOptionId,
-                        selectedStatusOptionId = selectionState.selectedStatusOptionId,
-                    )
+                    _uiState.update {
+                        it.copy(
+                            filterOptions = options,
+                            selectedSortOptionId = selectionState.selectedSortOptionId,
+                            selectedStatusOptionId = selectionState.selectedStatusOptionId,
+                        )
+                    }
                 }
                 .onFailure { }
         }
@@ -44,38 +47,41 @@ class CatalogController(
     ) {
         scope.launch {
             if (loadMore) {
-                uiState = uiState.copy(isLoadingMore = true)
+                _uiState.update { it.copy(isLoadingMore = true) }
             } else {
                 onLoadingChange(true)
             }
-            val skip = if (loadMore) uiState.results.size else 0
+            val state = _uiState.value
+            val skip = if (loadMore) state.results.size else 0
             runCatching {
                 withContext(Dispatchers.IO) {
                     provider.searchCatalog(
-                        query = uiState.query,
-                        categoryIds = uiState.selectedCategoryIds.toList(),
-                        sortBy = uiState.selectedSortOptionId,
-                        broadcastStatus = uiState.selectedStatusOptionId,
-                        onlyFavorites = uiState.onlyFavorites,
+                        query = state.query,
+                        categoryIds = state.selectedCategoryIds.toList(),
+                        sortBy = state.selectedSortOptionId,
+                        broadcastStatus = state.selectedStatusOptionId,
+                        onlyFavorites = state.onlyFavorites,
                         skip = skip,
                         take = 20,
                     )
                 }
             }.onSuccess { result ->
-                uiState = uiState.copy(
-                    results = catalogStateInteractor.mergeResults(
-                        currentItems = uiState.results,
-                        incomingItems = result.items,
-                        loadMore = loadMore,
-                    ),
-                    hasMoreResults = result.hasMore,
-                    isLoadingMore = false,
-                )
+                _uiState.update { current ->
+                    current.copy(
+                        results = catalogStateInteractor.mergeResults(
+                            currentItems = current.results,
+                            incomingItems = result.items,
+                            loadMore = loadMore,
+                        ),
+                        hasMoreResults = result.hasMore,
+                        isLoadingMore = false,
+                    )
+                }
             }.onFailure {
                 onError(it.message ?: "Could not search catalog")
             }.also {
                 if (loadMore) {
-                    uiState = uiState.copy(isLoadingMore = false)
+                    _uiState.update { stateValue -> stateValue.copy(isLoadingMore = false) }
                 } else {
                     onLoadingChange(false)
                 }
@@ -84,51 +90,57 @@ class CatalogController(
     }
 
     fun updateQuery(query: String) {
-        uiState = uiState.copy(query = query)
+        _uiState.update { it.copy(query = query) }
     }
 
     fun toggleCategory(categoryId: String) {
-        val selectedCategoryIds = uiState.selectedCategoryIds
-        uiState = uiState.copy(
-            selectedCategoryIds = if (selectedCategoryIds.contains(categoryId)) {
-                selectedCategoryIds - categoryId
-            } else {
-                selectedCategoryIds + categoryId
-            }
-        )
+        _uiState.update { state ->
+            val selectedCategoryIds = state.selectedCategoryIds
+            state.copy(
+                selectedCategoryIds = if (selectedCategoryIds.contains(categoryId)) {
+                    selectedCategoryIds - categoryId
+                } else {
+                    selectedCategoryIds + categoryId
+                }
+            )
+        }
     }
 
     fun selectSort(sortOptionId: String) {
-        uiState = uiState.copy(selectedSortOptionId = sortOptionId)
+        _uiState.update { it.copy(selectedSortOptionId = sortOptionId) }
     }
 
     fun selectStatus(statusOptionId: String) {
-        uiState = uiState.copy(selectedStatusOptionId = statusOptionId)
+        _uiState.update { it.copy(selectedStatusOptionId = statusOptionId) }
     }
 
     fun setOnlyFavorites(onlyFavorites: Boolean) {
-        uiState = uiState.copy(onlyFavorites = onlyFavorites)
+        _uiState.update { it.copy(onlyFavorites = onlyFavorites) }
     }
 
     fun clearFilters() {
-        uiState = uiState.copy(
-            query = "",
-            selectedCategoryIds = emptySet(),
-            selectedSortOptionId = "",
-            selectedStatusOptionId = "",
-            onlyFavorites = false,
-        )
+        _uiState.update {
+            it.copy(
+                query = "",
+                selectedCategoryIds = emptySet(),
+                selectedSortOptionId = "",
+                selectedStatusOptionId = "",
+                onlyFavorites = false,
+            )
+        }
     }
 
     fun resetForProviderChange() {
-        uiState = CatalogUiState()
+        _uiState.value = CatalogUiState()
     }
 
     fun clearResults() {
-        uiState = uiState.copy(
-            results = emptyList(),
-            hasMoreResults = false,
-            isLoadingMore = false,
-        )
+        _uiState.update {
+            it.copy(
+                results = emptyList(),
+                hasMoreResults = false,
+                isLoadingMore = false,
+            )
+        }
     }
 }

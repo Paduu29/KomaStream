@@ -3,10 +3,7 @@ package com.paudinc.komastream.ui.viewmodel
 import android.content.Context
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.setValue
 import androidx.core.os.LocaleListCompat
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -34,7 +31,11 @@ import com.paudinc.komastream.utils.resolveLatestReadChapterPath
 import com.paudinc.komastream.utils.toProgressChapterNumber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -48,12 +49,12 @@ class LibraryController(
     private val libraryActionInteractor: LibraryActionInteractor,
     private val malSyncController: MalSyncController? = null,
 ) {
-    var uiState by mutableStateOf(
+    private val _uiState = MutableStateFlow(
         LibraryUiState(
             state = emptyLibraryState(),
         )
     )
-        private set
+    val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
     val downloadProgress = mutableStateMapOf<String, Int>()
 
@@ -87,11 +88,13 @@ class LibraryController(
                     )
                 )
             }
-            uiState = uiState.copy(
-                state = state,
-                allProvidersState = allProvidersState,
-                lookup = lookupState,
-            )
+            _uiState.update {
+                it.copy(
+                    state = state,
+                    allProvidersState = allProvidersState,
+                    lookup = lookupState,
+                )
+            }
         }
     }
 
@@ -100,7 +103,7 @@ class LibraryController(
             val downloadedChapterPaths = withContext(Dispatchers.IO) {
                 offlineStore.getDownloadedChapterPaths()
             }
-            uiState = uiState.copy(downloadedChapterPaths = downloadedChapterPaths)
+            _uiState.update { it.copy(downloadedChapterPaths = downloadedChapterPaths) }
         }
     }
 
@@ -177,7 +180,7 @@ class LibraryController(
     }
 
     fun toggleFavorite(manga: SavedManga) {
-        val favorite = libraryActionInteractor.buildFavoriteCandidate(uiState.state, manga)
+        val favorite = libraryActionInteractor.buildFavoriteCandidate(_uiState.value.state, manga)
         val wasFavorite = libraryStore.isFavorite(favorite.providerId, favorite.detailPath)
         libraryStore.toggleFavorite(favorite)
         refreshState()
@@ -189,7 +192,7 @@ class LibraryController(
     }
 
     fun selectTab(tab: LibraryTab) {
-        uiState = uiState.copy(selectedTab = tab)
+        _uiState.update { it.copy(selectedTab = tab) }
     }
 
     fun toggleChapterRead(
@@ -198,7 +201,7 @@ class LibraryController(
         detail: com.paudinc.komastream.data.model.MangaDetail? = null,
         onCompleted: (() -> Unit)? = null,
     ) {
-        uiState = uiState.copy(isBulkUpdatingChapters = true)
+        _uiState.update { it.copy(isBulkUpdatingChapters = true) }
         scope.launch {
             withContext(Dispatchers.Default) {
                 val wasRead = libraryStore.isChapterRead(providerId, path)
@@ -217,7 +220,7 @@ class LibraryController(
                 }
         }
             refreshStateAsync()
-            uiState = uiState.copy(isBulkUpdatingChapters = false)
+            _uiState.update { it.copy(isBulkUpdatingChapters = false) }
             onCompleted?.invoke()
             Toast.makeText(context, strings.updatedReadStatus, Toast.LENGTH_SHORT).show()
         }
@@ -231,7 +234,7 @@ class LibraryController(
         chapters: List<MangaChapter>,
         read: Boolean,
     ) {
-        uiState = uiState.copy(isBulkUpdatingChapters = true)
+        _uiState.update { it.copy(isBulkUpdatingChapters = true) }
         scope.launch {
             withContext(Dispatchers.Default) {
                 libraryStore.setChaptersRead(providerId, chapters.map { buildChapterPath(detailPath, it) }, read)
@@ -256,7 +259,7 @@ class LibraryController(
                 chapters = chapters,
             )
             refreshStateAsync()
-            uiState = uiState.copy(isBulkUpdatingChapters = false)
+            _uiState.update { it.copy(isBulkUpdatingChapters = false) }
             Toast.makeText(
                 context,
                 if (read) strings.allChaptersRead else strings.allChaptersUnread,
@@ -274,7 +277,7 @@ class LibraryController(
         targetValue: Double,
         read: Boolean,
     ) {
-        uiState = uiState.copy(isBulkUpdatingChapters = true)
+        _uiState.update { it.copy(isBulkUpdatingChapters = true) }
         scope.launch {
             val paths = withContext(Dispatchers.Default) {
                 chapters.filter { chapterValue(it) <= targetValue }.map { buildChapterPath(detailPath, it) }
@@ -303,7 +306,7 @@ class LibraryController(
                 chapters = chapters,
             )
             refreshStateAsync()
-            uiState = uiState.copy(isBulkUpdatingChapters = false)
+            _uiState.update { it.copy(isBulkUpdatingChapters = false) }
             Toast.makeText(context, strings.markedUntilChapter(targetValue, read), Toast.LENGTH_SHORT).show()
         }
     }
@@ -417,7 +420,7 @@ class LibraryController(
         refreshState(filterBySelectedProvider = true)
     }
 
-    fun currentState(): LibraryState = uiState.state
+    fun currentState(): LibraryState = _uiState.value.state
 
     private fun downloadWorkName(providerId: String, path: String): String =
         "download:$providerId:$path"
