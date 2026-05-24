@@ -8,7 +8,6 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.decode.SvgDecoder
-import com.paudinc.komastream.data.local.LibraryDatabase
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.utils.AppCacheMaintenance
 import java.io.File
@@ -19,18 +18,13 @@ class KomaStreamApp : Application(), ImageLoaderFactory {
 
     override fun attachBaseContext(base: Context) {
         val prefs = base.getSharedPreferences("manga_library", MODE_PRIVATE)
-        val roomLanguage = runCatching {
-            LibraryDatabase.getInstance(base).libraryDao().readSettings()?.appLanguage
-        }.getOrNull()
-        val appLanguageStr = roomLanguage
-            ?: prefs.getString("appLanguage", null)
+        val appLanguageStr = prefs.getString("appLanguage", null)
             ?: AppLanguage.defaultForSystem(base.resources.configuration.locales[0]).name
         val appLanguage = AppLanguage.fromStored(appLanguageStr)
         prefs.edit().putString("appLanguage", appLanguage.name).commit()
         AppCompatDelegate.setApplicationLocales(
             LocaleListCompat.forLanguageTags(appLanguage.toLanguageTag())
         )
-
         super.attachBaseContext(base)
     }
 

@@ -65,7 +65,7 @@ class KomaViewModel(
 
     val navigationController = NavigationController(
         initialStack = initialNavigationStack ?: listOf(
-            if (libraryStore.selectedProviderId().isNotBlank()) {
+            if (libraryStore.selectedProviderIdFast().isNotBlank()) {
                 Screen.Root(RootTab.Home)
             } else {
                 Screen.ProviderPicker

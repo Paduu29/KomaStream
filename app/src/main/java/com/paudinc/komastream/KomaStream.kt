@@ -84,7 +84,7 @@ fun KomaStream() {
     var savedNavigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
         mutableStateOf(
             listOf(
-                if (libraryStore.selectedProviderId().isNotBlank()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
+                if (libraryStore.selectedProviderIdFast().isNotBlank()) Screen.Root(RootTab.Home) else Screen.ProviderPicker
             )
         )
     }

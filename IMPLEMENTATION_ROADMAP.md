@@ -466,7 +466,7 @@ Make Room fully background-only, remove destructive fallback, and move locale bo
 - `FIX-001`
 
 ### Status
-Pending
+In Progress
 
 ---
 
@@ -1089,10 +1089,10 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-001` completed: `KomaViewModel` creation now uses lifecycle ownership with an application-scoped dependency graph.
 
 ### In Progress
-- None
+- `FIX-002A` - removed Room destructive fallback and startup `attachBaseContext()` database read; compatibility wrappers are in place for remaining synchronous callers
 
 ### Pending Tasks
-- `FIX-002`
+- `FIX-002B`
 - `FIX-003`
 - `FIX-004`
 - `FIX-005`
@@ -1134,29 +1134,34 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/KomaStream.kt` - switched root ViewModel creation to application-graph-backed factory inputs
 - `app/src/main/java/com/paudinc/komastream/KomaViewModelFactory.kt` - tightened lifecycle factory creation check for `KomaViewModel`
 - `app/src/main/java/com/paudinc/komastream/KomaStreamApp.kt` - introduced application-owned `AppGraph`
+- `app/src/main/java/com/paudinc/komastream/data/local/LibraryDatabase.kt` - removed main-thread Room allowance and destructive migration fallback
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/KomaViewModel.kt` - switched initial provider bootstrap to fast preference-backed lookup
+- `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt` - added compatibility wrappers and bootstrap preference syncing for settings-backed reads
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-001`
-- Current phase: Completed
+- Current fix ID: `FIX-002`
+- Current phase: Compatibility Phase (`FIX-002A` complete, `FIX-002B` pending)
 - Completed validations:
   - `./gradlew :app:assembleDebug` - Passed
   - `./gradlew :app:testDebugUnitTest` - Passed
   - `./gradlew :app:lintDebug` - Passed using the existing baseline
 - Changed files:
-  - `app/src/main/java/com/paudinc/komastream/AppGraph.kt`
+  - `app/src/main/java/com/paudinc/komastream/data/local/LibraryDatabase.kt`
   - `app/src/main/java/com/paudinc/komastream/KomaStream.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/KomaViewModel.kt`
   - `app/src/main/java/com/paudinc/komastream/KomaStreamApp.kt`
-  - `app/src/main/java/com/paudinc/komastream/KomaViewModelFactory.kt`
+  - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - Rotation, process recreation, and back-stack restore still need manual runtime smoke validation on device/emulator
-  - `KomaViewModel` still retains an `AppStrings` snapshot; behavior is preserved, but locale-refresh behavior is not yet modernized
+  - Some `LibraryStore` APIs still preserve synchronous call shapes via `runBlocking(Dispatchers.IO)` compatibility wrappers; this is safer than main-thread Room but not yet a full async cleanup
+  - Migration validation coverage is still missing; `FIX-002B` needs a dedicated test harness or explicit deferral
+  - Cold-start, data-survival, and StrictMode runtime smoke still need manual device/emulator validation
 - Benchmark deltas:
-  - Not applicable for `FIX-001`
+  - Not applicable for `FIX-002A`
 - Remaining fixes:
-  - `FIX-002`
+  - `FIX-002B`
   - `FIX-003`
   - `FIX-004`
   - `FIX-005`
@@ -1168,7 +1173,7 @@ For every fix, perform the following validation categories as applicable:
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-001`
+  - No rollback required; `FIX-002A` remains reversible by restoring the previous Room builder and bootstrap path
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
