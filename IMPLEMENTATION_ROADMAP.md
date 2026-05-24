@@ -1102,6 +1102,7 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-001` completed: `KomaViewModel` creation now uses lifecycle ownership with an application-scoped dependency graph.
 - Validation policy updated: `:app:assembleDebug` and `:app:testDebugUnitTest` are the required migration gates; lint is documented only and does not block execution.
 - `FIX-002` completed under the updated migration validation policy.
+- `FIX-002B` completed: targeted Room migration coverage was added and the Android test artifact now validates the persistence change path at build time.
 - `FIX-003` completed: composition-time storage calls were replaced with immutable lookup state prepared by the controller layer.
 
 ### In Progress
@@ -1140,6 +1141,7 @@ For every fix, perform the following validation categories as applicable:
 - `IMPLEMENTATION_ROADMAP.md` - updated to mark `FIX-001` in progress and record baseline validation state
 - `IMPLEMENTATION_ROADMAP.md` - updated to add `ENV-001`, compatibility matrix, required Java version, and build validation gate
 - `app/build.gradle` - added Kotlin JVM toolchain `21`, Java compile toolchain selection `21`, and lint baseline configuration
+- `app/build.gradle` - added Android test runner and Room migration test dependencies for `FIX-002B`
 - `.github/workflows/build-release.yml` - aligned CI JDK from `17` to `21`
 - `app/lint-baseline.xml` - generated baseline for existing lint debt so future lint runs fail only on new issues
 - `app/src/main/java/com/paudinc/komastream/AppGraph.kt` - added application-scoped dependency holder for root objects retained by `KomaViewModel`
@@ -1151,26 +1153,26 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt` - added compatibility wrappers and bootstrap preference syncing for settings-backed reads
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt` - added immutable lookup state for composition-safe library lookups
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/LibraryController.kt` - populated immutable lookup state from background-loaded storage snapshots
+- `app/src/androidTest/java/com/paudinc/komastream/data/local/LibraryDatabaseMigrationTest.kt` - added targeted migration coverage for the Room v10 to v11 settings/data preservation path
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-003`
+- Current fix ID: `FIX-002B`
 - Current phase: Completed
 - Completed validations:
   - `./gradlew :app:assembleDebug` - Passed
   - `./gradlew :app:testDebugUnitTest` - Passed
+  - `./gradlew :app:assembleDebugAndroidTest` - Passed
 - Changed files:
-  - `app/src/main/java/com/paudinc/komastream/KomaStream.kt`
-  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt`
-  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/LibraryController.kt`
-  - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt`
+  - `app/build.gradle`
+  - `app/src/androidTest/java/com/paudinc/komastream/data/local/LibraryDatabaseMigrationTest.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - `LibraryStore` still contains compatibility wrappers around some synchronous APIs; composition is fixed, but the deeper async cleanup remains for later architecture work
-  - Runtime list-flow smoke for home/catalog/library remains recommended but is not a blocking gate under the current migration policy
+  - Migration coverage currently targets the validated v10 to v11 path; deeper historical migration combinations remain future hardening work
+  - Instrumentation execution on device/emulator is still optional and was not required for this checkpoint
 - Benchmark deltas:
-  - Not applicable for `FIX-003`
+  - Not applicable for `FIX-002B`
 - Remaining fixes:
   - `FIX-004`
   - `FIX-005`
@@ -1182,7 +1184,7 @@ For every fix, perform the following validation categories as applicable:
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-003`
+  - No rollback required for `FIX-002B`
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
