@@ -64,19 +64,22 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.paudinc.komastream.provider.providers.MangadotProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
+import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KomaStream() {
     val context = LocalContext.current
-    val providerRegistry = remember(context) { createDefaultProviderRegistry(context.applicationContext) }
-    val libraryStore = remember { LibraryStore(context) }
-    val offlineStore = remember { OfflineChapterStore(context) }
-    val workManager = remember { WorkManager.getInstance(context) }
-    val updater = remember { GitHubReleaseUpdater(context.applicationContext) }
+    val appGraph = remember(context.applicationContext) {
+        (context.applicationContext as KomaStreamApp).appGraph
+    }
+    val providerRegistry = appGraph.providerRegistry
+    val libraryStore = appGraph.libraryStore
+    val offlineStore = appGraph.offlineStore
+    val updater = appGraph.updater
     val strings = appStrings()
     var savedNavigationStack by rememberSaveable(stateSaver = ScreenStackSaver) {
         mutableStateOf(
@@ -86,18 +89,18 @@ fun KomaStream() {
         )
     }
 
-    val viewModel = remember {
-        KomaViewModel(
-            context = context,
-            providerRegistry = providerRegistry,
-            libraryStore = libraryStore,
-            offlineStore = offlineStore,
-            workManager = workManager,
-            updater = updater,
+    val viewModel: KomaViewModel = viewModel(
+        factory = KomaViewModelFactory(
+            appContext = appGraph.appContext,
+            providerRegistry = appGraph.providerRegistry,
+            libraryStore = appGraph.libraryStore,
+            offlineStore = appGraph.offlineStore,
+            workManager = appGraph.workManager,
+            updater = appGraph.updater,
             strings = strings,
             initialNavigationStack = savedNavigationStack,
         )
-    }
+    )
     val saveableStateHolder = rememberSaveableStateHolder()
     var previousSaveableScreenKeys by remember { mutableStateOf<List<String>>(emptyList()) }
 
@@ -235,25 +238,25 @@ fun KomaStream() {
         savedNavigationStack = viewModel.navigationController.navigationStack
     }
 
-        LaunchedEffect(screen, readerUiState.readerData, readerUiState.selectedDetail) {
-            when (screen) {
-                is Screen.Reader -> {
-                    val activeReader = readerUiState.readerData
-                    if (activeReader?.providerId != screen.providerId || activeReader.chapterPath != screen.chapterPath) {
-                        viewModel.restoreScreenStateIfNeeded(screen)
-                    }
+    LaunchedEffect(screen, readerUiState.readerData, readerUiState.selectedDetail) {
+        when (screen) {
+            is Screen.Reader -> {
+                val activeReader = readerUiState.readerData
+                if (activeReader?.providerId != screen.providerId || activeReader.chapterPath != screen.chapterPath) {
+                    viewModel.restoreScreenStateIfNeeded(screen)
                 }
-                is Screen.Detail -> {
-                    val activeDetail = readerUiState.selectedDetail
-                    if (
-                        (activeDetail?.providerId != screen.providerId || activeDetail.detailPath != screen.detailPath) &&
-                        readerUiState.requestedDetailPath != screen.detailPath
-                    ) {
-                        viewModel.restoreScreenStateIfNeeded(screen)
-                    }
-                }
-                else -> Unit
             }
+            is Screen.Detail -> {
+                val activeDetail = readerUiState.selectedDetail
+                if (
+                    (activeDetail?.providerId != screen.providerId || activeDetail.detailPath != screen.detailPath) &&
+                    readerUiState.requestedDetailPath != screen.detailPath
+                ) {
+                    viewModel.restoreScreenStateIfNeeded(screen)
+                }
+            }
+            else -> Unit
+        }
     }
 
     val colorScheme = if (libraryState.useDarkTheme) komaDarkColorScheme() else komaLightColorScheme()

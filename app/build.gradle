@@ -5,6 +5,8 @@ plugins {
     id 'org.jetbrains.kotlin.kapt'
 }
 
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 import java.util.Properties
 
 def envOrNull = { String name ->
@@ -100,6 +102,20 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 dependencies {
@@ -116,6 +132,7 @@ dependencies {
     implementation "androidx.compose.material:material-icons-extended"
     implementation "androidx.compose.ui:ui-tooling-preview"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:2.10.0"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0"
     implementation "androidx.room:room-runtime:2.7.0"
     implementation "androidx.room:room-ktx:2.7.0"
     kapt "androidx.room:room-compiler:2.7.0"

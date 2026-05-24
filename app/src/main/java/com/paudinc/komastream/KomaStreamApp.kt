@@ -14,6 +14,8 @@ import com.paudinc.komastream.utils.AppCacheMaintenance
 import java.io.File
 
 class KomaStreamApp : Application(), ImageLoaderFactory {
+    lateinit var appGraph: AppGraph
+        private set
 
     override fun attachBaseContext(base: Context) {
         val prefs = base.getSharedPreferences("manga_library", MODE_PRIVATE)
@@ -34,6 +36,7 @@ class KomaStreamApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        appGraph = AppGraph(this)
         Thread {
             AppCacheMaintenance.trimAll(this)
         }.start()
