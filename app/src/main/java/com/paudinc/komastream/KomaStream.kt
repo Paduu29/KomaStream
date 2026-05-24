@@ -120,6 +120,7 @@ fun KomaStream() {
     val libraryUiState = libraryController.uiState
     val libraryState = libraryUiState.state
     val allProvidersLibraryState = libraryUiState.allProvidersState
+    val libraryLookupState = libraryUiState.lookup
     val catalogUiState = catalogController.uiState
     val readerUiState = readerController.uiState
     val homeUiState = homeController.uiState
@@ -143,6 +144,18 @@ fun KomaStream() {
     }
     val activity = context as? Activity
     val currentProvider = viewModel.currentProvider
+    val favoriteLookup: (String, String) -> Boolean = { providerId, detailPath ->
+        libraryLookupState.favoriteKeys.contains("$providerId::${canonicalMangaPathKey(providerId, detailPath)}")
+    }
+    val chapterProgressLookup: (String, String) -> Int = { providerId, chapterPath ->
+        libraryLookupState.chapterProgressByKey[qualifyProviderValue(providerId, chapterPath)] ?: 0
+    }
+    val cachedDetailLookup: (String, String) -> com.paudinc.komastream.data.model.MangaDetail? = { providerId, detailPath ->
+        libraryLookupState.cachedDetailByKey["$providerId::${canonicalMangaPathKey(providerId, detailPath)}"]
+    }
+    val readChaptersLookup: (String) -> Set<String> = { providerId ->
+        libraryLookupState.readChaptersByProvider[providerId].orEmpty()
+    }
     val currentRelease: GitHubRelease? = when (val state = updateController.updateState) {
         is AppUpdateUiState.Available -> state.release
         is AppUpdateUiState.Downloading -> state.release
@@ -478,9 +491,7 @@ fun KomaStream() {
                                     feed = homeUiState.feed,
                                     reading = libraryState.reading,
                                     readChapters = libraryState.readChapters,
-                                    chapterProgress = { providerId, chapterPath ->
-                                        libraryStore.getChapterProgress(providerId, chapterPath)
-                                    },
+                                    chapterProgress = chapterProgressLookup,
                                     strings = strings,
                                     onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                     onOpenChapter = { id, path -> viewModel.openReader(id, path) },
@@ -495,9 +506,7 @@ fun KomaStream() {
                                     },
                                     onAddToReading = { viewModel.addToReading(it) },
                                     onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                    isFavorite = { providerId, detailPath ->
-                                        libraryStore.isFavorite(providerId, detailPath)
-                                    },
+                                    isFavorite = favoriteLookup,
                                     isRefreshing = homeUiState.isRefreshing,
                                     onRefresh = {
                                         homeController.refreshHome(
@@ -524,10 +533,10 @@ fun KomaStream() {
                                             runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
                                         },
                                         chapterCountForManga = { providerId, detailPath ->
-                                            libraryStore.getCachedMangaChapterCount(providerId, detailPath)
+                                            cachedDetailLookup(providerId, detailPath)?.chapters?.size
                                         },
                                         resolveChapterPathForManga = { providerId, detailPath, progressNumber, fallbackPath ->
-                                            val cachedDetail = libraryStore.getCachedMangaDetail(providerId, detailPath)
+                                            val cachedDetail = cachedDetailLookup(providerId, detailPath)
                                             cachedDetail?.chapters?.let { chapters ->
                                                 com.paudinc.komastream.utils.resolveChapterPathForProgressReference(
                                                     providerId = providerId,
@@ -573,9 +582,7 @@ fun KomaStream() {
                                     onLoadMore = { viewModel.searchCatalog(loadMore = true) },
                                     onOpen = { id, path -> viewModel.openDetail(id, path) },
                                     onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                    isFavorite = { providerId, detailPath ->
-                                        libraryStore.isFavorite(providerId, detailPath)
-                                    },
+                                    isFavorite = favoriteLookup,
                                 )
                                     RootTab.Favorites -> LibraryScreen(
                                         libraryState = allProvidersLibraryState,
@@ -585,10 +592,10 @@ fun KomaStream() {
                                     runCatching { providerRegistry.get(providerId).displayName }.getOrDefault(providerId)
                                 },
                                 chapterCountForManga = { providerId, detailPath ->
-                                    libraryStore.getCachedMangaChapterCount(providerId, detailPath)
+                                    cachedDetailLookup(providerId, detailPath)?.chapters?.size
                                 },
                                 resolveChapterPathForManga = { providerId, detailPath, progressNumber, fallbackPath ->
-                                    val cachedDetail = libraryStore.getCachedMangaDetail(providerId, detailPath)
+                                    val cachedDetail = cachedDetailLookup(providerId, detailPath)
                                     cachedDetail?.chapters?.let { chapters ->
                                         com.paudinc.komastream.utils.resolveChapterPathForProgressReference(
                                             providerId = providerId,
@@ -625,7 +632,7 @@ fun KomaStream() {
                             }
                             is Screen.Detail -> {
                                 readerUiState.selectedDetail?.let { detail ->
-                                        val detailReadChapters = libraryStore.readChaptersForProvider(detail.providerId)
+                                        val detailReadChapters = readChaptersLookup(detail.providerId)
                                         val detailReading = allProvidersLibraryState.reading.firstOrNull {
                                             it.providerId == detail.providerId && sameMangaPath(detail.providerId, it.detailPath, detail.detailPath)
                                         }
@@ -700,7 +707,7 @@ fun KomaStream() {
                                         },
                                         isRead = canonicalChapterKey(data.providerId, data.chapterPath) in canonicalChapterKeys(
                                             data.providerId,
-                                            libraryStore.readChaptersForProvider(data.providerId),
+                                            readChaptersLookup(data.providerId),
                                         ),
                                         onToggleRead = { viewModel.toggleChapterRead(data.providerId, data.chapterPath) },
                                         onOpenChapter = { currentPath, targetPath, markCurrentRead ->
@@ -718,16 +725,12 @@ fun KomaStream() {
                                                 strings = strings,
                                                 page = page,
                                                 readChapters = libraryState.readChapters,
-                                                chapterProgress = { providerId, chapterPath ->
-                                                    libraryStore.getChapterProgress(providerId, chapterPath)
-                                                },
+                                                chapterProgress = chapterProgressLookup,
                                                 onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                                 onOpenChapter = { id, path -> viewModel.openReader(id, path) },
                                                 onAddToReading = { viewModel.addToReading(it) },
                                                 onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                                isFavorite = { providerId, detailPath ->
-                                                    libraryStore.isFavorite(providerId, detailPath)
-                                                },
+                                                isFavorite = favoriteLookup,
                                             )
                                 } ?: LoadingPlaceholder(strings.loadingProviderHome(currentProvider.displayName))
                             }
@@ -737,17 +740,13 @@ fun KomaStream() {
                                 provider = currentProvider,
                                 reading = libraryState.reading,
                                 readChapters = libraryState.readChapters,
-                                chapterProgress = { providerId, chapterPath ->
-                                    libraryStore.getChapterProgress(providerId, chapterPath)
-                                },
+                                chapterProgress = chapterProgressLookup,
                                 strings = strings,
                                 onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                 onOpenChapter = { id, path -> viewModel.openReader(id, path) },
                                 onAddToReading = { viewModel.addToReading(it) },
                                 onToggleFavorite = { viewModel.toggleFavorite(it) },
-                                isFavorite = { providerId, detailPath ->
-                                    libraryStore.isFavorite(providerId, detailPath)
-                                },
+                                isFavorite = favoriteLookup,
                             )
                             is Screen.Settings -> SettingsScreen(
                                 strings = strings,

@@ -30,9 +30,17 @@ data class CatalogUiState(
 data class LibraryUiState(
     val state: LibraryState,
     val allProvidersState: LibraryState = state,
+    val lookup: LibraryLookupState = LibraryLookupState(),
     val selectedTab: LibraryTab = LibraryTab.ContinueReading,
     val downloadedChapterPaths: Set<String> = emptySet(),
     val isBulkUpdatingChapters: Boolean = false,
+)
+
+data class LibraryLookupState(
+    val favoriteKeys: Set<String> = emptySet(),
+    val chapterProgressByKey: Map<String, Int> = emptyMap(),
+    val cachedDetailByKey: Map<String, MangaDetail> = emptyMap(),
+    val readChaptersByProvider: Map<String, Set<String>> = emptyMap(),
 )
 
 fun emptyLibraryState(): LibraryState =

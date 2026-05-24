@@ -26,6 +26,7 @@ import com.paudinc.komastream.utils.DownloadChapterWorker
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.buildChapterPath
+import com.paudinc.komastream.utils.canonicalMangaPathKey
 import com.paudinc.komastream.utils.chapterValue
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
@@ -65,18 +66,31 @@ class LibraryController(
 
     fun refreshStateAsync(filterBySelectedProvider: Boolean = true) {
         scope.launch {
-            val (state, allProvidersState) = withContext(Dispatchers.IO) {
+            val (state, allProvidersState, lookupState) = withContext(Dispatchers.IO) {
                 val currentState = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider)
                 val currentAllProvidersState = if (filterBySelectedProvider) {
                     libraryStore.read(filterBySelectedProvider = false)
                 } else {
                     currentState
                 }
-                currentState to currentAllProvidersState
+                val favoriteKeys = currentAllProvidersState.favorites.mapTo(linkedSetOf()) { favorite ->
+                    qualifyMangaLookupKey(favorite.providerId, favorite.detailPath)
+                }
+                Triple(
+                    currentState,
+                    currentAllProvidersState,
+                    LibraryLookupState(
+                        favoriteKeys = favoriteKeys,
+                        chapterProgressByKey = libraryStore.readAllChapterProgress(),
+                        cachedDetailByKey = libraryStore.readAllCachedMangaDetails(),
+                        readChaptersByProvider = libraryStore.readAllReadChaptersByProvider(),
+                    )
+                )
             }
             uiState = uiState.copy(
                 state = state,
                 allProvidersState = allProvidersState,
+                lookup = lookupState,
             )
         }
     }
@@ -407,4 +421,7 @@ class LibraryController(
 
     private fun downloadWorkName(providerId: String, path: String): String =
         "download:$providerId:$path"
+
+    private fun qualifyMangaLookupKey(providerId: String, detailPath: String): String =
+        "$providerId::${canonicalMangaPathKey(providerId, detailPath)}"
 }

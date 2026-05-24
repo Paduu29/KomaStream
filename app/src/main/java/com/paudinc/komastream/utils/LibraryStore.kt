@@ -284,6 +284,37 @@ class LibraryStore(context: Context) {
         }
     }
 
+    fun readAllChapterProgress(): Map<String, Int> {
+        return runDatabaseCall {
+            ensureInitialized()
+            dao.readChapterProgress().associate { entry ->
+                qualifyProviderValue(entry.providerId, entry.chapterPath) to entry.pageIndex.coerceAtLeast(0)
+            }
+        }
+    }
+
+    fun readAllCachedMangaDetails(): Map<String, MangaDetail> {
+        return runDatabaseCall {
+            ensureInitialized()
+            dao.readMangaDetailCaches()
+                .sortedBy { it.updatedAt }
+                .mapNotNull { entity ->
+                    runCatching { mangaDetailCacheCodec.deserialize(entity.detailJson) }.getOrNull()
+                        ?.let { detail -> qualifyMangaLookupKey(detail.providerId, detail.detailPath) to detail }
+                }
+                .toMap()
+        }
+    }
+
+    fun readAllReadChaptersByProvider(): Map<String, Set<String>> {
+        return runDatabaseCall {
+            ensureInitialized()
+            dao.readChapters()
+                .groupBy { it.providerId }
+                .mapValues { (_, entries) -> entries.map { it.chapterPath }.toSet() }
+        }
+    }
+
     fun cacheMangaDetail(detail: MangaDetail): Boolean {
         ensureInitialized()
         val detailKey = mangaKey(detail.providerId, detail.detailPath)
@@ -1322,6 +1353,10 @@ class LibraryStore(context: Context) {
 
     private fun mangaKey(providerId: String, detailPath: String): String {
         return canonicalMangaPathKey(providerId, detailPath)
+    }
+
+    private fun qualifyMangaLookupKey(providerId: String, detailPath: String): String {
+        return "$providerId::${canonicalMangaPathKey(providerId, detailPath)}"
     }
 
     private fun detailPathScore(providerId: String, detailPath: String): Int {
