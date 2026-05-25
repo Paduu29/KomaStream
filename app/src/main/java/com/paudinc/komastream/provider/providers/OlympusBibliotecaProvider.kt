@@ -27,14 +27,14 @@ import org.jsoup.nodes.Element
 import java.text.Normalizer
 import java.util.Locale
 
-class OlympusBibliotecaProvider : MangaProvider {
+class OlympusBibliotecaProvider(
+    private val client: OkHttpClient = OkHttpClient(),
+) : MangaProvider {
     override val id: String = PROVIDER_ID
     override val displayName: String = "Olympus Biblioteca"
     override val language: AppLanguage = AppLanguage.ES
     override val websiteUrl: String = BASE_URL
     override val logoUrl: String = "$BASE_URL/olympus-logo-180.webp"
-
-    private val client = OkHttpClient()
 
     @Volatile
     private var cachedSeriesList: List<SeriesListItem>? = null

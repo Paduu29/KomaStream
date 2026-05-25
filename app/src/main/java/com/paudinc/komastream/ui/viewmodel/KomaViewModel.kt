@@ -29,6 +29,7 @@ import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
+import com.paudinc.komastream.utils.MyAnimeListApi
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
@@ -49,6 +50,7 @@ class KomaViewModel(
     offlineStore: OfflineChapterStore,
     workManager: WorkManager,
     updater: GitHubReleaseUpdater,
+    myAnimeListApi: MyAnimeListApi,
     private val strings: AppStrings,
     initialNavigationStack: List<Screen>? = null,
     backupFileInteractor: BackupFileInteractor = BackupFileInteractor(context.contentResolver),
@@ -80,6 +82,7 @@ class KomaViewModel(
         scope = viewModelScope,
         providerRegistry = providerRegistry,
         libraryStore = libraryStore,
+        api = myAnimeListApi,
         strings = strings,
         onLocalLibraryChanged = ::refreshLibraryUi,
     )

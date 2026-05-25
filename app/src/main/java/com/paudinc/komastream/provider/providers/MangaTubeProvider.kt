@@ -43,6 +43,7 @@ import java.util.concurrent.TimeUnit
 
 class MangaTubeProvider(
     context: Context? = null,
+    baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     override val id: String = "mangatube-de"
     override val displayName: String = "Manga-Tube"
@@ -57,7 +58,7 @@ class MangaTubeProvider(
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
-    private val client = OkHttpClient.Builder()
+    private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
 

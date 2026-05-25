@@ -11,6 +11,7 @@ import androidx.work.Data
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.paudinc.komastream.R
+import com.paudinc.komastream.KomaStreamApp
 
 class DownloadChapterWorker(
     appContext: Context,
@@ -20,8 +21,9 @@ class DownloadChapterWorker(
     override suspend fun doWork(): Result {
         val providerId = inputData.getString(KEY_PROVIDER_ID)?.takeIf { it.isNotBlank() } ?: return Result.failure()
         val chapterPath = inputData.getString(KEY_CHAPTER_PATH)?.takeIf { it.isNotBlank() } ?: return Result.failure()
-        val provider = createDefaultProviderRegistry(applicationContext).get(providerId)
-        val offlineStore = OfflineChapterStore(applicationContext)
+        val appGraph = (applicationContext as KomaStreamApp).appGraph
+        val provider = appGraph.providerRegistry.get(providerId)
+        val offlineStore = appGraph.offlineStore
 
         return runCatching {
             createChannel()

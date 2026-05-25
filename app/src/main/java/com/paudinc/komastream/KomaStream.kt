@@ -98,6 +98,7 @@ fun KomaStream() {
             offlineStore = appGraph.offlineStore,
             workManager = appGraph.workManager,
             updater = appGraph.updater,
+            myAnimeListApi = appGraph.myAnimeListApi,
             strings = strings,
             initialNavigationStack = savedNavigationStack,
         )

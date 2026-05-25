@@ -9,14 +9,16 @@ import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
 
-class AkaiComicProvider(private val context: Context) : MangaProvider {
+class AkaiComicProvider(
+    private val context: Context,
+    private val http: OkHttpClient = OkHttpClient(),
+) : MangaProvider {
     override val id = "akaicomic-en"
     override val displayName = "Akai Comic"
     override val language = AppLanguage.EN
     override val websiteUrl = "https://akaicomic.org"
     override val logoUrl = "https://akaicomic.org/favicon.ico"
 
-    private val http = OkHttpClient()
     private val webViewResolver by lazy { AkaiComicWebViewResolver(context.applicationContext, http) }
 
     override fun fetchHomeFeed(): HomeFeed {

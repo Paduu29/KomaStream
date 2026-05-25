@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit
 
 class MangaBallProvider(
     context: Context,
+    baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     private val appContext = context.applicationContext
     private val sessionLock = Any()
@@ -54,7 +55,7 @@ class MangaBallProvider(
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
-    private val client = OkHttpClient.Builder()
+    private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
 

@@ -15,7 +15,9 @@ import org.jsoup.nodes.Element
 import java.net.CookieManager
 import java.net.CookiePolicy
 
-class InMangaProvider : MangaProvider {
+class InMangaProvider(
+    baseClient: OkHttpClient = OkHttpClient(),
+) : MangaProvider {
     override val id: String = "inmanga-es"
     override val displayName: String = "InManga"
     override val language: AppLanguage = AppLanguage.ES
@@ -25,7 +27,7 @@ class InMangaProvider : MangaProvider {
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
-    private val client = OkHttpClient.Builder()
+    private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
     private val mangaUuidRegex = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")

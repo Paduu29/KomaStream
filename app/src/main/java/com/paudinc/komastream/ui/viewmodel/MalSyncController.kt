@@ -43,6 +43,7 @@ class MalSyncController(
     private val scope: CoroutineScope,
     private val providerRegistry: com.paudinc.komastream.utils.ProviderRegistry,
     private val libraryStore: LibraryStore,
+    private val api: MyAnimeListApi,
     private val strings: AppStrings,
     private val onLocalLibraryChanged: (() -> Unit)? = null,
 ) {
@@ -52,7 +53,6 @@ class MalSyncController(
         private const val SYNC_TO_REMOTE_BASE_UNITS = 3
     }
 
-    private val api = MyAnimeListApi()
     private val sessionStore = MyAnimeListSessionStore(context)
     private val linkStore = MyAnimeListLinkStore(context)
     private val clientId: String = BuildConfig.MAL_CLIENT_ID.trim()

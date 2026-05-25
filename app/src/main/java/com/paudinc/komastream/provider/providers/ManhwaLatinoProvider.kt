@@ -33,6 +33,7 @@ import java.net.URI
 
 class ManhwaLatinoProvider(
     context: Context,
+    baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     companion object {
         const val PROVIDER_ID = "manhwa-latino-es"
@@ -56,7 +57,7 @@ class ManhwaLatinoProvider(
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
     private val cloudflareLock = Any()
-    private val client = OkHttpClient.Builder()
+    private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
 

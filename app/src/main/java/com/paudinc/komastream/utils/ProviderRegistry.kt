@@ -14,6 +14,7 @@ import com.paudinc.komastream.provider.providers.MangaFireProvider
 import com.paudinc.komastream.provider.providers.MangaTubeProvider
 import com.paudinc.komastream.provider.providers.Manhwa18Provider
 import com.paudinc.komastream.provider.providers.OlympusBibliotecaProvider
+import okhttp3.OkHttpClient
 
 class ProviderRegistry(
     providers: List<MangaProvider>,
@@ -46,21 +47,24 @@ class ProviderRegistry(
 }
 
 fun createDefaultProviderRegistry(): ProviderRegistry =
-    createDefaultProviderRegistry(context = null)
+    createDefaultProviderRegistry(context = null, sharedHttpClient = OkHttpClient())
 
-fun createDefaultProviderRegistry(context: Context?): ProviderRegistry =
+fun createDefaultProviderRegistry(
+    context: Context?,
+    sharedHttpClient: OkHttpClient = OkHttpClient(),
+): ProviderRegistry =
     ProviderRegistry(
         buildList {
-            add(InMangaProvider())
-            add(LeerMangaEspProvider())
-            add(OlympusBibliotecaProvider())
-            add(MangaTubeProvider(context))
-            add(MangaFireProvider(context))
-            add(MarmotaProvider())
-            add(MangadotProvider())
-            context?.let { add(Manhwa18Provider(it)) }
-            context?.let { add(ManhwaLatinoProvider(it)) }
-            context?.let { add(MangaBallProvider(it)) }
-            context?.let { add(AkaiComicProvider(it)) }
+            add(InMangaProvider(sharedHttpClient))
+            add(LeerMangaEspProvider(sharedHttpClient))
+            add(OlympusBibliotecaProvider(sharedHttpClient))
+            add(MangaTubeProvider(context, sharedHttpClient))
+            add(MangaFireProvider(context, sharedHttpClient))
+            add(MarmotaProvider(sharedHttpClient))
+            add(MangadotProvider(sharedHttpClient))
+            context?.let { add(Manhwa18Provider(it, sharedHttpClient)) }
+            context?.let { add(ManhwaLatinoProvider(it, sharedHttpClient)) }
+            context?.let { add(MangaBallProvider(it, sharedHttpClient)) }
+            context?.let { add(AkaiComicProvider(it, sharedHttpClient)) }
         }
     )

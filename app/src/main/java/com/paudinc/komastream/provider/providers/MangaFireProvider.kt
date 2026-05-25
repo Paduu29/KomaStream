@@ -17,6 +17,7 @@ import org.jsoup.nodes.Document
 
 class MangaFireProvider(
     context: Context? = null,
+    private val client: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     override val id: String = "mangafire-en"
     override val displayName: String = "MangaFire"
@@ -25,7 +26,6 @@ class MangaFireProvider(
     override val logoUrl: String = "https://s.mfcdn.nl/assets/sites/mangafire/favicon.png?v4"
 
     private val baseUrl = "https://mangafire.to"
-    private val client = OkHttpClient()
     private val readerResolver = context?.let { MangaFireWebViewResolver(it.applicationContext, client) }
 
     override fun fetchHomeFeed(): HomeFeed {

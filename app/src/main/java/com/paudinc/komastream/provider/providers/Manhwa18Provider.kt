@@ -27,6 +27,7 @@ import java.net.URLEncoder
 
 class Manhwa18Provider(
     context: Context,
+    private val client: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     companion object {
         const val PROVIDER_ID = "manhwa18-en"
@@ -48,8 +49,6 @@ class Manhwa18Provider(
     override val isAdultOnly: Boolean = true
 
     private val baseUrl = websiteUrl
-    private val client = OkHttpClient()
-
     override fun fetchHomeFeed(): HomeFeed {
         val document = getDocument("/")
         val sections = parseHomeSections(document)

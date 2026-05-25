@@ -27,7 +27,9 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.util.Locale
 
-class LeerMangaEspProvider : MangaProvider {
+class LeerMangaEspProvider(
+    private val client: OkHttpClient = OkHttpClient(),
+) : MangaProvider {
     override val id: String = "leermangaesp-es"
     override val displayName: String = "LeerMangaEsp"
     override val language: AppLanguage = AppLanguage.ES
@@ -36,8 +38,6 @@ class LeerMangaEspProvider : MangaProvider {
 
     private val baseUrl = "https://leermangaesp.net"
     private val imageBaseUrl = "https://images.leermangaesp.net/file/leermangaesp"
-    private val client = OkHttpClient()
-
     override fun fetchHomeFeed(): HomeFeed {
         val homeDocument = getDocument("/")
         val featuredMangas = parseFeaturedMangas(homeDocument)

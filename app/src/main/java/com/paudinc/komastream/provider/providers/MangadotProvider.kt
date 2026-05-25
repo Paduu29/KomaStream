@@ -38,7 +38,9 @@ import java.net.CookiePolicy
 import java.net.HttpCookie
 import java.net.URI
 
-class MangadotProvider : MangaProvider {
+class MangadotProvider(
+    baseClient: OkHttpClient = OkHttpClient(),
+) : MangaProvider {
     companion object {
         const val PROVIDER_ID = "mangadotnet-en"
         private const val TAG = "MangadotProvider"
@@ -77,7 +79,7 @@ class MangadotProvider : MangaProvider {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
     private val cloudflareLock = Any()
-    private val client = OkHttpClient.Builder()
+    private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
     @Volatile

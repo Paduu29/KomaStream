@@ -33,12 +33,15 @@ data class CachedMangaDetailSnapshot(
     val updatedAt: Long,
 )
 
-class LibraryStore(context: Context) {
+class LibraryStore(
+    context: Context,
+    providerRegistry: ProviderRegistry = createDefaultProviderRegistry(context.applicationContext),
+) {
     private val appContext = context.applicationContext
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
     private val database = LibraryDatabase.getInstance(appContext)
     private val dao = database.libraryDao()
-    private val providerRegistry = createDefaultProviderRegistry(appContext)
+    private val providerRegistry = providerRegistry
     private val defaultProviderId: String = providerRegistry.defaultProvider().id
     private val jsonCodec = LibraryJsonCodec(defaultProviderId = defaultProviderId)
     private val backupPayloadCodec = LibraryBackupPayloadCodec()

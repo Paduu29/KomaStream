@@ -28,14 +28,14 @@ import org.jsoup.nodes.Element
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-class MarmotaProvider : MangaProvider {
+class MarmotaProvider(
+    private val client: OkHttpClient = OkHttpClient(),
+) : MangaProvider {
     override val id: String = PROVIDER_ID
     override val displayName: String = "Marmota"
     override val language: AppLanguage = AppLanguage.ES
     override val websiteUrl: String = BASE_URL
     override val logoUrl: String = "https://marmota.me/wp-content/uploads/2023/03/logo-marmota-me.png"
-
-    private val client = OkHttpClient()
 
     override fun fetchHomeFeed(): HomeFeed {
         val homeDocument = getDocument("/")

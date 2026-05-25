@@ -783,7 +783,7 @@ Introduce a singleton app graph with shared HTTP infrastructure and provider con
 - `FIX-001`
 
 ### Status
-Pending
+Done
 
 ---
 
@@ -1108,12 +1108,12 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-005` completed: offline reader pages now use decrypted cache files for Coil-backed rendering and prefetch, with remembered request objects in the hot path.
 - `FIX-006` completed: chapter downloads now stream encrypted pages into a staging directory and only publish the final manifest after completion.
 - `FIX-007` completed: home-section paging and refresh state now live in `HomeController`, and `HomeSectionScreen` only keeps scroll position locally.
+- `FIX-008` completed: app-graph networking now provides a shared base `OkHttpClient` to provider construction, downloads, updater, MAL API, and library bootstrap while preserving provider-specific customization through compatibility constructors.
 
 ### In Progress
 - None
 
 ### Pending Tasks
-- `FIX-008`
 - `FIX-009`
 - `FIX-010`
 - `FIX-011`
@@ -1165,34 +1165,55 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/ui/screens/HomeSectionScreen.kt` - removed composable-owned paging/network state and list savers in favor of controller-backed section state
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt` - added home-section UI state models
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/HomeController.kt` - added lifecycle-owned home-section bind and load-more state management
+- `app/src/main/java/com/paudinc/komastream/AppGraph.kt` - added shared base HTTP client plus shared MAL API/updater wiring
+- `app/src/main/java/com/paudinc/komastream/KomaViewModelFactory.kt` - plumbed shared MAL API into `KomaViewModel`
+- `app/src/main/java/com/paudinc/komastream/provider/providers/*Provider.kt` - switched provider construction to accept shared-client injection while preserving provider-specific cookie/header builders
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/MalSyncController.kt` - stopped creating its own `MyAnimeListApi`
+- `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt` - switched worker provider/store lookup to application graph
+- `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt` - reused shared provider registry instead of creating an app-path duplicate
+- `app/src/main/java/com/paudinc/komastream/utils/ProviderRegistry.kt` - added shared-client registry construction path
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-007`
+- Current fix ID: `FIX-008`
 - Current phase: Completed
 - Completed validations:
   - `.\gradlew.bat :app:assembleDebug` - Passed
   - `.\gradlew.bat :app:testDebugUnitTest` - Passed
 - Changed files:
+  - `app/src/main/java/com/paudinc/komastream/AppGraph.kt`
   - `app/src/main/java/com/paudinc/komastream/KomaStream.kt`
-  - `app/src/main/java/com/paudinc/komastream/ui/screens/HomeSectionScreen.kt`
-  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt`
-  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/HomeController.kt`
+  - `app/src/main/java/com/paudinc/komastream/KomaViewModelFactory.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/AkaiComicProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/InMangaProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/LeerMangaEspProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangaBallProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangaFireProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangaTubeProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/Manhwa18Provider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/ManhwaLatinoProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/MarmotaProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/OlympusBibliotecaProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/KomaViewModel.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/MalSyncController.kt`
+  - `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt`
+  - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt`
+  - `app/src/main/java/com/paudinc/komastream/utils/ProviderRegistry.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - `HomeSectionScreen` still initializes section binding from `LaunchedEffect`; network ownership moved out of composition, but runtime rotation smoke is still recommended for paged sections
-  - This repo's Gradle/KAPT pipeline is not reliable under parallel required gates; validations were rerun sequentially and passed
+  - Provider constructors still keep `OkHttpClient` default parameters for backward compatibility; the app path is centralized, but non-app fallback instantiations can still create standalone clients
+  - Cookie-sensitive provider behavior still depends on provider-specific `newBuilder()` configuration and should get runtime smoke coverage across home/detail/reader/download paths
 - Benchmark deltas:
-  - Not applicable for `FIX-007`
+  - Not applicable for `FIX-008`
 - Remaining fixes:
-  - `FIX-008`
   - `FIX-009`
   - `FIX-010`
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-007`
+  - No rollback required for `FIX-008`
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
