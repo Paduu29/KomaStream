@@ -18,7 +18,9 @@ import javax.crypto.spec.GCMParameterSpec
 
 class OfflineChapterStore(val context: Context) {
     private val rootDir = File(context.filesDir, "offline_chapters").apply { mkdirs() }
+    private val readerCacheDir = File(context.cacheDir, "offline_reader_pages").apply { mkdirs() }
     private val cryptoLock = Any()
+    private val readerCacheLock = Any()
     private val migrationLock = Any()
     @Volatile
     private var legacyMigrationComplete = false
@@ -111,6 +113,38 @@ class OfflineChapterStore(val context: Context) {
         return readEncrypted(file)
     }
 
+    fun getReadablePageFile(providerId: String, chapterPath: String, page: ReaderPage): File? {
+        ensureMigrated()
+        val fileName = page.offlineFileName.takeIf { it.isNotBlank() } ?: return null
+        val encryptedFile = File(chapterDir(providerId, chapterPath), fileName)
+        if (!encryptedFile.exists()) return null
+
+        val targetDir = File(readerCacheDir, chapterDirectoryName(providerId, chapterPath)).apply { mkdirs() }
+        val targetFile = File(targetDir, fileName.substringBeforeLast('.', fileName) + ".img")
+        if (targetFile.exists() && targetFile.length() > 0L && targetFile.lastModified() >= encryptedFile.lastModified()) {
+            return targetFile
+        }
+
+        synchronized(readerCacheLock) {
+            if (targetFile.exists() && targetFile.length() > 0L && targetFile.lastModified() >= encryptedFile.lastModified()) {
+                return targetFile
+            }
+            val tmpFile = File(targetDir, "${targetFile.name}.tmp")
+            tmpFile.outputStream().use { output ->
+                output.write(readEncrypted(encryptedFile))
+            }
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            if (!tmpFile.renameTo(targetFile)) {
+                tmpFile.copyTo(targetFile, overwrite = true)
+                tmpFile.delete()
+            }
+            targetFile.setLastModified(encryptedFile.lastModified())
+        }
+        return targetFile
+    }
+
     fun removeChapter(providerId: String, chapterPath: String) {
         ensureMigrated()
         chapterDir(providerId, chapterPath).deleteRecursively()
@@ -123,10 +157,13 @@ class OfflineChapterStore(val context: Context) {
     }
 
     private fun chapterDir(providerId: String, chapterPath: String): File {
+        return File(rootDir, chapterDirectoryName(providerId, chapterPath))
+    }
+
+    private fun chapterDirectoryName(providerId: String, chapterPath: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(qualifyProviderValue(providerId, chapterPath).toByteArray(StandardCharsets.UTF_8))
-        val name = digest.joinToString("") { "%02x".format(it) }
-        return File(rootDir, name)
+        return digest.joinToString("") { "%02x".format(it) }
     }
 
     private fun manifestFile(providerId: String, chapterPath: String): File = File(chapterDir(providerId, chapterPath), "manifest.json")
