@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager as WebkitCookieManager
 import android.webkit.WebView
+import android.view.ViewGroup
 import android.webkit.WebViewClient
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
@@ -319,10 +320,14 @@ class MangaTubeProvider(
         latch.await(20, TimeUnit.SECONDS)
         mainHandler.post {
             waitState.closed = true
-            webView?.stopLoading()
-            webView?.destroy()
-        }
-        if (html == null) {
+            webView?.apply {
+                stopLoading()
+                loadUrl("about:blank")
+                clearHistory()
+                removeAllViews()
+                (parent as? ViewGroup)?.removeView(this)
+                destroy()
+            }
         }
         return html?.takeIf { it.contains("<html", ignoreCase = true) }
             ?.let { Jsoup.parse(it, baseUrl) }
@@ -608,8 +613,14 @@ class MangaTubeProvider(
         latch.await(15, TimeUnit.SECONDS)
         mainHandler.post {
             waitState.closed = true
-            webView?.stopLoading()
-            webView?.destroy()
+            webView?.apply {
+                stopLoading()
+                loadUrl("about:blank")
+                clearHistory()
+                removeAllViews()
+                (parent as? ViewGroup)?.removeView(this)
+                destroy()
+            }
         }
     }
 

@@ -33,6 +33,10 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.HttpCookie
@@ -87,13 +91,19 @@ class MangadotProvider(
         private set
 
     override fun fetchHomeFeed(): HomeFeed {
-        val homeHtml = getText("/")
-        val latestUpdates = fetchSectionMangas("latest_updates")
-        val recentlyAdded = fetchSectionMangas("recently_added")
-        val mostTracked = fetchSectionMangas("most_tracked")
-        val topRated = fetchSectionMangas("top_rated")
+        return runBlocking(Dispatchers.IO) {
+            val homeDeferred = async { getText("/") }
+            val latestDeferred = async { fetchSectionMangas("latest_updates") }
+            val recentlyDeferred = async { fetchSectionMangas("recently_added") }
+            val mostDeferred = async { fetchSectionMangas("most_tracked") }
+            val topDeferred = async { fetchSectionMangas("top_rated") }
+            val homeHtml = homeDeferred.await()
+            val latestUpdates = latestDeferred.await()
+            val recentlyAdded = recentlyDeferred.await()
+            val mostTracked = mostDeferred.await()
+            val topRated = topDeferred.await()
 
-        return HomeFeed(
+            HomeFeed(
             latestUpdates = emptyList(),
             popularChapters = emptyList(),
             popularMangas = mostTracked.ifEmpty { topRated }.ifEmpty { latestUpdates },
@@ -133,6 +143,7 @@ class MangadotProvider(
                 },
             ),
         )
+        }
     }
 
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {

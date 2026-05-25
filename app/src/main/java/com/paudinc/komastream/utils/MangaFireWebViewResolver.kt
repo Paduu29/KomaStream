@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -11,6 +12,7 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.view.ViewGroup
 import android.webkit.WebViewClient
 import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
@@ -298,6 +300,7 @@ class MangaFireWebViewResolver(
             webView.loadUrl("about:blank")
             webView.clearHistory()
             webView.removeAllViews()
+            (webView.parent as? ViewGroup)?.removeView(webView)
             webView.destroy()
         }
     }
@@ -439,9 +442,9 @@ class MangaFireWebViewResolver(
                 val srcY = pieceHeight * y
                 val tileWidth = min(pieceWidth, source.width - srcX)
                 val tileHeight = min(pieceHeight, source.height - srcY)
-                val tile = Bitmap.createBitmap(source, srcX, srcY, tileWidth, tileHeight)
-                canvas.drawBitmap(tile, dstX.toFloat(), dstY.toFloat(), null)
-                tile.recycle()
+                val srcRect = Rect(srcX, srcY, srcX + tileWidth, srcY + tileHeight)
+                val dstRect = Rect(dstX, dstY, dstX + tileWidth, dstY + tileHeight)
+                canvas.drawBitmap(source, srcRect, dstRect, null)
             }
         }
         val output = ByteArrayOutputStream()

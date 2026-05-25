@@ -18,6 +18,13 @@ android {
 
     targetProjectPath = ':app'
 
+    buildTypes {
+        benchmark {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
     testOptions {
         managedDevices {
             devices {

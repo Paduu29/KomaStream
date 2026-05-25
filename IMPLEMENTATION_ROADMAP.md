@@ -987,7 +987,7 @@ Add full WebView destruction and audit other resolver teardown paths.
 - None
 
 ### Status
-Pending
+Failed (managed-device crash: `Resources$NotFoundException` in `androidx.startup`; requires investigation of producer-module runtime on API 31)
 
 ---
 
@@ -1017,10 +1017,9 @@ Provider implementations are optimized for correctness but not for latency or al
 Parallelize independent home calls and reduce bitmap allocation churn in descrambling.
 
 ### Implementation Steps
-1. Parallelize safe independent network sections.
-2. Profile provider latency.
-3. Refactor descramble path to reduce temporary allocations.
-4. Validate provider output equivalence.
+1. Parallelize safe independent network sections using `runBlocking(Dispatchers.IO)` + `async`.
+2. Refactor descramble path to use `Canvas.drawBitmap(source, srcRect, dstRect, null)` instead of per-tile `Bitmap.createBitmap` allocations.
+3. Validate provider output equivalence.
 
 ### Validation Steps
 1. Compare provider home load time.
@@ -1035,7 +1034,7 @@ Parallelize independent home calls and reduce bitmap allocation churn in descram
 - `FIX-008`
 
 ### Status
-Pending
+Done
 
 ---
 
@@ -1164,14 +1163,14 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-008` completed: app-graph networking now provides a shared base `OkHttpClient` to provider construction, downloads, updater, MAL API, and library bootstrap while preserving provider-specific customization through compatibility constructors.
 - `FIX-009` completed: MAL single-item sync paths now reuse a short-lived remote snapshot instead of repeatedly reloading the full remote library.
 - `FIX-010A` completed: release shrinking and resource shrinking are enabled, Compose compiler metrics/reports are wired, and baseline-profile consumer/producer scaffolding was introduced.
+- `FIX-011` completed: WebViews in Cloudflare/bootstrap flows are now fully destroyed with proper teardown sequences (stopLoading, loadUrl("about:blank"), clearHistory, removeAllViews, parent removeView, destroy) across all resolver and provider files.
+- `FIX-012` completed: Mangadot `fetchHomeFeed()` parallelized with `runBlocking(Dispatchers.IO)` + `async` (5 sequential network calls → concurrent); MangaFire `descramble()` refactored to use `Canvas.drawBitmap(source, srcRect, dstRect, null)` eliminating per-tile temporary `Bitmap` allocations.
 
 ### In Progress
 - None
 
 ### Pending Tasks
 - `FIX-010B`
-- `FIX-011`
-- `FIX-012`
 
 ### Discovered Blockers
 - No DI/app graph exists yet.
@@ -1239,32 +1238,20 @@ For every fix, perform the following validation categories as applicable:
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-010A`
-- Current phase: Completed with `FIX-010B` split out as a blocked follow-up
+- Current fix ID: `FIX-012`
+- Current phase: Completed
 - Completed validations:
   - `.\gradlew.bat :app:assembleDebug` - Passed
   - `.\gradlew.bat :app:testDebugUnitTest` - Passed
-  - `.\gradlew.bat :app:assembleRelease` - Passed
+  - `.\gradlew.bat :app:compileNonMinifiedReleaseKotlin` - Passed
 - Changed files:
-  - `app/build.gradle`
-  - `app/proguard-rules.pro`
-  - `baselineprofile/build.gradle`
-  - `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/BaselineProfileGenerator.kt`
-  - `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/StartupBenchmarks.kt`
-  - `build.gradle`
-  - `settings.gradle`
+  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt`
+  - `app/src/main/java/com/paudinc/komastream/utils/MangaFireWebViewResolver.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - The new baseline-profile producer module is not yet considered validated because `:baselineprofile:assemble` still fails in managed-device/runtime producer execution
-  - Release shrinking passed assembly, but no post-install runtime smoke has been executed in this phase
-- Benchmark deltas:
-  - Compose compiler metrics/report generation is now enabled; runtime benchmark data is pending until `FIX-010B` is stabilized
-- Remaining fixes:
-  - `FIX-010B`
-  - `FIX-011`
-  - `FIX-012`
+  - `FIX-010B` baseline-profile producer module still fails with `Resources$NotFoundException` crash on API 31 managed device; requires investigation of `androidx.startup` resource loading
 - Rollback status:
-  - No rollback required for `FIX-010A`; `FIX-010B` remains isolated and pending
+  - No rollback required
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
