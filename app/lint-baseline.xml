@@ -1,0 +1,839 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
+
+    <issue
+        id="ApplySharedPref"
+        message="Consider using `apply()` instead; `commit` writes its data to persistent storage immediately, whereas `apply` will handle it in the background"
+        errorLine1="        prefs.edit().putString(&quot;appLanguage&quot;, appLanguage.name).commit()"
+        errorLine2="                                                                ~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/KomaStreamApp.kt"
+            line="27"
+            column="65"/>
+    </issue>
+
+    <issue
+        id="ApplySharedPref"
+        message="Consider using `apply()` instead; `commit` writes its data to persistent storage immediately, whereas `apply` will handle it in the background"
+        errorLine1="            .commit()"
+        errorLine2="             ~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/viewmodel/LibraryController.kt"
+            line="322"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val type = match.groups[&quot;type&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="499"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val name = match.groups[&quot;name&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="500"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val handle = match.groups[&quot;handle&quot;]?.value.orEmpty()"
+        errorLine2="                                     ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="501"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val href = match.groups[&quot;href&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="502"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val name = match.groups[&quot;name&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="521"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val handle = match.groups[&quot;handle&quot;]?.value.orEmpty()"
+        errorLine2="                                     ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="522"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val href = match.groups[&quot;href&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="523"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val name = match.groups[&quot;name&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="538"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val href = match.groups[&quot;href&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="539"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val name = match.groups[&quot;name&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="554"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val href = match.groups[&quot;href&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="555"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val name = match.groups[&quot;name&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="570"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val href = match.groups[&quot;href&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="571"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val name = match.groups[&quot;name&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="586"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val handle = match.groups[&quot;user&quot;]?.value.orEmpty()"
+        errorLine2="                                     ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="587"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="            val href = match.groups[&quot;href&quot;]?.value.orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="588"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `java.util.regex.Matcher#start` (called from `kotlin.text.MatchGroupCollection#get(String)`)"
+        errorLine1="        return runCatching { groups[name]?.value }.getOrNull().orEmpty()"
+        errorLine2="                                   ~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt"
+            line="926"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="AndroidGradlePluginVersion"
+        message="A newer version of Gradle than 8.13 is available: 8.14.5"
+        errorLine1="distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="$HOME/Documents/SoftwareProjekte/KomaStream/gradle/wrapper/gradle-wrapper.properties"
+            line="3"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ConfigurationScreenWidthHeight"
+        message="Using Configuration.screenHeightDp instead of LocalWindowInfo.current.containerSize"
+        errorLine1="    val minPageHeight = remember(configuration.screenHeightDp) {"
+        errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/screens/ReaderScreen.kt"
+            line="802"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="ConfigurationScreenWidthHeight"
+        message="Using Configuration.screenHeightDp instead of LocalWindowInfo.current.containerSize"
+        errorLine1="        (configuration.screenHeightDp.dp * 0.82f).coerceAtLeast(280.dp)"
+        errorLine2="         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/screens/ReaderScreen.kt"
+            line="803"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be named modifier"
+        errorLine1="    imageModifier: Modifier,"
+        errorLine2="    ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/screens/ReaderScreen.kt"
+            line="832"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;mal_sync_review_imports&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;mal_sync_review_imports&quot;>Review MAL matches&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="16"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;mal_sync_review_imports_description&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;mal_sync_review_imports_description&quot;>These entries were found on the current provider and need your confirmation before they are added.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="17"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;mal_sync_no_matches_found&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;mal_sync_no_matches_found&quot;>No search results were found for this manga on the current provider.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="18"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;mal_sync_import_selected&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;mal_sync_import_selected&quot;>Import selected&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="19"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;mal_id&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;mal_id&quot;>MAL ID&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="24"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;mal_id_not_set&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;mal_id_not_set&quot;>Not linked yet&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="25"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;save&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;save&quot;>Save&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="26"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="MissingTranslation"
+        message="&quot;clear&quot; is not translated in &quot;de&quot; (German) or &quot;es&quot; (Spanish)"
+        errorLine1="    &lt;string name=&quot;clear&quot;>Clear&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="27"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;results&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;result_count&quot;>%1$d results&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="219"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;item&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;item_count_singular&quot;>%1$d item&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="220"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;items&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;item_count_plural&quot;>%1$d items&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="221"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;active&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;active_series_count&quot;>%1$d active series&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="222"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;favorites&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;favorites_count&quot;>%1$d favorites&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="223"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="PluralsCandidate"
+        message="Formatting %d followed by words (&quot;pages&quot;): This should probably be a plural rather than a string"
+        errorLine1="    &lt;string name=&quot;pages_count&quot;>%1$d pages&lt;/string>"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="224"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="                webView!!.settings.javaScriptEnabled = true"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/AkaiComicWebViewResolver.kt"
+            line="218"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="                                settings.javaScriptEnabled = true"
+        errorLine2="                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/components/BrowserBootstrapDialog.kt"
+            line="107"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="            activeWebView.settings.javaScriptEnabled = true"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MangaFireWebViewResolver.kt"
+            line="178"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="            activeWebView.settings.javaScriptEnabled = true"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MangaFireWebViewResolver.kt"
+            line="222"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="                settings.javaScriptEnabled = true"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangaTubeProvider.kt"
+            line="297"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="                settings.javaScriptEnabled = true"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MangaTubeProvider.kt"
+            line="587"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="This field leaks a context object"
+        errorLine1="    private val context: Context,"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/viewmodel/KomaViewModel.kt"
+            line="46"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var currentPage by rememberSaveable(stateKey) { mutableStateOf(1) }"
+        errorLine2="                                                    ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/screens/HomeSectionScreen.kt"
+            line="74"
+            column="53"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.drawable.ic_launcher` appears to be unused"
+        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="^">
+        <location
+            file="src/main/res/drawable/ic_launcher.xml"
+            line="2"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;mal_sync_in_progress&quot;>Wird synchronisiert...&lt;/string>"
+        errorLine2="                                        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values-de/strings.xml"
+            line="15"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;mal_sync_in_progress&quot;>Sincronizando...&lt;/string>"
+        errorLine2="                                        ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values-es/strings.xml"
+            line="15"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;mal_sync_in_progress&quot;>Sync in progress...&lt;/string>"
+        errorLine2="                                        ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="15"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;loading_changelog&quot;>Cargando historial...&lt;/string>"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values-es/strings.xml"
+            line="120"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;loading_changelog&quot;>Loading changelog...&lt;/string>"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="128"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;loading_provider_home&quot;>Cargando el inicio de %1$s...&lt;/string>"
+        errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values-es/strings.xml"
+            line="232"
+            column="42"/>
+    </issue>
+
+    <issue
+        id="TypographyEllipsis"
+        message="Replace &quot;...&quot; with ellipsis character (…, &amp;#8230;) ?"
+        errorLine1="    &lt;string name=&quot;loading_provider_home&quot;>Loading %1$s home...&lt;/string>"
+        errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="240"
+            column="42"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/drawable-nodpi/app_logo.png"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/akai_comic.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/akai_comic.png"/>
+    </issue>
+
+    <issue
+        id="IconLocation"
+        message="Found bitmap drawable `res/drawable/mt_logo.png` in densityless folder">
+        <location
+            file="src/main/res/drawable/mt_logo.png"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                Uri.parse(&quot;package:${context.packageName}&quot;)"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/updater/GitHubReleaseUpdater.kt"
+            line="189"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))"
+        errorLine2="                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/updater/GitHubReleaseUpdater.kt"
+            line="221"
+            column="49"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(releaseUrl))"
+        errorLine2="                                                ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/updater/GitHubReleaseUpdater.kt"
+            line="233"
+            column="49"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                                        val communityPath = Uri.parse(url).path?.takeIf { it.isNotBlank() }"
+        errorLine2="                                                            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/KomaStream.kt"
+            line="486"
+            column="61"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))"
+        errorLine2="                                                                                             ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/KomaStream.kt"
+            line="490"
+            column="94"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                                        Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.beginMalConnect()))"
+        errorLine2="                                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/KomaStream.kt"
+            line="807"
+            column="68"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(&quot;appLanguage&quot;, appLanguage.name).commit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/KomaStreamApp.kt"
+            line="27"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        context.getSharedPreferences(&quot;manga_library&quot;, Context.MODE_PRIVATE)"
+        errorLine2="        ^">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/viewmodel/LibraryController.kt"
+            line="319"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            return Uri.parse(url).path?.let(::File)?.takeIf(File::exists)?.readBytes() ?: ByteArray(0)"
+        errorLine2="                   ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MangaFireWebViewResolver.kt"
+            line="94"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="        val result = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MangaFireWebViewResolver.kt"
+            line="428"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val uri = Uri.parse(path)"
+        errorLine2="                  ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MangaFireWebViewResolver.kt"
+            line="459"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="    val host = Uri.parse(url).host.orEmpty().lowercase()"
+        errorLine2="               ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/ui/components/MangadotImages.kt"
+            line="46"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    val host = Uri.parse(value).host.orEmpty().lowercase()"
+        errorLine2="                               ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/provider/providers/MarmotaProvider.kt"
+            line="563"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_MANGA_LINKS, json.toString()).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListLinkStore.kt"
+            line="26"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().putString(KEY_MANGA_LINKS, json.toString()).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListLinkStore.kt"
+            line="32"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit().remove(KEY_MANGA_LINKS).apply()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListLinkStore.kt"
+            line="36"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="            prefs.edit().putString(KEY_MANGA_LINKS, migrated.toString()).apply()"
+        errorLine2="            ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListLinkStore.kt"
+            line="52"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListSessionStore.kt"
+            line="28"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListSessionStore.kt"
+            line="41"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListSessionStore.kt"
+            line="52"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs.edit()"
+        errorLine2="        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/paudinc/komastream/utils/MyAnimeListSessionStore.kt"
+            line="60"
+            column="9"/>
+    </issue>
+
+</issues>

@@ -8,119 +8,119 @@ import androidx.room.Query
 @Dao
 interface LibraryDao {
     @Query("SELECT * FROM favorite_manga ORDER BY order_index DESC")
-    fun readFavorites(): List<FavoriteMangaEntity>
+    suspend fun readFavorites(): List<FavoriteMangaEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertFavorite(entity: FavoriteMangaEntity)
+    suspend fun upsertFavorite(entity: FavoriteMangaEntity)
 
     @Query("DELETE FROM favorite_manga WHERE provider_id = :providerId AND detail_path = :detailPath")
-    fun deleteFavorite(providerId: String, detailPath: String)
+    suspend fun deleteFavorite(providerId: String, detailPath: String)
 
     @Query("DELETE FROM favorite_manga")
-    fun clearFavorites()
+    suspend fun clearFavorites()
 
     @Query("SELECT * FROM reading_manga ORDER BY order_index DESC")
-    fun readReading(): List<ReadingMangaEntity>
+    suspend fun readReading(): List<ReadingMangaEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertReading(entity: ReadingMangaEntity)
+    suspend fun upsertReading(entity: ReadingMangaEntity)
 
     @Query("DELETE FROM reading_manga WHERE provider_id = :providerId AND detail_path = :detailPath")
-    fun deleteReading(providerId: String, detailPath: String)
+    suspend fun deleteReading(providerId: String, detailPath: String)
 
     @Query("DELETE FROM reading_manga")
-    fun clearReading()
+    suspend fun clearReading()
 
     @Query("SELECT * FROM read_chapters ORDER BY read_order DESC")
-    fun readChapters(): List<ReadChapterEntity>
+    suspend fun readChapters(): List<ReadChapterEntity>
 
     @Query("SELECT * FROM read_chapters WHERE provider_id = :providerId ORDER BY read_order DESC")
-    fun readChaptersForProvider(providerId: String): List<ReadChapterEntity>
+    suspend fun readChaptersForProvider(providerId: String): List<ReadChapterEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertReadChapter(entity: ReadChapterEntity)
+    suspend fun upsertReadChapter(entity: ReadChapterEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertReadChapters(entities: List<ReadChapterEntity>)
+    suspend fun upsertReadChapters(entities: List<ReadChapterEntity>)
 
     @Query("DELETE FROM read_chapters WHERE provider_id = :providerId AND chapter_path = :chapterPath")
-    fun deleteReadChapter(providerId: String, chapterPath: String)
+    suspend fun deleteReadChapter(providerId: String, chapterPath: String)
 
     @Query("DELETE FROM read_chapters WHERE provider_id = :providerId AND chapter_path IN (:chapterPaths)")
-    fun deleteReadChapters(providerId: String, chapterPaths: List<String>)
+    suspend fun deleteReadChapters(providerId: String, chapterPaths: List<String>)
 
     @Query("DELETE FROM read_chapters WHERE provider_id = :providerId")
-    fun deleteReadChaptersForProvider(providerId: String)
+    suspend fun deleteReadChaptersForProvider(providerId: String)
 
     @Query("DELETE FROM read_chapters")
-    fun clearReadChapters()
+    suspend fun clearReadChapters()
 
     @Query("SELECT EXISTS(SELECT 1 FROM read_chapters WHERE provider_id = :providerId AND chapter_path = :chapterPath LIMIT 1)")
-    fun hasReadChapter(providerId: String, chapterPath: String): Boolean
+    suspend fun hasReadChapter(providerId: String, chapterPath: String): Boolean
 
     @Query("SELECT MAX(read_order) FROM read_chapters WHERE provider_id = :providerId")
-    fun readMaxReadOrderForProvider(providerId: String): Long?
+    suspend fun readMaxReadOrderForProvider(providerId: String): Long?
 
     @Query("SELECT * FROM chapter_progress")
-    fun readChapterProgress(): List<ChapterProgressEntity>
+    suspend fun readChapterProgress(): List<ChapterProgressEntity>
 
     @Query("SELECT * FROM chapter_progress WHERE provider_id = :providerId AND chapter_path = :chapterPath LIMIT 1")
-    fun readChapterProgress(providerId: String, chapterPath: String): ChapterProgressEntity?
+    suspend fun readChapterProgress(providerId: String, chapterPath: String): ChapterProgressEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertChapterProgress(entity: ChapterProgressEntity)
+    suspend fun upsertChapterProgress(entity: ChapterProgressEntity)
 
     @Query("DELETE FROM chapter_progress WHERE provider_id = :providerId AND chapter_path = :chapterPath")
-    fun deleteChapterProgress(providerId: String, chapterPath: String)
+    suspend fun deleteChapterProgress(providerId: String, chapterPath: String)
 
     @Query("DELETE FROM chapter_progress")
-    fun clearChapterProgress()
+    suspend fun clearChapterProgress()
 
     @Query("SELECT * FROM chapter_page_counts")
-    fun readChapterPageCounts(): List<ChapterPageCountEntity>
+    suspend fun readChapterPageCounts(): List<ChapterPageCountEntity>
 
     @Query("SELECT * FROM chapter_page_counts WHERE provider_id = :providerId AND chapter_path = :chapterPath LIMIT 1")
-    fun readChapterPageCount(providerId: String, chapterPath: String): ChapterPageCountEntity?
+    suspend fun readChapterPageCount(providerId: String, chapterPath: String): ChapterPageCountEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertChapterPageCount(entity: ChapterPageCountEntity)
+    suspend fun upsertChapterPageCount(entity: ChapterPageCountEntity)
 
     @Query("DELETE FROM chapter_page_counts WHERE provider_id = :providerId AND chapter_path = :chapterPath")
-    fun deleteChapterPageCount(providerId: String, chapterPath: String)
+    suspend fun deleteChapterPageCount(providerId: String, chapterPath: String)
 
     @Query("DELETE FROM chapter_page_counts")
-    fun clearChapterPageCounts()
+    suspend fun clearChapterPageCounts()
 
     @Query("SELECT * FROM app_settings WHERE id = 0 LIMIT 1")
-    fun readSettings(): AppSettingsEntity?
+    suspend fun readSettings(): AppSettingsEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertSettings(entity: AppSettingsEntity)
+    suspend fun upsertSettings(entity: AppSettingsEntity)
 
     @Query("DELETE FROM app_settings")
-    fun clearSettings()
+    suspend fun clearSettings()
 
     @Query("SELECT * FROM manga_detail_cache WHERE provider_id = :providerId AND detail_key = :detailKey LIMIT 1")
-    fun readMangaDetailCache(providerId: String, detailKey: String): MangaDetailCacheEntity?
+    suspend fun readMangaDetailCache(providerId: String, detailKey: String): MangaDetailCacheEntity?
 
     @Query("SELECT * FROM manga_detail_cache WHERE provider_id = :providerId AND detail_path = :detailPath LIMIT 1")
-    fun readMangaDetailCacheByPath(providerId: String, detailPath: String): MangaDetailCacheEntity?
+    suspend fun readMangaDetailCacheByPath(providerId: String, detailPath: String): MangaDetailCacheEntity?
 
     @Query("SELECT * FROM manga_detail_cache")
-    fun readMangaDetailCaches(): List<MangaDetailCacheEntity>
+    suspend fun readMangaDetailCaches(): List<MangaDetailCacheEntity>
 
     @Query("DELETE FROM manga_detail_cache WHERE LENGTH(detail_json) > :maxPayloadSize")
-    fun deleteOversizedMangaDetailCaches(maxPayloadSize: Int)
+    suspend fun deleteOversizedMangaDetailCaches(maxPayloadSize: Int)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertMangaDetailCache(entity: MangaDetailCacheEntity)
+    suspend fun upsertMangaDetailCache(entity: MangaDetailCacheEntity)
 
     @Query("DELETE FROM manga_detail_cache WHERE provider_id = :providerId AND detail_key = :detailKey")
-    fun deleteMangaDetailCache(providerId: String, detailKey: String)
+    suspend fun deleteMangaDetailCache(providerId: String, detailKey: String)
 
     @Query("DELETE FROM manga_detail_cache WHERE provider_id = :providerId AND detail_path = :detailPath")
-    fun deleteMangaDetailCacheByPath(providerId: String, detailPath: String)
+    suspend fun deleteMangaDetailCacheByPath(providerId: String, detailPath: String)
 
     @Query("DELETE FROM manga_detail_cache")
-    fun clearMangaDetailCache()
+    suspend fun clearMangaDetailCache()
 }

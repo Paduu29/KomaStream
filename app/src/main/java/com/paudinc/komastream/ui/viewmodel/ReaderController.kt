@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
@@ -332,21 +333,23 @@ class ReaderController(
             chapters = detail.chapters,
             readChapters = readChapters,
         )
-        libraryStore.upsertReading(
-            SavedManga(
-                providerId = providerId,
-                title = detail.title,
-                detailPath = detail.detailPath,
-                coverUrl = detail.coverUrl,
-                lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
-                lastChapterPath = progressChapterPath,
-                lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
-                    ?: progressChapter.chapterLabel.toProgressChapterNumber()
-                    ?: chapterPathProgressNumber(providerId, progressChapterPath)
-                    ?: chapterTitle.toProgressChapterNumber(),
-                lastReadChapterNumber = lastReadChapterNumber,
+        runBlocking(Dispatchers.IO) {
+            libraryStore.upsertReading(
+                SavedManga(
+                    providerId = providerId,
+                    title = detail.title,
+                    detailPath = detail.detailPath,
+                    coverUrl = detail.coverUrl,
+                    lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
+                    lastChapterPath = progressChapterPath,
+                    lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
+                        ?: progressChapter.chapterLabel.toProgressChapterNumber()
+                        ?: chapterPathProgressNumber(providerId, progressChapterPath)
+                        ?: chapterTitle.toProgressChapterNumber(),
+                    lastReadChapterNumber = lastReadChapterNumber,
+                )
             )
-        )
+        }
     }
 
     private suspend fun loadDetail(

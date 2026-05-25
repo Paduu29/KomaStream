@@ -30,6 +30,8 @@ import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.HttpCookie
 import java.net.URI
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 class ManhwaLatinoProvider(
     context: Context,
@@ -661,13 +663,14 @@ class ManhwaLatinoProvider(
             .trim()
     }
 
-    private fun isAdultContentEnabled(): Boolean =
+    private fun isAdultContentEnabled(): Boolean = runBlocking(Dispatchers.IO) {
         com.paudinc.komastream.data.local.LibraryDatabase
             .getInstance(appContext)
             .libraryDao()
             .readSettings()
             ?.adultContentEnabled
             ?: false
+    }
 
     private fun buildSearchPath(query: String, page: Int): String {
         val encodedQuery = query.trim().takeIf { it.isNotBlank() }?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8.name()) }

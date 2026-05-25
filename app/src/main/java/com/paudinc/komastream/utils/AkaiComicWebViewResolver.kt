@@ -3,6 +3,7 @@ package com.paudinc.komastream.utils
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -229,7 +230,23 @@ class AkaiComicWebViewResolver(private val context: Context, private val client:
             } catch (e: Exception) { latch.countDown() }
         }
         latch.await(50, TimeUnit.SECONDS)
-        mainHandler.post { try { webView?.destroy() } catch (e: Exception) {}; webView = null }
+        mainHandler.post {
+            try {
+                webView?.let(::disposeWebView)
+            } catch (_: Exception) {
+            } finally {
+                webView = null
+            }
+        }
+    }
+
+    private fun disposeWebView(activeWebView: WebView) {
+        activeWebView.stopLoading()
+        activeWebView.loadUrl("about:blank")
+        activeWebView.clearHistory()
+        activeWebView.removeAllViews()
+        (activeWebView.parent as? ViewGroup)?.removeView(activeWebView)
+        activeWebView.destroy()
     }
 
     private fun httpGet(path: String): String {

@@ -36,6 +36,8 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 class MangaBallProvider(
     context: Context,
@@ -422,13 +424,14 @@ class MangaBallProvider(
         invalidateCaches()
     }
 
-    private fun isAdultContentEnabled(): Boolean =
+    private fun isAdultContentEnabled(): Boolean = runBlocking(Dispatchers.IO) {
         com.paudinc.komastream.data.local.LibraryDatabase
             .getInstance(appContext)
             .libraryDao()
             .readSettings()
             ?.mangaBallAdultContentEnabled
             ?: false
+    }
 
     private fun getDocument(path: String, retry: Boolean = true): Document {
         return runCatching {

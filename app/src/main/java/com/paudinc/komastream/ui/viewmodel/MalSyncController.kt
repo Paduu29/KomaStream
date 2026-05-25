@@ -34,6 +34,7 @@ import com.paudinc.komastream.utils.sameMangaPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.text.Normalizer
 import kotlin.math.max
@@ -86,8 +87,9 @@ class MalSyncController(
     }
 
     fun getMangaMalId(providerId: String, detailPath: String): Long? {
-        return libraryStore.getMangaMalId(providerId, detailPath)
-            ?: linkStore.getMangaId(providerId, detailPath)
+        return runBlocking(Dispatchers.IO) {
+            libraryStore.getMangaMalId(providerId, detailPath)
+        } ?: linkStore.getMangaId(providerId, detailPath)
     }
 
     fun beginConnect(): String {
@@ -603,7 +605,7 @@ class MalSyncController(
         pendingSyncContinuation = null
     }
 
-    private fun mergeRemoteEntriesIntoLocal(
+    private suspend fun mergeRemoteEntriesIntoLocal(
         remoteEntries: List<MalUserMangaEntry>,
         providerIdFilter: String? = null,
         provider: com.paudinc.komastream.provider.MangaProvider,
@@ -658,7 +660,7 @@ class MalSyncController(
         }
     }
 
-    private fun applyRemoteEntry(
+    private suspend fun applyRemoteEntry(
         entry: MalUserMangaEntry,
         local: SavedManga,
         detail: MangaDetail?,

@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 class LibraryController(
@@ -180,15 +181,19 @@ class LibraryController(
     }
 
     fun toggleFavorite(manga: SavedManga) {
-        val favorite = libraryActionInteractor.buildFavoriteCandidate(_uiState.value.state, manga)
-        val wasFavorite = libraryStore.isFavorite(favorite.providerId, favorite.detailPath)
-        libraryStore.toggleFavorite(favorite)
-        refreshState()
-        Toast.makeText(
-            context,
-            if (wasFavorite) strings.removedFromFavorites else strings.addedToFavorites,
-            Toast.LENGTH_SHORT
-        ).show()
+        scope.launch {
+            val favorite = libraryActionInteractor.buildFavoriteCandidate(_uiState.value.state, manga)
+            val wasFavorite = withContext(Dispatchers.IO) {
+                libraryStore.isFavorite(favorite.providerId, favorite.detailPath)
+            }
+            withContext(Dispatchers.IO) { libraryStore.toggleFavorite(favorite) }
+            refreshState()
+            Toast.makeText(
+                context,
+                if (wasFavorite) strings.removedFromFavorites else strings.addedToFavorites,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     fun selectTab(tab: LibraryTab) {
@@ -312,23 +317,29 @@ class LibraryController(
     }
 
     fun removeReading(manga: SavedManga) {
-        libraryStore.removeReading(manga.providerId, manga.detailPath)
-        malSyncController?.pushReadingEntry(manga, isRemoved = true)
-        refreshState()
-        Toast.makeText(context, strings.removedFromContinueReading, Toast.LENGTH_SHORT).show()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.removeReading(manga.providerId, manga.detailPath) }
+            malSyncController?.pushReadingEntry(manga, isRemoved = true)
+            refreshState()
+            Toast.makeText(context, strings.removedFromContinueReading, Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun addToReading(manga: SavedManga) {
-        libraryStore.upsertReading(manga)
-        malSyncController?.pushReadingEntry(manga)
-        refreshState()
-        Toast.makeText(context, strings.addedToContinueReading, Toast.LENGTH_SHORT).show()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.upsertReading(manga) }
+            malSyncController?.pushReadingEntry(manga)
+            refreshState()
+            Toast.makeText(context, strings.addedToContinueReading, Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun setFavoriteStatus(manga: SavedManga, status: FavoriteMangaStatus) {
-        libraryStore.setFavoriteStatus(manga.providerId, manga.detailPath, status)
-        refreshState()
-        Toast.makeText(context, strings.favoritesUpdated, Toast.LENGTH_SHORT).show()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setFavoriteStatus(manga.providerId, manga.detailPath, status) }
+            refreshState()
+            Toast.makeText(context, strings.favoritesUpdated, Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun changeLanguage(language: AppLanguage) {
@@ -394,19 +405,21 @@ class LibraryController(
             chapters = chapters,
             readChapters = readChapters,
         )
-        libraryStore.upsertReading(
-            SavedManga(
-                providerId = providerId,
-                title = mangaTitle,
-                detailPath = detailPath,
-                coverUrl = coverUrl,
-                lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
-                lastChapterPath = progressChapterPath,
-                lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
-                    ?: progressChapter.chapterLabel.toProgressChapterNumber(),
-                lastReadChapterNumber = lastReadChapterNumber,
+        runBlocking(Dispatchers.IO) {
+            libraryStore.upsertReading(
+                SavedManga(
+                    providerId = providerId,
+                    title = mangaTitle,
+                    detailPath = detailPath,
+                    coverUrl = coverUrl,
+                    lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
+                    lastChapterPath = progressChapterPath,
+                    lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
+                        ?: progressChapter.chapterLabel.toProgressChapterNumber(),
+                    lastReadChapterNumber = lastReadChapterNumber,
+                )
             )
-        )
+        }
     }
 
     fun selectProvider(providerId: String) {

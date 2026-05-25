@@ -4,6 +4,7 @@ import android.webkit.CookieManager as WebkitCookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -128,11 +129,19 @@ fun BrowserBootstrapDialog(
 
     DisposableEffect(url) {
         onDispose {
-            webView?.apply {
-                stopLoading()
-                loadUrl("about:blank")
-            }
+            webView?.let(::disposeWebView)
             webView = null
         }
+    }
+}
+
+private fun disposeWebView(webView: WebView) {
+    runCatching {
+        webView.stopLoading()
+        webView.loadUrl("about:blank")
+        webView.clearHistory()
+        webView.removeAllViews()
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        webView.destroy()
     }
 }
