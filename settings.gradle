@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = 'KomaStream'
 include ':app'
+include ':baselineprofile'

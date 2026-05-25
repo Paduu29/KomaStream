@@ -887,6 +887,59 @@ Enable R8/resource shrinking, add Compose compiler reports, and introduce baseli
 - None
 
 ### Status
+Split
+
+### Execution Note
+`FIX-010` was split after the app-side build optimization slice validated but the new baseline-profile producer module failed its own managed-device/runtime validation. The completed slice is tracked as `FIX-010A`; the unresolved producer stabilization work continues as `FIX-010B`.
+
+---
+
+### ID
+`FIX-010B`
+
+### Title
+Stabilize baseline-profile producer module and managed-device smoke flow
+
+### Severity
+Medium
+
+### Category
+Build
+
+### Affected Files
+- `baselineprofile/build.gradle`
+- `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/*`
+- `app/build.gradle`
+
+### Problem Summary
+The new baseline-profile producer module scaffolds correctly but its managed-device and producer-runtime validation still fail.
+
+### Root Cause
+The producer module needs additional variant/runtime configuration for benchmark and managed-device execution against the app's current startup stack and shrink settings.
+
+### Planned Solution
+Keep the app-side consumer wiring in place and stabilize the producer module separately.
+
+### Implementation Steps
+1. Align benchmark/non-minified producer variants with the tested app's shrink configuration.
+2. Fix producer-process startup/runtime crash on managed device.
+3. Re-run baseline-profile and macrobenchmark smoke validation.
+
+### Validation Steps
+1. `:baselineprofile:assemble`
+2. `:app:generateBaselineProfile` or variant-specific generation task
+3. Managed-device baseline-profile smoke
+4. Macrobenchmark smoke run
+
+### Rollback Strategy
+1. Remove the isolated producer module.
+2. Keep app-side shrink and Compose metrics improvements intact.
+3. Re-introduce baseline-profile infra after producer validation issues are understood.
+
+### Dependencies
+- `FIX-010`
+
+### Status
 Pending
 
 ---
@@ -1110,12 +1163,13 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-007` completed: home-section paging and refresh state now live in `HomeController`, and `HomeSectionScreen` only keeps scroll position locally.
 - `FIX-008` completed: app-graph networking now provides a shared base `OkHttpClient` to provider construction, downloads, updater, MAL API, and library bootstrap while preserving provider-specific customization through compatibility constructors.
 - `FIX-009` completed: MAL single-item sync paths now reuse a short-lived remote snapshot instead of repeatedly reloading the full remote library.
+- `FIX-010A` completed: release shrinking and resource shrinking are enabled, Compose compiler metrics/reports are wired, and baseline-profile consumer/producer scaffolding was introduced.
 
 ### In Progress
 - None
 
 ### Pending Tasks
-- `FIX-010`
+- `FIX-010B`
 - `FIX-011`
 - `FIX-012`
 
@@ -1129,6 +1183,7 @@ For every fix, perform the following validation categories as applicable:
 - Saved-state payload risk in `HomeSectionScreen`.
 - Multiple standalone `OkHttpClient` instances across providers and utilities.
 - Release build optimization is currently disabled.
+- Baseline-profile producer module still fails its own managed-device/runtime validation.
 
 ### Changed Priorities
 - Stability and data safety remain the top priority.
@@ -1173,29 +1228,43 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt` - reused shared provider registry instead of creating an app-path duplicate
 - `app/src/main/java/com/paudinc/komastream/utils/ProviderRegistry.kt` - added shared-client registry construction path
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/MalSyncController.kt` - added short-lived remote MAL snapshot caching and mutation-aware cache updates for single-item sync paths
+- `app/build.gradle` - enabled release shrinking, resource shrinking, Compose compiler metrics/reports, profile installer, and baseline-profile consumer wiring
+- `app/proguard-rules.pro` - added conservative keep rules for profile installer and WorkManager worker discovery
+- `baselineprofile/build.gradle` - added isolated baseline-profile producer module wiring
+- `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/BaselineProfileGenerator.kt` - added startup profile generator scaffold
+- `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/StartupBenchmarks.kt` - added startup macrobenchmark scaffold
+- `build.gradle` - added `com.android.test` and `androidx.baselineprofile` plugin management
+- `settings.gradle` - included `:baselineprofile` module
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-009`
-- Current phase: Completed
+- Current fix ID: `FIX-010A`
+- Current phase: Completed with `FIX-010B` split out as a blocked follow-up
 - Completed validations:
   - `.\gradlew.bat :app:assembleDebug` - Passed
   - `.\gradlew.bat :app:testDebugUnitTest` - Passed
+  - `.\gradlew.bat :app:assembleRelease` - Passed
 - Changed files:
-  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/MalSyncController.kt`
+  - `app/build.gradle`
+  - `app/proguard-rules.pro`
+  - `baselineprofile/build.gradle`
+  - `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/BaselineProfileGenerator.kt`
+  - `baselineprofile/src/main/java/com/paudinc/komastream/baselineprofile/StartupBenchmarks.kt`
+  - `build.gradle`
+  - `settings.gradle`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - Remote MAL snapshot caching is time-based and in-memory only; reconnects and long idle periods still fall back to a fresh full-library load
-  - Request-count reduction is structural in code, but no automated HTTP counting harness exists yet to measure exact before/after call volume
+  - The new baseline-profile producer module is not yet considered validated because `:baselineprofile:assemble` still fails in managed-device/runtime producer execution
+  - Release shrinking passed assembly, but no post-install runtime smoke has been executed in this phase
 - Benchmark deltas:
-  - Not applicable for `FIX-009`
+  - Compose compiler metrics/report generation is now enabled; runtime benchmark data is pending until `FIX-010B` is stabilized
 - Remaining fixes:
-  - `FIX-010`
+  - `FIX-010B`
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-009`
+  - No rollback required for `FIX-010A`; `FIX-010B` remains isolated and pending
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
