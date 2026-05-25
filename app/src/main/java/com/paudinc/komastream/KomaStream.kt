@@ -738,11 +738,35 @@ fun KomaStream() {
                             is Screen.HomeSection -> HomeSectionScreen(
                                 sectionId = screen.sectionId,
                                 feed = homeUiState.feed,
-                                provider = currentProvider,
+                                providerId = currentProvider.id,
+                                providerName = currentProvider.displayName,
+                                sectionState = homeController.sectionState(currentProvider.id, screen.sectionId),
                                 reading = libraryState.reading,
                                 readChapters = libraryState.readChapters,
                                 chapterProgress = chapterProgressLookup,
                                 strings = strings,
+                                onBindSection = { section ->
+                                    homeController.bindSection(
+                                        provider = currentProvider,
+                                        section = section,
+                                        onError = { message ->
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(message)
+                                            }
+                                        },
+                                    )
+                                },
+                                onLoadMore = {
+                                    homeController.loadNextSectionPage(
+                                        provider = currentProvider,
+                                        sectionId = screen.sectionId,
+                                        onError = { message ->
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(message)
+                                            }
+                                        },
+                                    )
+                                },
                                 onOpenManga = { id, path -> viewModel.openDetail(id, path) },
                                 onOpenChapter = { id, path -> viewModel.openReader(id, path) },
                                 onAddToReading = { viewModel.addToReading(it) },

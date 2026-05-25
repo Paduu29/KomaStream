@@ -1,9 +1,11 @@
 package com.paudinc.komastream.ui.viewmodel
 
 import com.paudinc.komastream.data.model.CatalogFilterOptions
+import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.HomeFeed
+import com.paudinc.komastream.data.model.HomeSectionType
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaDetail
 import com.paudinc.komastream.data.model.MangaSummary
@@ -12,7 +14,21 @@ import com.paudinc.komastream.ui.navigation.LibraryTab
 
 data class HomeUiState(
     val feed: HomeFeed? = null,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val sectionStates: Map<String, HomeSectionUiState> = emptyMap(),
+)
+
+data class HomeSectionUiState(
+    val providerId: String = "",
+    val sectionId: String = "",
+    val title: String = "",
+    val type: HomeSectionType = HomeSectionType.MANGAS,
+    val mangas: List<MangaSummary> = emptyList(),
+    val chapters: List<ChapterSummary> = emptyList(),
+    val currentPage: Int = 1,
+    val hasMore: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val initializedSectionSignature: String = "",
 )
 
 data class CatalogUiState(

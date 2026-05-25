@@ -728,7 +728,7 @@ Create a dedicated state holder or ViewModel for home-section paging and save on
 - `FIX-004`
 
 ### Status
-Pending
+Done
 
 ---
 
@@ -1107,12 +1107,12 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-004` completed: root and controller state now use flow-backed immutable outputs collected with lifecycle awareness.
 - `FIX-005` completed: offline reader pages now use decrypted cache files for Coil-backed rendering and prefetch, with remembered request objects in the hot path.
 - `FIX-006` completed: chapter downloads now stream encrypted pages into a staging directory and only publish the final manifest after completion.
+- `FIX-007` completed: home-section paging and refresh state now live in `HomeController`, and `HomeSectionScreen` only keeps scroll position locally.
 
 ### In Progress
 - None
 
 ### Pending Tasks
-- `FIX-007`
 - `FIX-008`
 - `FIX-009`
 - `FIX-010`
@@ -1162,33 +1162,37 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt` - changed chapter downloads from buffered batch persistence to streamed staged writes
 - `app/src/main/java/com/paudinc/komastream/utils/OfflineChapterStore.kt` - added decrypted reader page cache files derived from encrypted offline chapter storage
 - `app/src/main/java/com/paudinc/komastream/utils/OfflineChapterStore.kt` - added staged chapter write sessions with backup/rollback handling for streaming downloads
+- `app/src/main/java/com/paudinc/komastream/ui/screens/HomeSectionScreen.kt` - removed composable-owned paging/network state and list savers in favor of controller-backed section state
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt` - added home-section UI state models
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/HomeController.kt` - added lifecycle-owned home-section bind and load-more state management
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-006`
+- Current fix ID: `FIX-007`
 - Current phase: Completed
 - Completed validations:
   - `.\gradlew.bat :app:assembleDebug` - Passed
   - `.\gradlew.bat :app:testDebugUnitTest` - Passed
 - Changed files:
-  - `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt`
-  - `app/src/main/java/com/paudinc/komastream/utils/OfflineChapterStore.kt`
+  - `app/src/main/java/com/paudinc/komastream/KomaStream.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/screens/HomeSectionScreen.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/FeatureUiState.kt`
+  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/HomeController.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - Staged chapter writes now protect against partial publication, but cancellation/retry behavior still needs runtime smoke coverage on-device
-  - Backup restoration is local to the chapter directory swap path and has not yet been exercised by automated failure injection
+  - `HomeSectionScreen` still initializes section binding from `LaunchedEffect`; network ownership moved out of composition, but runtime rotation smoke is still recommended for paged sections
+  - This repo's Gradle/KAPT pipeline is not reliable under parallel required gates; validations were rerun sequentially and passed
 - Benchmark deltas:
-  - Not applicable for `FIX-006`
+  - Not applicable for `FIX-007`
 - Remaining fixes:
-  - `FIX-007`
   - `FIX-008`
   - `FIX-009`
   - `FIX-010`
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-006`
+  - No rollback required for `FIX-007`
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
