@@ -51,13 +51,17 @@ class MalSyncController(
         private const val MIN_ACCEPTABLE_MAL_SCORE = 250
         private const val SYNC_FROM_REMOTE_BASE_UNITS = 3
         private const val SYNC_TO_REMOTE_BASE_UNITS = 3
+        private const val REMOTE_SNAPSHOT_TTL_MS = 60_000L
     }
 
     private val sessionStore = MyAnimeListSessionStore(context)
     private val linkStore = MyAnimeListLinkStore(context)
     private val clientId: String = BuildConfig.MAL_CLIENT_ID.trim()
+    private val remoteSnapshotLock = Any()
     private var syncStartedAtMs: Long = 0L
     private var pendingSyncContinuation: (() -> Unit)? = null
+    @Volatile
+    private var remoteSnapshot: RemoteSnapshot? = null
 
     var uiState by mutableStateOf(buildState())
         private set
@@ -150,6 +154,7 @@ class MalSyncController(
     fun disconnect() {
         sessionStore.clear()
         linkStore.clear()
+        clearRemoteSnapshot()
         refreshState()
         updateMessage("Disconnected from MyAnimeList")
     }
@@ -172,6 +177,7 @@ class MalSyncController(
                     val refreshed = refreshTokensIfNeeded(current)
                     advanceSyncProgress(stageMessage = "Fetching your MyAnimeList library")
                     val list = api.fetchUserMangaList(refreshed.accessToken, clientId)
+                    cacheRemoteSnapshot(refreshed.accessToken, list)
                     advanceSyncProgress()
                     addSyncTotal(list.size)
                     val detailCache = mutableMapOf<String, MangaDetail?>()
@@ -227,6 +233,7 @@ class MalSyncController(
                     val refreshed = refreshTokensIfNeeded(current)
                     advanceSyncProgress(stageMessage = "Fetching your MyAnimeList library")
                     val remoteEntries = api.fetchUserMangaList(refreshed.accessToken, clientId)
+                    cacheRemoteSnapshot(refreshed.accessToken, remoteEntries)
                     advanceSyncProgress()
                     val detailCache = mutableMapOf<String, MangaDetail?>()
                     val mangaIdCache = mutableMapOf<String, Long?>()
@@ -329,9 +336,9 @@ class MalSyncController(
                         ?: return@withContext
                     if (isRemoved) {
                         api.deleteMangaStatus(refreshed.accessToken, clientId, mangaId)
+                        removeRemoteSnapshotEntry(refreshed.accessToken, mangaId)
                     } else {
-                        val remoteEntry = api.fetchUserMangaList(refreshed.accessToken, clientId)
-                            .firstOrNull { it.manga.id == mangaId }
+                        val remoteEntry = getRemoteSnapshotEntry(refreshed.accessToken, mangaId)
                         val localReadCount = numChaptersRead?.coerceAtLeast(0) ?: 0
                         val mergedReadCount = max(
                             localReadCount,
@@ -349,6 +356,17 @@ class MalSyncController(
                             mangaId = mangaId,
                             status = mergedStatus,
                             numChaptersRead = mergedReadCount,
+                        )
+                        putRemoteSnapshotEntry(
+                            accessToken = refreshed.accessToken,
+                            entry = buildRemoteSnapshotEntry(
+                                mangaId = mangaId,
+                                title = manga.title,
+                                coverUrl = manga.coverUrl,
+                                status = mergedStatus,
+                                numChaptersRead = mergedReadCount,
+                                remoteEntry = remoteEntry,
+                            ),
                         )
                     }
                 }
@@ -406,6 +424,17 @@ class MalSyncController(
             mangaId = mangaId,
             status = status,
             numChaptersRead = readCount,
+        )
+        putRemoteSnapshotEntry(
+            accessToken = accessToken,
+            entry = buildRemoteSnapshotEntry(
+                mangaId = mangaId,
+                title = target.title,
+                coverUrl = target.coverUrl,
+                status = status,
+                numChaptersRead = readCount,
+                remoteEntry = remoteEntry,
+            ),
         )
     }
 
@@ -533,6 +562,17 @@ class MalSyncController(
                                     mangaId = malId,
                                     status = pending.status.ifBlank { "plan_to_read" },
                                     numChaptersRead = pending.numChaptersRead.coerceAtLeast(0),
+                                )
+                                putRemoteSnapshotEntry(
+                                    accessToken = refreshed.accessToken,
+                                    entry = buildRemoteSnapshotEntry(
+                                        mangaId = malId,
+                                        title = pending.title,
+                                        coverUrl = candidate.coverUrl,
+                                        status = pending.status.ifBlank { "plan_to_read" },
+                                        numChaptersRead = pending.numChaptersRead.coerceAtLeast(0),
+                                        remoteEntry = null,
+                                    ),
                                 )
                             }
                         }
@@ -1291,6 +1331,97 @@ class MalSyncController(
     private fun isConnected(session: com.paudinc.komastream.utils.MyAnimeListSession): Boolean =
         clientId.isNotBlank() && session.accessToken.isNotBlank()
 
+    private fun getRemoteSnapshotEntry(
+        accessToken: String,
+        mangaId: Long,
+    ): MalUserMangaEntry? {
+        return getRemoteSnapshot(accessToken)[mangaId]
+    }
+
+    private fun getRemoteSnapshot(accessToken: String): Map<Long, MalUserMangaEntry> {
+        val now = System.currentTimeMillis()
+        remoteSnapshot?.takeIf {
+            it.accessToken == accessToken && now - it.fetchedAtMs <= REMOTE_SNAPSHOT_TTL_MS
+        }?.let { return it.entriesById }
+
+        val entries = api.fetchUserMangaList(accessToken, clientId)
+        cacheRemoteSnapshot(accessToken, entries)
+        return entries.associateBy { it.manga.id }
+    }
+
+    private fun cacheRemoteSnapshot(
+        accessToken: String,
+        entries: List<MalUserMangaEntry>,
+    ) {
+        synchronized(remoteSnapshotLock) {
+            remoteSnapshot = RemoteSnapshot(
+                accessToken = accessToken,
+                fetchedAtMs = System.currentTimeMillis(),
+                entriesById = entries.associateBy { it.manga.id },
+            )
+        }
+    }
+
+    private fun putRemoteSnapshotEntry(
+        accessToken: String,
+        entry: MalUserMangaEntry,
+    ) {
+        synchronized(remoteSnapshotLock) {
+            val existing = remoteSnapshot
+            if (existing == null || existing.accessToken != accessToken) return
+            remoteSnapshot = existing.copy(
+                fetchedAtMs = System.currentTimeMillis(),
+                entriesById = existing.entriesById + (entry.manga.id to entry),
+            )
+        }
+    }
+
+    private fun removeRemoteSnapshotEntry(
+        accessToken: String,
+        mangaId: Long,
+    ) {
+        synchronized(remoteSnapshotLock) {
+            val existing = remoteSnapshot
+            if (existing == null || existing.accessToken != accessToken) return
+            remoteSnapshot = existing.copy(
+                fetchedAtMs = System.currentTimeMillis(),
+                entriesById = existing.entriesById - mangaId,
+            )
+        }
+    }
+
+    private fun clearRemoteSnapshot() {
+        synchronized(remoteSnapshotLock) {
+            remoteSnapshot = null
+        }
+    }
+
+    private fun buildRemoteSnapshotEntry(
+        mangaId: Long,
+        title: String,
+        coverUrl: String,
+        status: String,
+        numChaptersRead: Int,
+        remoteEntry: MalUserMangaEntry?,
+    ): MalUserMangaEntry {
+        return MalUserMangaEntry(
+            manga = remoteEntry?.manga?.copy(
+                title = remoteEntry.manga.title.ifBlank { title },
+                coverUrl = remoteEntry.manga.coverUrl.ifBlank { coverUrl },
+            ) ?: com.paudinc.komastream.utils.MalMangaRecord(
+                id = mangaId,
+                title = title,
+                coverUrl = coverUrl,
+                numChapters = 0,
+                status = "",
+            ),
+            listStatus = com.paudinc.komastream.utils.MalListStatus(
+                status = status,
+                numChaptersRead = numChaptersRead,
+            ),
+        )
+    }
+
     private fun buildState(): MyAnimeListUiState {
         val session = sessionStore.read()
         return MyAnimeListUiState(
@@ -1313,4 +1444,10 @@ class MalSyncController(
         )
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
+
+    private data class RemoteSnapshot(
+        val accessToken: String,
+        val fetchedAtMs: Long,
+        val entriesById: Map<Long, MalUserMangaEntry>,
+    )
 }

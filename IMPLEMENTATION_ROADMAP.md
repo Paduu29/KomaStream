@@ -833,7 +833,7 @@ Introduce remote snapshot caching and avoid repeated full-list refreshes during 
 - `FIX-008`
 
 ### Status
-Pending
+Done
 
 ---
 
@@ -1109,12 +1109,12 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-006` completed: chapter downloads now stream encrypted pages into a staging directory and only publish the final manifest after completion.
 - `FIX-007` completed: home-section paging and refresh state now live in `HomeController`, and `HomeSectionScreen` only keeps scroll position locally.
 - `FIX-008` completed: app-graph networking now provides a shared base `OkHttpClient` to provider construction, downloads, updater, MAL API, and library bootstrap while preserving provider-specific customization through compatibility constructors.
+- `FIX-009` completed: MAL single-item sync paths now reuse a short-lived remote snapshot instead of repeatedly reloading the full remote library.
 
 ### In Progress
 - None
 
 ### Pending Tasks
-- `FIX-009`
 - `FIX-010`
 - `FIX-011`
 - `FIX-012`
@@ -1172,48 +1172,30 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt` - switched worker provider/store lookup to application graph
 - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt` - reused shared provider registry instead of creating an app-path duplicate
 - `app/src/main/java/com/paudinc/komastream/utils/ProviderRegistry.kt` - added shared-client registry construction path
+- `app/src/main/java/com/paudinc/komastream/ui/viewmodel/MalSyncController.kt` - added short-lived remote MAL snapshot caching and mutation-aware cache updates for single-item sync paths
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-008`
+- Current fix ID: `FIX-009`
 - Current phase: Completed
 - Completed validations:
   - `.\gradlew.bat :app:assembleDebug` - Passed
   - `.\gradlew.bat :app:testDebugUnitTest` - Passed
 - Changed files:
-  - `app/src/main/java/com/paudinc/komastream/AppGraph.kt`
-  - `app/src/main/java/com/paudinc/komastream/KomaStream.kt`
-  - `app/src/main/java/com/paudinc/komastream/KomaViewModelFactory.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/AkaiComicProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/InMangaProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/LeerMangaEspProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangaBallProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangaFireProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangaTubeProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/MangadotProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/Manhwa18Provider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/ManhwaLatinoProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/MarmotaProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/provider/providers/OlympusBibliotecaProvider.kt`
-  - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/KomaViewModel.kt`
   - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/MalSyncController.kt`
-  - `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt`
-  - `app/src/main/java/com/paudinc/komastream/utils/LibraryStore.kt`
-  - `app/src/main/java/com/paudinc/komastream/utils/ProviderRegistry.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - Provider constructors still keep `OkHttpClient` default parameters for backward compatibility; the app path is centralized, but non-app fallback instantiations can still create standalone clients
-  - Cookie-sensitive provider behavior still depends on provider-specific `newBuilder()` configuration and should get runtime smoke coverage across home/detail/reader/download paths
+  - Remote MAL snapshot caching is time-based and in-memory only; reconnects and long idle periods still fall back to a fresh full-library load
+  - Request-count reduction is structural in code, but no automated HTTP counting harness exists yet to measure exact before/after call volume
 - Benchmark deltas:
-  - Not applicable for `FIX-008`
+  - Not applicable for `FIX-009`
 - Remaining fixes:
-  - `FIX-009`
   - `FIX-010`
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-008`
+  - No rollback required for `FIX-009`
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`
