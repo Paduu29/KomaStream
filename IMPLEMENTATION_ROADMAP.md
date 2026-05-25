@@ -676,7 +676,7 @@ Introduce streaming page writes with an atomic finalize step for manifest comple
 - `FIX-005`
 
 ### Status
-Pending
+Done
 
 ---
 
@@ -1106,12 +1106,12 @@ For every fix, perform the following validation categories as applicable:
 - `FIX-003` completed: composition-time storage calls were replaced with immutable lookup state prepared by the controller layer.
 - `FIX-004` completed: root and controller state now use flow-backed immutable outputs collected with lifecycle awareness.
 - `FIX-005` completed: offline reader pages now use decrypted cache files for Coil-backed rendering and prefetch, with remembered request objects in the hot path.
+- `FIX-006` completed: chapter downloads now stream encrypted pages into a staging directory and only publish the final manifest after completion.
 
 ### In Progress
 - None
 
 ### Pending Tasks
-- `FIX-006`
 - `FIX-007`
 - `FIX-008`
 - `FIX-009`
@@ -1159,27 +1159,28 @@ For every fix, perform the following validation categories as applicable:
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/CatalogController.kt` - converted route state exposure to `StateFlow`
 - `app/src/main/java/com/paudinc/komastream/ui/viewmodel/ReaderController.kt` - converted route state exposure to `StateFlow`
 - `app/src/main/java/com/paudinc/komastream/ui/screens/ReaderScreen.kt` - switched offline reader rendering and prefetch to remembered file-backed Coil requests
+- `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt` - changed chapter downloads from buffered batch persistence to streamed staged writes
 - `app/src/main/java/com/paudinc/komastream/utils/OfflineChapterStore.kt` - added decrypted reader page cache files derived from encrypted offline chapter storage
+- `app/src/main/java/com/paudinc/komastream/utils/OfflineChapterStore.kt` - added staged chapter write sessions with backup/rollback handling for streaming downloads
 - User-level Gradle configuration - added `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr` to `%USERPROFILE%\.gradle\gradle.properties`
 - User-level environment - updated `JAVA_HOME` to Android Studio `jbr` `21` for new shells
 
 ### Latest Fix Execution Snapshot
-- Current fix ID: `FIX-005`
+- Current fix ID: `FIX-006`
 - Current phase: Completed
 - Completed validations:
   - `.\gradlew.bat :app:assembleDebug` - Passed
   - `.\gradlew.bat :app:testDebugUnitTest` - Passed
 - Changed files:
-  - `app/src/main/java/com/paudinc/komastream/ui/screens/ReaderScreen.kt`
+  - `app/src/main/java/com/paudinc/komastream/utils/DownloadChapterWorker.kt`
   - `app/src/main/java/com/paudinc/komastream/utils/OfflineChapterStore.kt`
   - `IMPLEMENTATION_ROADMAP.md`
 - Detected risks:
-  - Decrypted reader cache files are generated on demand and currently rely on cache eviction by the OS rather than explicit trimming
-  - Offline page rendering still decrypts once per uncached page; the churn reduction comes from reuse after cache population, not from streaming decode yet
+  - Staged chapter writes now protect against partial publication, but cancellation/retry behavior still needs runtime smoke coverage on-device
+  - Backup restoration is local to the chapter directory swap path and has not yet been exercised by automated failure injection
 - Benchmark deltas:
-  - Not applicable for `FIX-005`
+  - Not applicable for `FIX-006`
 - Remaining fixes:
-  - `FIX-006`
   - `FIX-007`
   - `FIX-008`
   - `FIX-009`
@@ -1187,7 +1188,7 @@ For every fix, perform the following validation categories as applicable:
   - `FIX-011`
   - `FIX-012`
 - Rollback status:
-  - No rollback required for `FIX-005`
+  - No rollback required for `FIX-006`
 
 ### Current ENV-001 Validation Status
 - `./gradlew -version`: Passed with daemon JVM pinned to Android Studio `jbr` `21`

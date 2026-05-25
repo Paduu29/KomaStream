@@ -30,18 +30,23 @@ class DownloadChapterWorker(
 
             val reader = provider.fetchReaderData(chapterPath)
             val total = reader.pages.size.coerceAtLeast(1)
-            val pageBytes = buildList(reader.pages.size) {
+            val session = offlineStore.openChapterWriteSession(reader)
+            try {
                 reader.pages.forEachIndexed { index, page ->
                     ensureStopped()
-                    add(provider.downloadBytes(page.imageUrl, referer = chapterPath))
+                    val pageBytes = provider.downloadBytes(page.imageUrl, referer = chapterPath)
+                    session.writePage(index, page, pageBytes)
                     val progress = (((index + 1) * 100f) / total).toInt().coerceIn(0, 100)
                     setProgress(progressData(providerId, chapterPath, progress))
                     setForeground(createForegroundInfo(progress, reader.chapterTitle.ifBlank { applicationContext.getString(R.string.downloading) }))
                 }
-            }
 
-            ensureStopped()
-            offlineStore.saveChapter(reader, pageBytes)
+                ensureStopped()
+                session.commit()
+            } catch (error: Throwable) {
+                session.abort()
+                throw error
+            }
             Result.success(
                 Data.Builder()
                     .putString(KEY_PROVIDER_ID, providerId)

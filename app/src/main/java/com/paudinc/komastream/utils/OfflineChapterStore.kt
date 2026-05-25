@@ -48,33 +48,26 @@ class OfflineChapterStore(val context: Context) {
     fun saveChapter(readerData: ReaderData, pageBytes: List<ByteArray>) {
         ensureMigrated()
         require(readerData.pages.size == pageBytes.size) { "Page payload count does not match page metadata" }
-        val chapterDir = chapterDir(readerData.providerId, readerData.chapterPath).apply {
-            mkdirs()
-            listFiles()?.forEach { it.delete() }
+        val session = openChapterWriteSession(readerData)
+        try {
+            readerData.pages.forEachIndexed { index, page ->
+                session.writePage(index, page, pageBytes[index])
+            }
+            session.commit()
+        } catch (error: Throwable) {
+            session.abort()
+            throw error
         }
-        val pageJson = JSONArray()
-        readerData.pages.forEachIndexed { index, page ->
-            val fileName = "${index + 1}.bin"
-            writeEncrypted(File(chapterDir, fileName), pageBytes[index])
-            pageJson.put(
-                JSONObject()
-                    .put("id", page.id)
-                    .put("numberLabel", page.numberLabel)
-                    .put("fileName", fileName)
-            )
-        }
+    }
 
-        val manifest = JSONObject()
-            .put("providerId", readerData.providerId)
-            .put("chapterPath", canonicalChapterPathKey(readerData.providerId, readerData.chapterPath))
-            .put("mangaTitle", readerData.mangaTitle)
-            .put("mangaDetailPath", normalizeStoredPath(readerData.mangaDetailPath))
-            .put("chapterTitle", readerData.chapterTitle)
-            .put("previousChapterPath", readerData.previousChapterPath?.let { normalizeStoredPath(it) } ?: JSONObject.NULL)
-            .put("nextChapterPath", readerData.nextChapterPath?.let { normalizeStoredPath(it) } ?: JSONObject.NULL)
-            .put("pages", pageJson)
-
-        File(chapterDir, "manifest.json").writeText(manifest.toString(), StandardCharsets.UTF_8)
+    fun openChapterWriteSession(readerData: ReaderData): ChapterWriteSession {
+        ensureMigrated()
+        return ChapterWriteSession(
+            readerData = readerData,
+            stagingDir = chapterStagingDir(readerData.providerId, readerData.chapterPath),
+            finalDir = chapterDir(readerData.providerId, readerData.chapterPath),
+            backupDir = chapterBackupDir(readerData.providerId, readerData.chapterPath),
+        )
     }
 
     fun loadChapter(providerId: String, chapterPath: String): ReaderData? {
@@ -147,6 +140,9 @@ class OfflineChapterStore(val context: Context) {
 
     fun removeChapter(providerId: String, chapterPath: String) {
         ensureMigrated()
+        chapterStagingDir(providerId, chapterPath).deleteRecursively()
+        chapterBackupDir(providerId, chapterPath).deleteRecursively()
+        readerCacheChapterDir(providerId, chapterPath).deleteRecursively()
         chapterDir(providerId, chapterPath).deleteRecursively()
     }
 
@@ -160,6 +156,18 @@ class OfflineChapterStore(val context: Context) {
         return File(rootDir, chapterDirectoryName(providerId, chapterPath))
     }
 
+    private fun chapterStagingDir(providerId: String, chapterPath: String): File {
+        return File(rootDir, "${chapterDirectoryName(providerId, chapterPath)}.staging")
+    }
+
+    private fun chapterBackupDir(providerId: String, chapterPath: String): File {
+        return File(rootDir, "${chapterDirectoryName(providerId, chapterPath)}.backup")
+    }
+
+    private fun readerCacheChapterDir(providerId: String, chapterPath: String): File {
+        return File(readerCacheDir, chapterDirectoryName(providerId, chapterPath))
+    }
+
     private fun chapterDirectoryName(providerId: String, chapterPath: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(qualifyProviderValue(providerId, chapterPath).toByteArray(StandardCharsets.UTF_8))
@@ -167,6 +175,52 @@ class OfflineChapterStore(val context: Context) {
     }
 
     private fun manifestFile(providerId: String, chapterPath: String): File = File(chapterDir(providerId, chapterPath), "manifest.json")
+
+    private fun buildManifest(readerData: ReaderData, pageJson: JSONArray): JSONObject {
+        return JSONObject()
+            .put("providerId", readerData.providerId)
+            .put("chapterPath", canonicalChapterPathKey(readerData.providerId, readerData.chapterPath))
+            .put("mangaTitle", readerData.mangaTitle)
+            .put("mangaDetailPath", normalizeStoredPath(readerData.mangaDetailPath))
+            .put("chapterTitle", readerData.chapterTitle)
+            .put("previousChapterPath", readerData.previousChapterPath?.let { normalizeStoredPath(it) } ?: JSONObject.NULL)
+            .put("nextChapterPath", readerData.nextChapterPath?.let { normalizeStoredPath(it) } ?: JSONObject.NULL)
+            .put("pages", pageJson)
+    }
+
+    private fun replaceChapterDirectory(stagingDir: File, finalDir: File, backupDir: File) {
+        backupDir.deleteRecursively()
+        val hadExistingFinal = finalDir.exists()
+        if (hadExistingFinal) {
+            moveDirectory(finalDir, backupDir)
+        }
+        try {
+            moveDirectory(stagingDir, finalDir)
+            if (hadExistingFinal) {
+                backupDir.deleteRecursively()
+            }
+        } catch (error: Throwable) {
+            if (hadExistingFinal && !finalDir.exists() && backupDir.exists()) {
+                moveDirectory(backupDir, finalDir)
+            }
+            throw error
+        } finally {
+            if (stagingDir.exists()) {
+                stagingDir.deleteRecursively()
+            }
+        }
+    }
+
+    private fun moveDirectory(source: File, target: File) {
+        if (!source.exists()) return
+        target.parentFile?.mkdirs()
+        if (target.exists()) {
+            target.deleteRecursively()
+        }
+        if (source.renameTo(target)) return
+        source.copyRecursively(target, overwrite = true)
+        source.deleteRecursively()
+    }
 
     private fun writeEncrypted(target: File, raw: ByteArray) {
         val payload = synchronized(cryptoLock) {
@@ -245,5 +299,51 @@ class OfflineChapterStore(val context: Context) {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "komastream_offline_key"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
+    }
+
+    inner class ChapterWriteSession internal constructor(
+        private val readerData: ReaderData,
+        private val stagingDir: File,
+        private val finalDir: File,
+        private val backupDir: File,
+    ) {
+        private val pageJson = JSONArray()
+        private var nextPageIndex = 0
+        private var closed = false
+
+        init {
+            stagingDir.deleteRecursively()
+            stagingDir.mkdirs()
+        }
+
+        fun writePage(index: Int, page: ReaderPage, raw: ByteArray) {
+            check(!closed) { "Chapter write session already closed" }
+            require(index == nextPageIndex) { "Pages must be written sequentially" }
+            val fileName = "${index + 1}.bin"
+            writeEncrypted(File(stagingDir, fileName), raw)
+            pageJson.put(
+                JSONObject()
+                    .put("id", page.id)
+                    .put("numberLabel", page.numberLabel)
+                    .put("fileName", fileName)
+            )
+            nextPageIndex += 1
+        }
+
+        fun commit() {
+            check(!closed) { "Chapter write session already closed" }
+            require(nextPageIndex == readerData.pages.size) { "Chapter write incomplete" }
+            val manifest = buildManifest(readerData, pageJson)
+            File(stagingDir, "manifest.json").writeText(manifest.toString(), StandardCharsets.UTF_8)
+            readerCacheChapterDir(readerData.providerId, readerData.chapterPath).deleteRecursively()
+            replaceChapterDirectory(stagingDir, finalDir, backupDir)
+            closed = true
+        }
+
+        fun abort() {
+            if (closed) return
+            stagingDir.deleteRecursively()
+            closed = true
+        }
     }
 }
