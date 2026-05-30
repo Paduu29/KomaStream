@@ -663,14 +663,9 @@ class ManhwaLatinoProvider(
             .trim()
     }
 
-    private fun isAdultContentEnabled(): Boolean = runBlocking(Dispatchers.IO) {
-        com.paudinc.komastream.data.local.LibraryDatabase
-            .getInstance(appContext)
-            .libraryDao()
-            .readSettings()
-            ?.adultContentEnabled
-            ?: false
-    }
+    private fun isAdultContentEnabled(): Boolean =
+        appContext.getSharedPreferences("manga_library", android.content.Context.MODE_PRIVATE)
+            .getBoolean("adultContentEnabled", false)
 
     private fun buildSearchPath(query: String, page: Int): String {
         val encodedQuery = query.trim().takeIf { it.isNotBlank() }?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8.name()) }

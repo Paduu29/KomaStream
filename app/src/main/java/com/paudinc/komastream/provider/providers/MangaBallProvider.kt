@@ -424,14 +424,9 @@ class MangaBallProvider(
         invalidateCaches()
     }
 
-    private fun isAdultContentEnabled(): Boolean = runBlocking(Dispatchers.IO) {
-        com.paudinc.komastream.data.local.LibraryDatabase
-            .getInstance(appContext)
-            .libraryDao()
-            .readSettings()
-            ?.mangaBallAdultContentEnabled
-            ?: false
-    }
+    private fun isAdultContentEnabled(): Boolean =
+        appContext.getSharedPreferences("manga_library", android.content.Context.MODE_PRIVATE)
+            .getBoolean("adultContentEnabled", false)
 
     private fun getDocument(path: String, retry: Boolean = true): Document {
         return runCatching {

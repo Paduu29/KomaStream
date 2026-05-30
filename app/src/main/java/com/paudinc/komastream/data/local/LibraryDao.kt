@@ -10,8 +10,14 @@ interface LibraryDao {
     @Query("SELECT * FROM favorite_manga ORDER BY order_index DESC")
     suspend fun readFavorites(): List<FavoriteMangaEntity>
 
+    @Query("SELECT MAX(order_index) FROM favorite_manga")
+    suspend fun readMaxFavoriteOrder(): Long?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertFavorite(entity: FavoriteMangaEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFavorites(entities: List<FavoriteMangaEntity>)
 
     @Query("DELETE FROM favorite_manga WHERE provider_id = :providerId AND detail_path = :detailPath")
     suspend fun deleteFavorite(providerId: String, detailPath: String)
@@ -22,8 +28,14 @@ interface LibraryDao {
     @Query("SELECT * FROM reading_manga ORDER BY order_index DESC")
     suspend fun readReading(): List<ReadingMangaEntity>
 
+    @Query("SELECT MAX(order_index) FROM reading_manga")
+    suspend fun readMaxReadingOrder(): Long?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertReading(entity: ReadingMangaEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertReadings(entities: List<ReadingMangaEntity>)
 
     @Query("DELETE FROM reading_manga WHERE provider_id = :providerId AND detail_path = :detailPath")
     suspend fun deleteReading(providerId: String, detailPath: String)

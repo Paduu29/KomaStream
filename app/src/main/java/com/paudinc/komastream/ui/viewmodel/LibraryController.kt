@@ -68,32 +68,19 @@ class LibraryController(
 
     fun refreshStateAsync(filterBySelectedProvider: Boolean = true) {
         scope.launch {
-            val (state, allProvidersState, lookupState) = withContext(Dispatchers.IO) {
-                val currentState = libraryStore.read(filterBySelectedProvider = filterBySelectedProvider)
-                val currentAllProvidersState = if (filterBySelectedProvider) {
-                    libraryStore.read(filterBySelectedProvider = false)
-                } else {
-                    currentState
-                }
-                val favoriteKeys = currentAllProvidersState.favorites.mapTo(linkedSetOf()) { favorite ->
-                    qualifyMangaLookupKey(favorite.providerId, favorite.detailPath)
-                }
-                Triple(
-                    currentState,
-                    currentAllProvidersState,
-                    LibraryLookupState(
-                        favoriteKeys = favoriteKeys,
-                        chapterProgressByKey = libraryStore.readAllChapterProgress(),
-                        cachedDetailByKey = libraryStore.readAllCachedMangaDetails(),
-                        readChaptersByProvider = libraryStore.readAllReadChaptersByProvider(),
-                    )
-                )
+            val snapshot = withContext(Dispatchers.IO) {
+                libraryStore.readSnapshot(filterBySelectedProvider = filterBySelectedProvider)
             }
             _uiState.update {
                 it.copy(
-                    state = state,
-                    allProvidersState = allProvidersState,
-                    lookup = lookupState,
+                    state = snapshot.state,
+                    allProvidersState = snapshot.allProvidersState,
+                    lookup = LibraryLookupState(
+                        favoriteKeys = snapshot.favoriteKeys,
+                        chapterProgressByKey = snapshot.chapterProgressByKey,
+                        cachedDetailByKey = snapshot.cachedDetailByKey,
+                        readChaptersByProvider = snapshot.readChaptersByProvider,
+                    ),
                 )
             }
         }
@@ -208,7 +195,7 @@ class LibraryController(
     ) {
         _uiState.update { it.copy(isBulkUpdatingChapters = true) }
         scope.launch {
-            withContext(Dispatchers.Default) {
+            withContext(Dispatchers.IO) {
                 val wasRead = libraryStore.isChapterRead(providerId, path)
                 if (wasRead) {
                     libraryStore.setChaptersRead(providerId, listOf(path), false)
@@ -241,7 +228,7 @@ class LibraryController(
     ) {
         _uiState.update { it.copy(isBulkUpdatingChapters = true) }
         scope.launch {
-            withContext(Dispatchers.Default) {
+            withContext(Dispatchers.IO) {
                 libraryStore.setChaptersRead(providerId, chapters.map { buildChapterPath(detailPath, it) }, read)
             }
             if (malSyncController != null) {
@@ -287,7 +274,7 @@ class LibraryController(
             val paths = withContext(Dispatchers.Default) {
                 chapters.filter { chapterValue(it) <= targetValue }.map { buildChapterPath(detailPath, it) }
             }
-            withContext(Dispatchers.Default) {
+            withContext(Dispatchers.IO) {
                 libraryStore.setChaptersRead(providerId, paths, read)
             }
             if (malSyncController != null) {
@@ -343,51 +330,65 @@ class LibraryController(
     }
 
     fun changeLanguage(language: AppLanguage) {
-        libraryStore.setAppLanguage(language)
-        context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
-            .edit()
-            .putString("appLanguage", language.name)
-            .commit()
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.toLanguageTag()))
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                libraryStore.setAppLanguage(language)
+            }
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.toLanguageTag()))
+            refreshState()
+        }
     }
 
     fun changeTheme(dark: Boolean) {
-        libraryStore.setDarkTheme(dark)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setDarkTheme(dark) }
+            refreshState()
+        }
     }
 
     fun changeAutoJumpToUnread(enabled: Boolean) {
-        libraryStore.setAutoJumpToUnread(enabled)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setAutoJumpToUnread(enabled) }
+            refreshState()
+        }
     }
 
     fun changeMangaBallAdultContent(enabled: Boolean) {
-        libraryStore.setAdultContentEnabled(enabled)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setAdultContentEnabled(enabled) }
+            refreshState()
+        }
     }
 
     fun changeManhwaLatinoAdultContent(enabled: Boolean) {
-        libraryStore.setAdultContentEnabled(enabled)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setAdultContentEnabled(enabled) }
+            refreshState()
+        }
     }
 
     fun changeAdultContentEnabled(enabled: Boolean) {
-        libraryStore.setAdultContentEnabled(enabled)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setAdultContentEnabled(enabled) }
+            refreshState()
+        }
     }
 
     fun changeAdultOnlyProvidersEnabled(enabled: Boolean) {
-        libraryStore.setAdultOnlyProvidersEnabled(enabled)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setAdultOnlyProvidersEnabled(enabled) }
+            refreshState()
+        }
     }
 
     fun changePreferredChapterLanguage(language: com.paudinc.komastream.data.model.AppLanguage) {
-        libraryStore.setPreferredChapterLanguage(language)
-        refreshState()
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setPreferredChapterLanguage(language) }
+            refreshState()
+        }
     }
 
-    fun updateProgressSnapshot(
+    suspend fun updateProgressSnapshot(
         providerId: String,
         detailPath: String,
         mangaTitle: String,
@@ -405,32 +406,36 @@ class LibraryController(
             chapters = chapters,
             readChapters = readChapters,
         )
-        runBlocking(Dispatchers.IO) {
-            libraryStore.upsertReading(
-                SavedManga(
-                    providerId = providerId,
-                    title = mangaTitle,
-                    detailPath = detailPath,
-                    coverUrl = coverUrl,
-                    lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
-                    lastChapterPath = progressChapterPath,
-                    lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
-                        ?: progressChapter.chapterLabel.toProgressChapterNumber(),
-                    lastReadChapterNumber = lastReadChapterNumber,
-                )
+        libraryStore.upsertReading(
+            SavedManga(
+                providerId = providerId,
+                title = mangaTitle,
+                detailPath = detailPath,
+                coverUrl = coverUrl,
+                lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
+                lastChapterPath = progressChapterPath,
+                lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
+                    ?: progressChapter.chapterLabel.toProgressChapterNumber(),
+                lastReadChapterNumber = lastReadChapterNumber,
             )
-        }
+        )
     }
 
     fun selectProvider(providerId: String) {
-        libraryStore.setSelectedProviderId(providerId)
-        libraryStore.setHasSeenProviderPicker(true)
-        refreshState(filterBySelectedProvider = true)
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                libraryStore.setSelectedProviderId(providerId)
+                libraryStore.setHasSeenProviderPicker(true)
+            }
+            refreshState(filterBySelectedProvider = true)
+        }
     }
 
     fun setProviderEnabled(providerId: String, enabled: Boolean) {
-        libraryStore.setProviderEnabled(providerId, enabled)
-        refreshState(filterBySelectedProvider = true)
+        scope.launch {
+            withContext(Dispatchers.IO) { libraryStore.setProviderEnabled(providerId, enabled) }
+            refreshState(filterBySelectedProvider = true)
+        }
     }
 
     fun currentState(): LibraryState = _uiState.value.state

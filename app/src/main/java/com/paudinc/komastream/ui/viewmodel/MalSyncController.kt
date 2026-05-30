@@ -378,7 +378,7 @@ class MalSyncController(
         }
     }
 
-    private fun syncMangaToRemote(
+    private suspend fun syncMangaToRemote(
         accessToken: String,
         clientId: String,
         mangaId: Long,
@@ -441,7 +441,7 @@ class MalSyncController(
     }
 
 
-    private fun resolveReadCountFromProgress(
+    private suspend fun resolveReadCountFromProgress(
         manga: SavedManga,
         detail: MangaDetail,
         readChapters: Set<String>,
@@ -810,7 +810,7 @@ class MalSyncController(
         return if (trimmedTitle.isBlank()) action else "$action $trimmedTitle"
     }
 
-    private fun isCompletedChapterProgress(
+    private suspend fun isCompletedChapterProgress(
         providerId: String,
         chapterPath: String,
     ): Boolean {

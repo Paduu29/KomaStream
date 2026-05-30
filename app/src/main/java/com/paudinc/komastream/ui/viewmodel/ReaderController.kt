@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
@@ -277,11 +276,11 @@ class ReaderController(
         }
     }
 
-    fun updateChapterReadState(providerId: String, chapterPath: String, read: Boolean) {
+    suspend fun updateChapterReadState(providerId: String, chapterPath: String, read: Boolean) {
         libraryStore.setChaptersRead(providerId, listOf(chapterPath), read)
     }
 
-    fun updatePageProgress(
+    suspend fun updatePageProgress(
         providerId: String,
         path: String,
         index: Int,
@@ -313,7 +312,7 @@ class ReaderController(
         }
     }
 
-    fun syncReadingSnapshot(
+    suspend fun syncReadingSnapshot(
         providerId: String,
         detail: com.paudinc.komastream.data.model.MangaDetail,
         chapterPath: String,
@@ -333,23 +332,21 @@ class ReaderController(
             chapters = detail.chapters,
             readChapters = readChapters,
         )
-        runBlocking(Dispatchers.IO) {
-            libraryStore.upsertReading(
-                SavedManga(
-                    providerId = providerId,
-                    title = detail.title,
-                    detailPath = detail.detailPath,
-                    coverUrl = detail.coverUrl,
-                    lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
-                    lastChapterPath = progressChapterPath,
-                    lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
-                        ?: progressChapter.chapterLabel.toProgressChapterNumber()
-                        ?: chapterPathProgressNumber(providerId, progressChapterPath)
-                        ?: chapterTitle.toProgressChapterNumber(),
-                    lastReadChapterNumber = lastReadChapterNumber,
-                )
+        libraryStore.upsertReading(
+            SavedManga(
+                providerId = providerId,
+                title = detail.title,
+                detailPath = detail.detailPath,
+                coverUrl = detail.coverUrl,
+                lastChapterTitle = strings.chapterLabelWithNumber(progressChapter),
+                lastChapterPath = progressChapterPath,
+                lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
+                    ?: progressChapter.chapterLabel.toProgressChapterNumber()
+                    ?: chapterPathProgressNumber(providerId, progressChapterPath)
+                    ?: chapterTitle.toProgressChapterNumber(),
+                lastReadChapterNumber = lastReadChapterNumber,
             )
-        }
+        )
     }
 
     private suspend fun loadDetail(

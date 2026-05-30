@@ -3,7 +3,7 @@ package com.paudinc.komastream.utils
 import android.content.Context
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
-import android.os.Looper
+import androidx.room.withTransaction
 import com.paudinc.komastream.data.local.AppSettingsEntity
 import com.paudinc.komastream.data.local.ChapterPageCountEntity
 import com.paudinc.komastream.data.local.ChapterProgressEntity
@@ -23,7 +23,6 @@ import com.paudinc.komastream.data.repository.MangaDetailCacheCodec
 import com.paudinc.komastream.utils.toProgressChapterNumber
 import java.io.File
 import java.security.MessageDigest
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,6 +30,15 @@ import org.json.JSONObject
 data class CachedMangaDetailSnapshot(
     val detail: MangaDetail,
     val updatedAt: Long,
+)
+
+data class LibraryStoreSnapshot(
+    val state: LibraryState,
+    val allProvidersState: LibraryState,
+    val favoriteKeys: Set<String>,
+    val chapterProgressByKey: Map<String, Int>,
+    val cachedDetailByKey: Map<String, MangaDetail>,
+    val readChaptersByProvider: Map<String, Set<String>>,
 )
 
 class LibraryStore(
@@ -51,75 +59,110 @@ class LibraryStore(
     @Volatile
     private var initialized = false
 
-    suspend fun read(filterBySelectedProvider: Boolean = true): LibraryState {
+    suspend fun read(filterBySelectedProvider: Boolean = true): LibraryState =
+        readSnapshot(filterBySelectedProvider).state
+
+    suspend fun readSnapshot(filterBySelectedProvider: Boolean = true): LibraryStoreSnapshot {
         ensureInitialized()
         val settings = readSettings()
         val disabledProviderIds = parseDisabledProviderIds(settings.disabledProviderIdsJson)
         val resolvedSelectedProviderId = resolveSelectedProviderId(settings, disabledProviderIds)
-        val parsedFavorites = dao.readFavorites().map { it.toSavedManga() }
-        val parsedReading = dao.readReading().map { it.toSavedManga() }
+        val favoriteEntities = dao.readFavorites()
+        val readingEntities = dao.readReading()
+        val readChapterEntries = dao.readChapters()
+        val chapterProgressEntries = dao.readChapterProgress()
+        val cachedDetailEntries = dao.readMangaDetailCaches()
+        val parsedFavorites = favoriteEntities.map { it.toSavedManga() }
+        val parsedReading = readingEntities.map { it.toSavedManga() }
         val (allFavorites, allReading) = canonicalizeSavedEntries(parsedFavorites, parsedReading)
-        return LibraryState(
-            favorites = if (filterBySelectedProvider) allFavorites.filter { it.providerId == resolvedSelectedProviderId } else allFavorites,
-            reading = if (filterBySelectedProvider) allReading.filter { it.providerId == resolvedSelectedProviderId } else allReading,
-            readChapters = dao.readChaptersForProvider(resolvedSelectedProviderId).map { it.chapterPath }.toSet(),
-            useDarkTheme = settings.useDarkTheme,
-            autoJumpToUnread = settings.autoJumpToUnread,
-            adultContentEnabled = settings.adultContentEnabled,
-            adultOnlyProvidersEnabled = settings.adultOnlyProvidersEnabled,
+        val selectedReadChapters = readChapterEntries
+            .asSequence()
+            .filter { it.providerId == resolvedSelectedProviderId }
+            .map { it.chapterPath }
+            .toSet()
+        val allProvidersState = buildLibraryState(
+            favorites = allFavorites,
+            reading = allReading,
+            readChapters = selectedReadChapters,
+            settings = settings,
             disabledProviderIds = disabledProviderIds,
-            mangaBallAdultContentEnabled = settings.adultContentEnabled,
-            manhwaLatinoAdultContentEnabled = settings.adultContentEnabled,
-            preferredChapterLanguage = AppLanguage.fromStored(settings.preferredChapterLanguage).takeIf {
-                it != AppLanguage.MULTI
-            } ?: AppLanguage.EN,
             selectedProviderId = resolvedSelectedProviderId,
-            appLanguage = AppLanguage.fromStored(settings.appLanguage),
+        )
+        val filteredState = if (filterBySelectedProvider) {
+            allProvidersState.copy(
+                favorites = allFavorites.filter { it.providerId == resolvedSelectedProviderId },
+                reading = allReading.filter { it.providerId == resolvedSelectedProviderId },
+            )
+        } else {
+            allProvidersState
+        }
+        return LibraryStoreSnapshot(
+            state = filteredState,
+            allProvidersState = allProvidersState,
+            favoriteKeys = allFavorites.mapTo(linkedSetOf()) { favorite ->
+                qualifyMangaLookupKey(favorite.providerId, favorite.detailPath)
+            },
+            chapterProgressByKey = chapterProgressEntries.associate { entry ->
+                qualifyProviderValue(entry.providerId, entry.chapterPath) to entry.pageIndex.coerceAtLeast(0)
+            },
+            cachedDetailByKey = cachedDetailEntries
+                .sortedBy { it.updatedAt }
+                .mapNotNull { entity ->
+                    runCatching { mangaDetailCacheCodec.deserialize(entity.detailJson) }.getOrNull()
+                        ?.let { detail -> qualifyMangaLookupKey(detail.providerId, detail.detailPath) to detail }
+                }
+                .toMap(),
+            readChaptersByProvider = readChapterEntries
+                .groupBy { it.providerId }
+                .mapValues { (_, entries) -> entries.map { it.chapterPath }.toSet() },
         )
     }
 
     suspend fun toggleFavorite(manga: SavedManga) {
         ensureInitialized()
-        val current = dao.readFavorites()
-        val existing = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
-        if (existing != null) {
-            dao.deleteFavorite(existing.providerId, existing.detailPath)
-            return
+        database.withTransaction {
+            val current = dao.readFavorites()
+            val existing = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+            if (existing != null) {
+                dao.deleteFavorite(existing.providerId, existing.detailPath)
+                return@withTransaction
+            }
+            dao.upsertFavorite(
+                manga.toFavoriteEntity(orderIndex = nextOrderIndex(dao.readMaxFavoriteOrder()))
+            )
         }
-        dao.upsertFavorite(
-            manga.toFavoriteEntity(orderIndex = nextOrderIndex(current.map { it.orderIndex }))
-        )
     }
 
     suspend fun upsertFavorite(manga: SavedManga) {
         ensureInitialized()
-        val current = dao.readFavorites()
-        val existingFavorite = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
-        val existingReading = dao.readReading().firstOrNull { sameStoredManga(it.toSavedManga(), manga) }?.toSavedManga()
-        val resolvedStatus = when {
-            manga.favoriteStatus != FavoriteMangaStatus.COMPLETED -> manga.favoriteStatus
-            existingFavorite != null -> FavoriteMangaStatus.fromStored(existingFavorite.favoriteStatus)
-            existingReading != null -> existingReading.favoriteStatus
-            else -> manga.favoriteStatus
-        }
-        val mergedFavorite = manga.copy(
-            favoriteStatus = resolvedStatus,
-            title = manga.title.ifBlank { existingFavorite?.title ?: existingReading?.title.orEmpty() },
-            coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl ?: existingReading?.coverUrl.orEmpty() },
-            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle ?: existingReading?.lastChapterTitle.orEmpty() },
-            lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath ?: existingReading?.lastChapterPath.orEmpty() },
-            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber,
-            malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId ?: existingReading?.malMangaId,
-            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
-        )
-        dao.upsertFavorite(
-            mergedFavorite.toFavoriteEntity(
-                orderIndex = nextOrderIndex(current.map { it.orderIndex })
+        database.withTransaction {
+            val current = dao.readFavorites()
+            val existingFavorite = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+            val matchingReadingEntities = dao.readReading().filter { sameStoredManga(it.toSavedManga(), manga) }
+            val existingReading = matchingReadingEntities.firstOrNull()?.toSavedManga()
+            val resolvedStatus = when {
+                manga.favoriteStatus != FavoriteMangaStatus.COMPLETED -> manga.favoriteStatus
+                existingFavorite != null -> FavoriteMangaStatus.fromStored(existingFavorite.favoriteStatus)
+                existingReading != null -> existingReading.favoriteStatus
+                else -> manga.favoriteStatus
+            }
+            val mergedFavorite = manga.copy(
+                favoriteStatus = resolvedStatus,
+                title = manga.title.ifBlank { existingFavorite?.title ?: existingReading?.title.orEmpty() },
+                coverUrl = manga.coverUrl.ifBlank { existingFavorite?.coverUrl ?: existingReading?.coverUrl.orEmpty() },
+                lastChapterTitle = manga.lastChapterTitle.ifBlank { existingFavorite?.lastChapterTitle ?: existingReading?.lastChapterTitle.orEmpty() },
+                lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath ?: existingReading?.lastChapterPath.orEmpty() },
+                lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber,
+                malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId ?: existingReading?.malMangaId,
+                lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
             )
-        )
+            dao.upsertFavorite(
+                mergedFavorite.toFavoriteEntity(
+                    orderIndex = existingFavorite?.orderIndex ?: nextOrderIndex(dao.readMaxFavoriteOrder())
+                )
+            )
 
-        val reading = dao.readReading().map { saved ->
-            if (sameStoredManga(saved.toSavedManga(), mergedFavorite)) {
+            val readingUpdates = matchingReadingEntities.map { saved ->
                 saved.toSavedManga().copy(
                     title = saved.title.ifBlank { mergedFavorite.title },
                     coverUrl = saved.coverUrl.ifBlank { mergedFavorite.coverUrl },
@@ -130,12 +173,12 @@ class LibraryStore(
                     malMangaId = mergedFavorite.malMangaId ?: saved.malMangaId,
                     lastReadChapterNumber = mergedFavorite.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                 ).toReadingEntity(orderIndex = saved.orderIndex)
-            } else {
-                saved
             }
+            if (readingUpdates.isNotEmpty()) {
+                dao.upsertReadings(readingUpdates)
+            }
+            synchronizeLinkedProgress(mergedFavorite)
         }
-        replaceReadingEntities(reading)
-        synchronizeLinkedProgress(mergedFavorite)
     }
 
     suspend fun removeFavorite(providerId: String, detailPath: String) {
@@ -145,26 +188,27 @@ class LibraryStore(
 
     suspend fun upsertReading(manga: SavedManga) {
         ensureInitialized()
-        val current = dao.readReading()
-        val existingReading = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
-        val existingFavorite = dao.readFavorites().firstOrNull { sameStoredManga(it.toSavedManga(), manga) }?.toSavedManga()
-        val mergedReading = manga.copy(
-            title = manga.title.ifBlank { existingReading?.title ?: existingFavorite?.title.orEmpty() },
-            coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl ?: existingFavorite?.coverUrl.orEmpty() },
-            lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle ?: existingFavorite?.lastChapterTitle.orEmpty() },
-            lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath ?: existingFavorite?.lastChapterPath.orEmpty() },
-            lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber,
-            malMangaId = manga.malMangaId ?: existingReading?.malMangaId ?: existingFavorite?.malMangaId,
-            lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
-        )
-        dao.upsertReading(
-            mergedReading.toReadingEntity(
-                orderIndex = nextOrderIndex(current.map { it.orderIndex })
+        database.withTransaction {
+            val current = dao.readReading()
+            val existingReading = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+            val matchingFavoriteEntities = dao.readFavorites().filter { sameStoredManga(it.toSavedManga(), manga) }
+            val existingFavorite = matchingFavoriteEntities.firstOrNull()?.toSavedManga()
+            val mergedReading = manga.copy(
+                title = manga.title.ifBlank { existingReading?.title ?: existingFavorite?.title.orEmpty() },
+                coverUrl = manga.coverUrl.ifBlank { existingReading?.coverUrl ?: existingFavorite?.coverUrl.orEmpty() },
+                lastChapterTitle = manga.lastChapterTitle.ifBlank { existingReading?.lastChapterTitle ?: existingFavorite?.lastChapterTitle.orEmpty() },
+                lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath ?: existingFavorite?.lastChapterPath.orEmpty() },
+                lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber,
+                malMangaId = manga.malMangaId ?: existingReading?.malMangaId ?: existingFavorite?.malMangaId,
+                lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
             )
-        )
+            dao.upsertReading(
+                mergedReading.toReadingEntity(
+                    orderIndex = existingReading?.orderIndex ?: nextOrderIndex(dao.readMaxReadingOrder())
+                )
+            )
 
-        val favorites = dao.readFavorites().map { saved ->
-            if (sameStoredManga(saved.toSavedManga(), mergedReading)) {
+            val favoriteUpdates = matchingFavoriteEntities.map { saved ->
                 saved.toSavedManga().copy(
                     title = saved.title.ifBlank { mergedReading.title },
                     coverUrl = saved.coverUrl.ifBlank { mergedReading.coverUrl },
@@ -175,17 +219,17 @@ class LibraryStore(
                     malMangaId = mergedReading.malMangaId ?: saved.malMangaId,
                     lastReadChapterNumber = mergedReading.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                 ).toFavoriteEntity(orderIndex = saved.orderIndex)
-            } else {
-                saved
             }
+            if (favoriteUpdates.isNotEmpty()) {
+                dao.upsertFavorites(favoriteUpdates)
+            }
+            synchronizeLinkedProgress(mergedReading)
         }
-        replaceFavoriteEntities(favorites)
-        synchronizeLinkedProgress(mergedReading)
     }
 
     suspend fun setFavoriteStatus(providerId: String, detailPath: String, status: FavoriteMangaStatus) {
-        runDatabaseCall {
-            ensureInitialized()
+        ensureInitialized()
+        database.withTransaction {
             dao.readFavorites().forEach { entity ->
                 if (sameStoredManga(entity.toSavedManga(), SavedManga(providerId, "", detailPath, "")) && entity.favoriteStatus != status.name) {
                     dao.upsertFavorite(entity.copy(favoriteStatus = status.name))
@@ -195,8 +239,8 @@ class LibraryStore(
     }
 
     suspend fun removeReading(providerId: String, detailPath: String) {
-        runDatabaseCall {
-            ensureInitialized()
+        ensureInitialized()
+        database.withTransaction {
             dao.deleteReading(providerId, detailPath)
         }
     }
@@ -211,11 +255,9 @@ class LibraryStore(
     }
 
     suspend fun isFavorite(providerId: String, detailPath: String): Boolean {
-        return runDatabaseCall {
-            ensureInitialized()
-            val target = SavedManga(providerId, "", detailPath, "")
-            dao.readFavorites().any { sameStoredManga(it.toSavedManga(), target) }
-        }
+        ensureInitialized()
+        val target = SavedManga(providerId, "", detailPath, "")
+        return dao.readFavorites().any { sameStoredManga(it.toSavedManga(), target) }
     }
 
     suspend fun getMangaMalId(providerId: String, detailPath: String): Long? {
@@ -227,32 +269,34 @@ class LibraryStore(
 
     suspend fun setMangaMalId(providerId: String, detailPath: String, malMangaId: Long?): Boolean {
         ensureInitialized()
-        val target = SavedManga(providerId, "", detailPath, "")
-        var changed = false
-        dao.readFavorites().forEach { entity ->
-            if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
-                dao.upsertFavorite(entity.copy(malMangaId = malMangaId))
-                changed = true
+        return database.withTransaction {
+            val target = SavedManga(providerId, "", detailPath, "")
+            var changed = false
+            dao.readFavorites().forEach { entity ->
+                if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
+                    dao.upsertFavorite(entity.copy(malMangaId = malMangaId))
+                    changed = true
+                }
             }
-        }
-        dao.readReading().forEach { entity ->
-            if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
-                dao.upsertReading(entity.copy(malMangaId = malMangaId))
-                changed = true
+            dao.readReading().forEach { entity ->
+                if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
+                    dao.upsertReading(entity.copy(malMangaId = malMangaId))
+                    changed = true
+                }
             }
+            changed
         }
-        return changed
     }
 
-    fun markChapterRead(providerId: String, chapterPath: String) {
+    suspend fun markChapterRead(providerId: String, chapterPath: String) {
         setChaptersRead(providerId, listOf(chapterPath), true)
     }
 
-    fun toggleChapterRead(providerId: String, chapterPath: String) {
-        runBlocking {
-            ensureInitialized()
+    suspend fun toggleChapterRead(providerId: String, chapterPath: String) {
+        ensureInitialized()
+        database.withTransaction {
             val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-            if (canonicalPath.isBlank()) return@runBlocking
+            if (canonicalPath.isBlank()) return@withTransaction
             if (dao.hasReadChapter(providerId, canonicalPath)) {
                 dao.deleteReadChapter(providerId, canonicalPath)
             } else {
@@ -268,93 +312,68 @@ class LibraryStore(
         }
     }
 
-    fun isChapterRead(providerId: String, chapterPath: String): Boolean {
-        return runDatabaseCall {
-            ensureInitialized()
-            val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-            if (canonicalPath.isBlank()) return@runDatabaseCall false
-            dao.hasReadChapter(providerId, canonicalPath)
+    suspend fun isChapterRead(providerId: String, chapterPath: String): Boolean {
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return false
+        return dao.hasReadChapter(providerId, canonicalPath)
+    }
+
+    suspend fun readAllReadChapters(): Set<String> {
+        ensureInitialized()
+        return dao.readChapters().map { it.toQualifiedPath() }.toSet()
+    }
+
+    suspend fun readChaptersForProvider(providerId: String): Set<String> {
+        ensureInitialized()
+        return dao.readChaptersForProvider(providerId).map { it.chapterPath }.toSet()
+    }
+
+    suspend fun readAllChapterProgress(): Map<String, Int> {
+        ensureInitialized()
+        return dao.readChapterProgress().associate { entry ->
+            qualifyProviderValue(entry.providerId, entry.chapterPath) to entry.pageIndex.coerceAtLeast(0)
         }
     }
 
-    fun readAllReadChapters(): Set<String> {
-        return runBlocking {
-            ensureInitialized()
-            dao.readChapters().map { it.toQualifiedPath() }.toSet()
-        }
-    }
-
-    fun readChaptersForProvider(providerId: String): Set<String> {
-        return runDatabaseCall {
-            ensureInitialized()
-            dao.readChaptersForProvider(providerId).map { it.chapterPath }.toSet()
-        }
-    }
-
-    fun readAllChapterProgress(): Map<String, Int> {
-        return runDatabaseCall {
-            ensureInitialized()
-            dao.readChapterProgress().associate { entry ->
-                qualifyProviderValue(entry.providerId, entry.chapterPath) to entry.pageIndex.coerceAtLeast(0)
+    suspend fun readAllCachedMangaDetails(): Map<String, MangaDetail> {
+        ensureInitialized()
+        return dao.readMangaDetailCaches()
+            .sortedBy { it.updatedAt }
+            .mapNotNull { entity ->
+                runCatching { mangaDetailCacheCodec.deserialize(entity.detailJson) }.getOrNull()
+                    ?.let { detail -> qualifyMangaLookupKey(detail.providerId, detail.detailPath) to detail }
             }
-        }
+            .toMap()
     }
 
-    fun readAllCachedMangaDetails(): Map<String, MangaDetail> {
-        return runDatabaseCall {
-            ensureInitialized()
-            dao.readMangaDetailCaches()
-                .sortedBy { it.updatedAt }
-                .mapNotNull { entity ->
-                    runCatching { mangaDetailCacheCodec.deserialize(entity.detailJson) }.getOrNull()
-                        ?.let { detail -> qualifyMangaLookupKey(detail.providerId, detail.detailPath) to detail }
-                }
-                .toMap()
-        }
+    suspend fun readAllReadChaptersByProvider(): Map<String, Set<String>> {
+        ensureInitialized()
+        return dao.readChapters()
+            .groupBy { it.providerId }
+            .mapValues { (_, entries) -> entries.map { it.chapterPath }.toSet() }
     }
 
-    fun readAllReadChaptersByProvider(): Map<String, Set<String>> {
-        return runDatabaseCall {
-            ensureInitialized()
-            dao.readChapters()
-                .groupBy { it.providerId }
-                .mapValues { (_, entries) -> entries.map { it.chapterPath }.toSet() }
+    suspend fun cacheMangaDetail(detail: MangaDetail): Boolean {
+        ensureInitialized()
+        val detailKey = mangaKey(detail.providerId, detail.detailPath)
+        val existing = dao.readMangaDetailCache(detail.providerId, detailKey)
+            ?: dao.readMangaDetailCacheByPath(detail.providerId, normalizeStoredPath(detail.detailPath))
+        val storedDetail = existing?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
+        val canonicalDetailPath = when {
+            existing?.detailPath.isNullOrBlank() -> normalizeStoredPath(detail.detailPath)
+            detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> normalizeStoredPath(detail.detailPath)
+            else -> normalizeStoredPath(existing.detailPath)
         }
-    }
-
-    fun cacheMangaDetail(detail: MangaDetail): Boolean {
-        return runBlocking {
-            ensureInitialized()
-            val detailKey = mangaKey(detail.providerId, detail.detailPath)
-            val existing = dao.readMangaDetailCache(detail.providerId, detailKey)
-                ?: dao.readMangaDetailCacheByPath(detail.providerId, normalizeStoredPath(detail.detailPath))
-            val storedDetail = existing?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
-            val canonicalDetailPath = when {
-                existing?.detailPath.isNullOrBlank() -> normalizeStoredPath(detail.detailPath)
-                detailPathScore(detail.providerId, detail.detailPath) >= detailPathScore(detail.providerId, existing!!.detailPath) -> normalizeStoredPath(detail.detailPath)
-                else -> normalizeStoredPath(existing.detailPath)
-            }
-            val canonicalDetail = detail.copy(detailPath = canonicalDetailPath)
-            val detailJson = mangaDetailCacheCodec.serialize(canonicalDetail)
-            if (detailJson.length > MAX_CACHED_DETAIL_PAYLOAD_SIZE) {
-                dao.deleteMangaDetailCache(detail.providerId, detailKey)
-                dao.deleteMangaDetailCacheByPath(detail.providerId, canonicalDetailPath)
-                return@runBlocking false
-            }
-            val now = System.currentTimeMillis()
-            if (storedDetail != null && mangaDetailCacheCodec.sameChapterSignature(storedDetail, canonicalDetail)) {
-                dao.upsertMangaDetailCache(
-                    MangaDetailCacheEntity(
-                        providerId = detail.providerId,
-                        detailKey = detailKey,
-                        detailPath = canonicalDetailPath,
-                        detailJson = detailJson,
-                        chapterCount = chapterCountForProvider(detail.providerId, canonicalDetail.chapters),
-                        updatedAt = now,
-                    )
-                )
-                return@runBlocking false
-            }
+        val canonicalDetail = detail.copy(detailPath = canonicalDetailPath)
+        val detailJson = mangaDetailCacheCodec.serialize(canonicalDetail)
+        if (detailJson.length > MAX_CACHED_DETAIL_PAYLOAD_SIZE) {
+            dao.deleteMangaDetailCache(detail.providerId, detailKey)
+            dao.deleteMangaDetailCacheByPath(detail.providerId, canonicalDetailPath)
+            return false
+        }
+        val now = System.currentTimeMillis()
+        if (storedDetail != null && mangaDetailCacheCodec.sameChapterSignature(storedDetail, canonicalDetail)) {
             dao.upsertMangaDetailCache(
                 MangaDetailCacheEntity(
                     providerId = detail.providerId,
@@ -365,46 +384,53 @@ class LibraryStore(
                     updatedAt = now,
                 )
             )
-            return@runBlocking true
+            return false
         }
-    }
-
-    fun getCachedMangaDetailSnapshot(providerId: String, detailPath: String): CachedMangaDetailSnapshot? {
-        return runDatabaseCall {
-            ensureInitialized()
-            val detailKey = mangaKey(providerId, detailPath)
-            val cached = dao.readMangaDetailCache(providerId, detailKey)
-                ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
-            val detail = cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
-                ?: return@runDatabaseCall null
-            CachedMangaDetailSnapshot(
-                detail = detail,
-                updatedAt = cached.updatedAt,
+        dao.upsertMangaDetailCache(
+            MangaDetailCacheEntity(
+                providerId = detail.providerId,
+                detailKey = detailKey,
+                detailPath = canonicalDetailPath,
+                detailJson = detailJson,
+                chapterCount = chapterCountForProvider(detail.providerId, canonicalDetail.chapters),
+                updatedAt = now,
             )
-        }
+        )
+        return true
     }
 
-    fun getCachedMangaDetail(providerId: String, detailPath: String): MangaDetail? {
+    suspend fun getCachedMangaDetailSnapshot(providerId: String, detailPath: String): CachedMangaDetailSnapshot? {
+        ensureInitialized()
+        val detailKey = mangaKey(providerId, detailPath)
+        val cached = dao.readMangaDetailCache(providerId, detailKey)
+            ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
+        val detail = cached?.detailJson?.let { runCatching { mangaDetailCacheCodec.deserialize(it) }.getOrNull() }
+            ?: return null
+        return CachedMangaDetailSnapshot(
+            detail = detail,
+            updatedAt = cached.updatedAt,
+        )
+    }
+
+    suspend fun getCachedMangaDetail(providerId: String, detailPath: String): MangaDetail? {
         return getCachedMangaDetailSnapshot(providerId, detailPath)?.detail
     }
 
-    fun getCachedMangaChapterCount(providerId: String, detailPath: String): Int? {
-        return runDatabaseCall {
-            ensureInitialized()
-            val detailKey = mangaKey(providerId, detailPath)
-            val cached = dao.readMangaDetailCache(providerId, detailKey)
-                ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
-            cached?.chapterCount?.takeIf { it > 0 }
-        }
+    suspend fun getCachedMangaChapterCount(providerId: String, detailPath: String): Int? {
+        ensureInitialized()
+        val detailKey = mangaKey(providerId, detailPath)
+        val cached = dao.readMangaDetailCache(providerId, detailKey)
+            ?: dao.readMangaDetailCacheByPath(providerId, normalizeStoredPath(detailPath))
+        return cached?.chapterCount?.takeIf { it > 0 }
     }
 
-    fun setChaptersRead(providerId: String, chapterPaths: Collection<String>, read: Boolean) {
-        runBlocking {
-            ensureInitialized()
+    suspend fun setChaptersRead(providerId: String, chapterPaths: Collection<String>, read: Boolean) {
+        ensureInitialized()
+        database.withTransaction {
             val normalized = chapterPaths.filter { it.isNotBlank() }.map { canonicalChapterKey(providerId, it) }.distinct()
-            if (normalized.isEmpty()) return@runBlocking
+            if (normalized.isEmpty()) return@withTransaction
+            dao.deleteReadChapters(providerId, normalized)
             if (read) {
-                dao.deleteReadChapters(providerId, normalized)
                 var nextReadOrder = (dao.readMaxReadOrderForProvider(providerId) ?: 0L) + 1L
                 dao.upsertReadChapters(
                     normalized.map { chapterPath ->
@@ -415,141 +441,116 @@ class LibraryStore(
                         )
                     }
                 )
-            } else {
-                dao.deleteReadChapters(providerId, normalized)
             }
         }
     }
 
-    fun setDarkTheme(enabled: Boolean) {
-        runDatabaseCall {
-            updateSettings { it.copy(useDarkTheme = enabled) }
-        }
+    suspend fun setDarkTheme(enabled: Boolean) {
+        updateSettings { it.copy(useDarkTheme = enabled) }
     }
 
-    fun setAutoJumpToUnread(enabled: Boolean) {
-        runDatabaseCall {
-            updateSettings { it.copy(autoJumpToUnread = enabled) }
-        }
+    suspend fun setAutoJumpToUnread(enabled: Boolean) {
+        updateSettings { it.copy(autoJumpToUnread = enabled) }
     }
 
-    fun setMangaBallAdultContentEnabled(enabled: Boolean) {
+    suspend fun setMangaBallAdultContentEnabled(enabled: Boolean) {
         setAdultContentEnabled(enabled)
     }
 
-    fun setManhwaLatinoAdultContentEnabled(enabled: Boolean) {
+    suspend fun setManhwaLatinoAdultContentEnabled(enabled: Boolean) {
         setAdultContentEnabled(enabled)
     }
 
-    fun setAdultContentEnabled(enabled: Boolean) {
-        runDatabaseCall {
-            updateSettings {
-                it.copy(
-                    adultContentEnabled = enabled,
-                    mangaBallAdultContentEnabled = enabled,
-                    manhwaLatinoAdultContentEnabled = enabled,
+    suspend fun setAdultContentEnabled(enabled: Boolean) {
+        updateSettings {
+            it.copy(
+                adultContentEnabled = enabled,
+                mangaBallAdultContentEnabled = enabled,
+                manhwaLatinoAdultContentEnabled = enabled,
+            )
+        }
+    }
+
+    suspend fun setAdultOnlyProvidersEnabled(enabled: Boolean) {
+        updateSettings {
+            val updated = it.copy(adultOnlyProvidersEnabled = enabled)
+            updated.copy(
+                selectedProviderId = resolveSelectedProviderId(
+                    updated,
+                    parseDisabledProviderIds(updated.disabledProviderIdsJson),
                 )
-            }
+            )
         }
     }
 
-    fun setAdultOnlyProvidersEnabled(enabled: Boolean) {
-        runDatabaseCall {
-            updateSettings {
-                val updated = it.copy(adultOnlyProvidersEnabled = enabled)
-                updated.copy(
-                    selectedProviderId = resolveSelectedProviderId(
-                        updated,
-                        parseDisabledProviderIds(updated.disabledProviderIdsJson),
-                    )
-                )
-            }
-        }
+    fun adultOnlyProvidersEnabled(): Boolean = legacyPrefs.getBoolean("adultOnlyProvidersEnabled", false)
+
+    fun adultContentPinIsConfigured(): Boolean =
+        legacyPrefs.getString("adultContentPinHash", "").orEmpty().isNotBlank()
+
+    suspend fun setAdultContentPin(pin: String) {
+        updateSettings { it.copy(adultContentPinHash = hashPin(pin)) }
     }
 
-    fun adultOnlyProvidersEnabled(): Boolean = runDatabaseCall { readSettings().adultOnlyProvidersEnabled }
-
-    fun adultContentPinIsConfigured(): Boolean = runDatabaseCall { readSettings().adultContentPinHash.isNotBlank() }
-
-    fun setAdultContentPin(pin: String) {
-        runDatabaseCall {
-            updateSettings { it.copy(adultContentPinHash = hashPin(pin)) }
-        }
-    }
-
-    fun clearAdultContentPin() {
-        runDatabaseCall {
-            updateSettings { it.copy(adultContentPinHash = "") }
-        }
+    suspend fun clearAdultContentPin() {
+        updateSettings { it.copy(adultContentPinHash = "") }
     }
 
     fun verifyAdultContentPin(pin: String): Boolean {
-        return runDatabaseCall {
-            val storedHash = readSettings().adultContentPinHash
-            if (storedHash.isBlank()) return@runDatabaseCall true
-            storedHash == hashPin(pin)
-        }
+        val storedHash = legacyPrefs.getString("adultContentPinHash", "").orEmpty()
+        if (storedHash.isBlank()) return true
+        return storedHash == hashPin(pin)
     }
 
-    fun setPreferredChapterLanguage(language: AppLanguage) {
-        runDatabaseCall {
-            updateSettings { it.copy(preferredChapterLanguage = language.name) }
-        }
+    suspend fun setPreferredChapterLanguage(language: AppLanguage) {
+        updateSettings { it.copy(preferredChapterLanguage = language.name) }
     }
 
     fun preferredChapterLanguage(): AppLanguage {
-        return runDatabaseCall {
-            AppLanguage.fromStored(readSettings().preferredChapterLanguage).takeIf {
-                it != AppLanguage.MULTI
-            } ?: AppLanguage.EN
+        return AppLanguage.fromStored(
+            legacyPrefs.getString("preferredChapterLanguage", AppLanguage.EN.name).orEmpty()
+        ).takeIf {
+            it != AppLanguage.MULTI
+        } ?: AppLanguage.EN
+    }
+
+    fun isMangaBallAdultContentEnabled(): Boolean = legacyPrefs.getBoolean("adultContentEnabled", false)
+
+    fun isManhwaLatinoAdultContentEnabled(): Boolean = legacyPrefs.getBoolean("adultContentEnabled", false)
+
+    suspend fun setAppLanguage(language: AppLanguage) {
+        updateSettings { it.copy(appLanguage = language.name) }
+    }
+
+    suspend fun selectedProviderId(): String {
+        val settings = readSettings()
+        return resolveSelectedProviderId(settings, parseDisabledProviderIds(settings.disabledProviderIdsJson))
+    }
+
+    suspend fun setSelectedProviderId(providerId: String) {
+        updateSettings {
+            val disabledProviderIds = parseDisabledProviderIds(it.disabledProviderIdsJson)
+            val resolved = if (providerRegistry.isSelectable(providerId, disabledProviderIds, it.adultOnlyProvidersEnabled)) providerId else resolveSelectedProviderId(it, disabledProviderIds)
+            it.copy(selectedProviderId = resolved)
         }
     }
 
-    fun isMangaBallAdultContentEnabled(): Boolean = runDatabaseCall { readSettings().adultContentEnabled }
-
-    fun isManhwaLatinoAdultContentEnabled(): Boolean = runDatabaseCall { readSettings().adultContentEnabled }
-
-    fun setAppLanguage(language: AppLanguage) {
-        runDatabaseCall {
-            updateSettings { it.copy(appLanguage = language.name) }
+    suspend fun setProviderEnabled(providerId: String, enabled: Boolean) {
+        updateSettings {
+            val currentDisabled = parseDisabledProviderIds(it.disabledProviderIdsJson).toMutableSet()
+            if (enabled) currentDisabled.remove(providerId) else currentDisabled.add(providerId)
+            val resolvedSelectedProviderId = resolveSelectedProviderId(
+                it.copy(disabledProviderIdsJson = encodeDisabledProviderIds(currentDisabled)),
+                currentDisabled,
+            )
+            it.copy(
+                disabledProviderIdsJson = encodeDisabledProviderIds(currentDisabled),
+                selectedProviderId = resolvedSelectedProviderId,
+            )
         }
     }
 
-    fun selectedProviderId(): String {
-        return runDatabaseCall {
-            val settings = readSettings()
-            resolveSelectedProviderId(settings, parseDisabledProviderIds(settings.disabledProviderIdsJson))
-        }
-    }
-
-    fun setSelectedProviderId(providerId: String) {
-        runDatabaseCall {
-            updateSettings {
-                val disabledProviderIds = parseDisabledProviderIds(it.disabledProviderIdsJson)
-                val resolved = if (providerRegistry.isSelectable(providerId, disabledProviderIds, it.adultOnlyProvidersEnabled)) providerId else resolveSelectedProviderId(it, disabledProviderIds)
-                it.copy(selectedProviderId = resolved)
-            }
-        }
-    }
-
-    fun setProviderEnabled(providerId: String, enabled: Boolean) {
-        runDatabaseCall {
-            updateSettings {
-                val currentDisabled = parseDisabledProviderIds(it.disabledProviderIdsJson).toMutableSet()
-                if (enabled) currentDisabled.remove(providerId) else currentDisabled.add(providerId)
-                val resolvedSelectedProviderId = resolveSelectedProviderId(
-                    it.copy(disabledProviderIdsJson = encodeDisabledProviderIds(currentDisabled)),
-                    currentDisabled,
-                )
-                it.copy(
-                    disabledProviderIdsJson = encodeDisabledProviderIds(currentDisabled),
-                    selectedProviderId = resolvedSelectedProviderId,
-                )
-            }
-        }
-    }
-
-    fun hasSeenProviderPicker(): Boolean = runDatabaseCall { readSettings().hasSeenProviderPicker }
+    fun hasSeenProviderPicker(): Boolean = legacyPrefs.getBoolean("hasSeenProviderPicker", false)
 
     fun hasSeenProviderPickerFast(): Boolean = legacyPrefs.getBoolean("hasSeenProviderPicker", false)
 
@@ -558,36 +559,32 @@ class LibraryStore(
     fun appLanguageFast(): AppLanguage =
         AppLanguage.fromStored(legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty())
 
-    fun setHasSeenProviderPicker(seen: Boolean) {
-        runDatabaseCall {
-            updateSettings { it.copy(hasSeenProviderPicker = seen) }
-        }
+    suspend fun setHasSeenProviderPicker(seen: Boolean) {
+        updateSettings { it.copy(hasSeenProviderPicker = seen) }
     }
 
-    fun exportBackup(): String {
-        return runBlocking {
-            ensureInitialized()
-            backupPayloadCodec.exportPayload(
-                favorites = jsonCodec.serializeSavedMangaList(dao.readFavorites().map { it.toSavedManga() }),
-                reading = jsonCodec.serializeSavedMangaList(dao.readReading().map { it.toSavedManga() }),
-                readChapters = serializeQualifiedChapterPaths(dao.readChapters().map { it.toQualifiedPath() }),
-                readProgress = serializeProgressMap(dao.readChapterProgress()),
-                chapterPageCounts = serializePageCountMap(dao.readChapterPageCounts()),
-                selectedProviderId = selectedProviderId(),
-                settings = serializeSettings(readSettings()),
-                mangaDetailCache = serializeMangaDetailCache(dao.readMangaDetailCaches()),
-            )
-        }
+    suspend fun exportBackup(): String {
+        ensureInitialized()
+        return backupPayloadCodec.exportPayload(
+            favorites = jsonCodec.serializeSavedMangaList(dao.readFavorites().map { it.toSavedManga() }),
+            reading = jsonCodec.serializeSavedMangaList(dao.readReading().map { it.toSavedManga() }),
+            readChapters = serializeQualifiedChapterPaths(dao.readChapters().map { it.toQualifiedPath() }),
+            readProgress = serializeProgressMap(dao.readChapterProgress()),
+            chapterPageCounts = serializePageCountMap(dao.readChapterPageCounts()),
+            selectedProviderId = selectedProviderId(),
+            settings = serializeSettings(readSettings()),
+            mangaDetailCache = serializeMangaDetailCache(dao.readMangaDetailCaches()),
+        )
     }
 
-    fun importBackup(
+    suspend fun importBackup(
         payload: String,
-        selectedProviderIdFallback: String = selectedProviderId(),
+        selectedProviderIdFallback: String = selectedProviderIdFast(),
         onProgress: (Int, String) -> Unit = { _, _ -> },
     ) {
-        runBlocking {
-            ensureInitialized()
-            val importedPayload = backupPayloadCodec.importPayload(payload, selectedProviderIdFallback)
+        ensureInitialized()
+        val importedPayload = backupPayloadCodec.importPayload(payload, selectedProviderIdFallback)
+        database.withTransaction {
             replaceFromImportedPayload(importedPayload, onProgress)
             val importedSettings = importedPayload.settings?.let(::JSONObject)
             onProgress(99, "Applying settings")
@@ -630,97 +627,95 @@ class LibraryStore(
                     legacyPrefsMigrated = true,
                 )
             }
-            onProgress(100, "Backup restored")
         }
+        onProgress(100, "Backup restored")
     }
 
-    fun exportDatabaseBackup(
+    suspend fun exportDatabaseBackup(
         onProgress: (Int, String) -> Unit = { _, _ -> },
     ): ByteArray {
-        return runBlocking {
-            ensureInitialized()
-            val tempFile = createTempDatabaseBackupFile()
-            try {
-                onProgress(5, "Preparing database backup")
-                SQLiteDatabase.openOrCreateDatabase(tempFile, null).use { database ->
-                    database.rawQuery("PRAGMA journal_mode=DELETE", null).use { cursor ->
-                        while (cursor.moveToNext()) {
-                            // Consume pragma result row on Android's SQLite wrapper.
-                        }
-                    }
-                    createDatabaseBackupSchema(database)
-                    database.beginTransaction()
-                    try {
-                        onProgress(12, "Writing backup metadata")
-                        database.insertOrThrow(
-                            DATABASE_BACKUP_METADATA_TABLE,
-                            null,
-                            ContentValues().apply {
-                                put("id", 0)
-                                put("backup_version", DATABASE_BACKUP_VERSION)
-                                put("format", "komastream-room")
-                            },
-                        )
-
-                        onProgress(20, "Exporting favorites")
-                        dao.readFavorites().forEach { entity ->
-                            database.insertOrThrow(FAVORITES_TABLE, null, entity.toContentValues())
-                        }
-                        onProgress(32, "Exporting reading list")
-                        dao.readReading().forEach { entity ->
-                            database.insertOrThrow(READING_TABLE, null, entity.toContentValues())
-                        }
-                        onProgress(44, "Exporting read chapters")
-                        dao.readChapters().forEach { entity ->
-                            database.insertOrThrow(READ_CHAPTERS_TABLE, null, entity.toContentValues())
-                        }
-                        onProgress(56, "Exporting chapter progress")
-                        dao.readChapterProgress().forEach { entity ->
-                            database.insertOrThrow(CHAPTER_PROGRESS_TABLE, null, entity.toContentValues())
-                        }
-                        onProgress(68, "Exporting page counts")
-                        dao.readChapterPageCounts().forEach { entity ->
-                            database.insertOrThrow(CHAPTER_PAGE_COUNTS_TABLE, null, entity.toContentValues())
-                        }
-                        onProgress(78, "Exporting settings")
-                        database.insertOrThrow(APP_SETTINGS_TABLE, null, readSettings().toContentValues())
-                        onProgress(88, "Exporting detail cache")
-                        dao.readMangaDetailCaches().forEach { entity ->
-                            database.insertOrThrow(MANGA_DETAIL_CACHE_TABLE, null, entity.toContentValues())
-                        }
-                        database.setTransactionSuccessful()
-                    } finally {
-                        database.endTransaction()
+        ensureInitialized()
+        val tempFile = createTempDatabaseBackupFile()
+        try {
+            onProgress(5, "Preparing database backup")
+            SQLiteDatabase.openOrCreateDatabase(tempFile, null).use { backupDb ->
+                backupDb.rawQuery("PRAGMA journal_mode=DELETE", null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        // Consume pragma result row on Android's SQLite wrapper.
                     }
                 }
-                return@runBlocking tempFile.readBytes()
-            } finally {
-                tempFile.delete()
+                createDatabaseBackupSchema(backupDb)
+                backupDb.beginTransaction()
+                try {
+                    onProgress(12, "Writing backup metadata")
+                    backupDb.insertOrThrow(
+                        DATABASE_BACKUP_METADATA_TABLE,
+                        null,
+                        ContentValues().apply {
+                            put("id", 0)
+                            put("backup_version", DATABASE_BACKUP_VERSION)
+                            put("format", "komastream-room")
+                        },
+                    )
+
+                    onProgress(20, "Exporting favorites")
+                    dao.readFavorites().forEach { entity ->
+                        backupDb.insertOrThrow(FAVORITES_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(32, "Exporting reading list")
+                    dao.readReading().forEach { entity ->
+                        backupDb.insertOrThrow(READING_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(44, "Exporting read chapters")
+                    dao.readChapters().forEach { entity ->
+                        backupDb.insertOrThrow(READ_CHAPTERS_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(56, "Exporting chapter progress")
+                    dao.readChapterProgress().forEach { entity ->
+                        backupDb.insertOrThrow(CHAPTER_PROGRESS_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(68, "Exporting page counts")
+                    dao.readChapterPageCounts().forEach { entity ->
+                        backupDb.insertOrThrow(CHAPTER_PAGE_COUNTS_TABLE, null, entity.toContentValues())
+                    }
+                    onProgress(78, "Exporting settings")
+                    backupDb.insertOrThrow(APP_SETTINGS_TABLE, null, readSettings().toContentValues())
+                    onProgress(88, "Exporting detail cache")
+                    dao.readMangaDetailCaches().forEach { entity ->
+                        backupDb.insertOrThrow(MANGA_DETAIL_CACHE_TABLE, null, entity.toContentValues())
+                    }
+                    backupDb.setTransactionSuccessful()
+                } finally {
+                    backupDb.endTransaction()
+                }
             }
+            return tempFile.readBytes()
+        } finally {
+            tempFile.delete()
         }
     }
 
-    fun importDatabaseBackup(
+    suspend fun importDatabaseBackup(
         payload: ByteArray,
         onProgress: (Int, String) -> Unit = { _, _ -> },
     ) {
-        runBlocking {
-            ensureInitialized()
-            val tempFile = createTempDatabaseBackupFile()
-            try {
-                tempFile.writeBytes(payload)
-                SQLiteDatabase.openDatabase(tempFile.path, null, SQLiteDatabase.OPEN_READONLY).use { database ->
-                    validateDatabaseBackup(database)
-                    onProgress(60, "Reading database backup")
-                    val favorites = database.readFavoritesBackup()
-                    val reading = database.readReadingBackup()
-                    val readChapters = database.readReadChaptersBackup()
-                    val chapterProgress = database.readChapterProgressBackup()
-                    val pageCounts = database.readChapterPageCountsBackup()
-                    val settings = database.readAppSettingsBackup()
-                    val detailCache = database.readMangaDetailCacheBackup()
+        ensureInitialized()
+        val tempFile = createTempDatabaseBackupFile()
+        try {
+            tempFile.writeBytes(payload)
+            SQLiteDatabase.openDatabase(tempFile.path, null, SQLiteDatabase.OPEN_READONLY).use { backupDb ->
+                validateDatabaseBackup(backupDb)
+                onProgress(60, "Reading database backup")
+                val favorites = backupDb.readFavoritesBackup()
+                val reading = backupDb.readReadingBackup()
+                val readChapters = backupDb.readReadChaptersBackup()
+                val chapterProgress = backupDb.readChapterProgressBackup()
+                val pageCounts = backupDb.readChapterPageCountsBackup()
+                val settings = backupDb.readAppSettingsBackup()
+                val detailCache = backupDb.readMangaDetailCacheBackup()
 
-                    onProgress(82, "Applying database backup")
+                onProgress(82, "Applying database backup")
+                database.withTransaction {
                     dao.clearFavorites()
                     dao.clearReading()
                     dao.clearReadChapters()
@@ -728,96 +723,90 @@ class LibraryStore(
                     dao.clearChapterPageCounts()
                     dao.clearMangaDetailCache()
 
-                favorites.forEach { dao.upsertFavorite(it) }
-                reading.forEach { dao.upsertReading(it) }
-                readChapters.forEach { dao.upsertReadChapter(it) }
-                chapterProgress.forEach { dao.upsertChapterProgress(it) }
-                pageCounts.forEach { dao.upsertChapterPageCount(it) }
-                detailCache.forEach { dao.upsertMangaDetailCache(it) }
+                    dao.upsertFavorites(favorites)
+                    dao.upsertReadings(reading)
+                    readChapters.forEach { dao.upsertReadChapter(it) }
+                    chapterProgress.forEach { dao.upsertChapterProgress(it) }
+                    pageCounts.forEach { dao.upsertChapterPageCount(it) }
+                    detailCache.forEach { dao.upsertMangaDetailCache(it) }
                     val restoredSettings = settings.copy(
                         hasSeenProviderPicker = settings.hasSeenProviderPicker || settings.selectedProviderId.isNotBlank(),
                         legacyPrefsMigrated = true,
                     )
                     dao.upsertSettings(restoredSettings)
                     syncBootstrapPrefs(restoredSettings)
-                    onProgress(100, "Database restored")
                 }
-            } finally {
-                tempFile.delete()
+                onProgress(100, "Database restored")
             }
+        } finally {
+            tempFile.delete()
         }
     }
 
-    fun saveChapterProgress(providerId: String, chapterPath: String, pageIndex: Int) {
-        runDatabaseCall {
-            ensureInitialized()
-            val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-            if (canonicalPath.isBlank()) return@runDatabaseCall
-            dao.upsertChapterProgress(
-                ChapterProgressEntity(
-                    providerId = providerId,
-                    chapterPath = canonicalPath,
-                    pageIndex = pageIndex.coerceAtLeast(0),
-                )
+    suspend fun saveChapterProgress(providerId: String, chapterPath: String, pageIndex: Int) {
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return
+        dao.upsertChapterProgress(
+            ChapterProgressEntity(
+                providerId = providerId,
+                chapterPath = canonicalPath,
+                pageIndex = pageIndex.coerceAtLeast(0),
             )
-        }
+        )
     }
 
-    fun getChapterProgress(providerId: String, chapterPath: String): Int {
-        return runDatabaseCall {
-            ensureInitialized()
-            val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-            if (canonicalPath.isBlank()) return@runDatabaseCall 0
-            dao.readChapterProgress(providerId, canonicalPath)?.pageIndex?.coerceAtLeast(0) ?: 0
-        }
+    suspend fun getChapterProgress(providerId: String, chapterPath: String): Int {
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return 0
+        return dao.readChapterProgress(providerId, canonicalPath)?.pageIndex?.coerceAtLeast(0) ?: 0
     }
 
-    fun saveChapterPageCount(providerId: String, chapterPath: String, pageCount: Int) {
-        runDatabaseCall {
-            ensureInitialized()
-            val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-            if (canonicalPath.isBlank() || pageCount <= 0) return@runDatabaseCall
-            dao.upsertChapterPageCount(
-                ChapterPageCountEntity(
-                    providerId = providerId,
-                    chapterPath = canonicalPath,
-                    pageCount = pageCount,
-                )
+    suspend fun saveChapterPageCount(providerId: String, chapterPath: String, pageCount: Int) {
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank() || pageCount <= 0) return
+        dao.upsertChapterPageCount(
+            ChapterPageCountEntity(
+                providerId = providerId,
+                chapterPath = canonicalPath,
+                pageCount = pageCount,
             )
-        }
+        )
     }
 
-    fun getChapterPageCount(providerId: String, chapterPath: String): Int {
-        return runDatabaseCall {
-            ensureInitialized()
-            val canonicalPath = canonicalChapterKey(providerId, chapterPath)
-            if (canonicalPath.isBlank()) return@runDatabaseCall 0
-            dao.readChapterPageCount(providerId, canonicalPath)?.pageCount?.coerceAtLeast(0) ?: 0
-        }
+    suspend fun getChapterPageCount(providerId: String, chapterPath: String): Int {
+        ensureInitialized()
+        val canonicalPath = canonicalChapterKey(providerId, chapterPath)
+        if (canonicalPath.isBlank()) return 0
+        return dao.readChapterPageCount(providerId, canonicalPath)?.pageCount?.coerceAtLeast(0) ?: 0
     }
 
-    private fun ensureInitialized() {
+    private suspend fun ensureInitialized() {
         if (initialized) return
         synchronized(initLock) {
             if (initialized) return
             runBlocking {
-                dao.deleteOversizedMangaDetailCaches(MAX_CACHED_DETAIL_PAYLOAD_SIZE)
-                val settings = dao.readSettings()
-                if (settings == null) {
-                    if (legacyPrefs.getAll().isNotEmpty()) {
-                        migrateFromLegacyPrefs()
-                    } else {
-                        dao.upsertSettings(defaultSettings(legacyPrefsMigrated = true))
+                database.withTransaction {
+                    dao.deleteOversizedMangaDetailCaches(MAX_CACHED_DETAIL_PAYLOAD_SIZE)
+                    val settings = dao.readSettings()
+                    if (settings == null) {
+                        if (legacyPrefs.getAll().isNotEmpty()) {
+                            migrateFromLegacyPrefs()
+                        } else {
+                            dao.upsertSettings(defaultSettings(legacyPrefsMigrated = true))
+                        }
+                    } else if (!settings.legacyPrefsMigrated) {
+                        if (legacyPrefs.getAll().isNotEmpty()) {
+                            migrateFromLegacyPrefs()
+                        } else {
+                            dao.upsertSettings(settings.copy(legacyPrefsMigrated = true))
+                        }
                     }
-                } else if (!settings.legacyPrefsMigrated) {
-                    if (legacyPrefs.getAll().isNotEmpty()) {
-                        migrateFromLegacyPrefs()
-                    } else {
-                        dao.upsertSettings(settings.copy(legacyPrefsMigrated = true))
-                    }
+                    runFavoriteStatusBackfillIfNeeded()
+                    dao.readSettings()?.let(::syncBootstrapPrefs)
                 }
-                runFavoriteStatusBackfillIfNeeded()
-                dao.readSettings()?.let(::syncBootstrapPrefs)
             }
             initialized = true
         }
@@ -1133,15 +1122,11 @@ class LibraryStore(
             .putString("selectedProviderId", settings.selectedProviderId)
             .putBoolean("hasSeenProviderPicker", settings.hasSeenProviderPicker)
             .putString("appLanguage", settings.appLanguage)
+            .putString("preferredChapterLanguage", settings.preferredChapterLanguage)
+            .putBoolean("adultContentEnabled", settings.adultContentEnabled)
+            .putBoolean("adultOnlyProvidersEnabled", settings.adultOnlyProvidersEnabled)
+            .putString("adultContentPinHash", settings.adultContentPinHash)
             .commit()
-    }
-
-    private fun <T> runDatabaseCall(block: suspend () -> T): T {
-        return if (Looper.myLooper() == Looper.getMainLooper()) {
-            runBlocking(Dispatchers.IO) { block() }
-        } else {
-            runBlocking { block() }
-        }
     }
 
     private fun resolveSelectedProviderId(settings: AppSettingsEntity, disabledProviderIds: Set<String>): String {
@@ -1211,6 +1196,33 @@ class LibraryStore(
         )
     }
 
+    private fun buildLibraryState(
+        favorites: List<SavedManga>,
+        reading: List<SavedManga>,
+        readChapters: Set<String>,
+        settings: AppSettingsEntity,
+        disabledProviderIds: Set<String>,
+        selectedProviderId: String,
+    ): LibraryState {
+        return LibraryState(
+            favorites = favorites,
+            reading = reading,
+            readChapters = readChapters,
+            useDarkTheme = settings.useDarkTheme,
+            autoJumpToUnread = settings.autoJumpToUnread,
+            adultContentEnabled = settings.adultContentEnabled,
+            adultOnlyProvidersEnabled = settings.adultOnlyProvidersEnabled,
+            disabledProviderIds = disabledProviderIds,
+            mangaBallAdultContentEnabled = settings.adultContentEnabled,
+            manhwaLatinoAdultContentEnabled = settings.adultContentEnabled,
+            preferredChapterLanguage = AppLanguage.fromStored(settings.preferredChapterLanguage).takeIf {
+                it != AppLanguage.MULTI
+            } ?: AppLanguage.EN,
+            selectedProviderId = selectedProviderId,
+            appLanguage = AppLanguage.fromStored(settings.appLanguage),
+        )
+    }
+
     private suspend fun runFavoriteStatusBackfillIfNeeded() {
         val settings = dao.readSettings() ?: return
         if (settings.favoriteStatusBackfillDone) return
@@ -1274,10 +1286,7 @@ class LibraryStore(
         }.toString()
     }
 
-    private fun nextOrderIndex(orderIndexes: List<Long>): Long {
-        val max = orderIndexes.maxOrNull() ?: 0L
-        return max + 1L
-    }
+    private fun nextOrderIndex(currentMaxOrder: Long?): Long = (currentMaxOrder ?: 0L) + 1L
 
     private fun SavedManga.toFavoriteEntity(orderIndex: Long): FavoriteMangaEntity {
         return FavoriteMangaEntity(

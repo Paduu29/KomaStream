@@ -288,7 +288,9 @@ class KomaViewModel(
             it.providerId == manga.providerId && it.detailPath == manga.detailPath
         }
         libraryController.toggleFavorite(manga)
-        syncMalFavoriteState(manga, isFavorite = !wasFavorite)
+        viewModelScope.launch {
+            syncMalFavoriteState(manga, isFavorite = !wasFavorite)
+        }
     }
 
     fun selectLibraryTab(tab: LibraryTab) {
@@ -321,17 +323,19 @@ class KomaViewModel(
 
     fun toggleChapterRead(providerId: String, path: String, detail: MangaDetail? = null) {
         libraryController.toggleChapterRead(providerId, path, detail) {
-            detail?.let {
-                libraryController.updateProgressSnapshot(
-                    providerId = providerId,
-                    detailPath = it.detailPath,
-                    mangaTitle = it.title,
-                    coverUrl = it.coverUrl,
-                    chapters = it.chapters,
-                )
-                libraryController.refreshStateAsync()
+            viewModelScope.launch {
+                detail?.let {
+                    libraryController.updateProgressSnapshot(
+                        providerId = providerId,
+                        detailPath = it.detailPath,
+                        mangaTitle = it.title,
+                        coverUrl = it.coverUrl,
+                        chapters = it.chapters,
+                    )
+                    libraryController.refreshStateAsync()
+                }
+                syncMalChapterReadState(providerId)
             }
-            syncMalChapterReadState(providerId)
         }
     }
 
@@ -448,7 +452,11 @@ class KomaViewModel(
     fun adultContentPinIsConfigured(): Boolean = libraryStore.adultContentPinIsConfigured()
 
     fun setAdultContentPin(pin: String) {
-        libraryStore.setAdultContentPin(pin)
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                libraryStore.setAdultContentPin(pin)
+            }
+        }
     }
 
     fun verifyAdultContentPin(pin: String): Boolean = libraryStore.verifyAdultContentPin(pin)
@@ -588,13 +596,15 @@ class KomaViewModel(
     }
 
     fun updatePageProgress(providerId: String, path: String, index: Int, allowAutoReadMark: Boolean = true) {
-        readerController.updatePageProgress(
-            providerId = providerId,
-            path = path,
-            index = index,
-            allowAutoReadMark = allowAutoReadMark,
-            onChapterMarkedRead = { libraryController.refreshState() },
-        )
+        viewModelScope.launch {
+            readerController.updatePageProgress(
+                providerId = providerId,
+                path = path,
+                index = index,
+                allowAutoReadMark = allowAutoReadMark,
+                onChapterMarkedRead = { libraryController.refreshState() },
+            )
+        }
     }
 
     fun openAdjacentChapter(providerId: String, currentPath: String, targetPath: String, markCurrentRead: Boolean) {
@@ -606,17 +616,19 @@ class KomaViewModel(
         val activeDetail = readerController.uiState.value.selectedDetail?.takeIf {
             it.providerId == providerId && sameMangaPath(providerId, it.detailPath, readerController.uiState.value.readerData?.mangaDetailPath.orEmpty())
         }
-        readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
-        if (markCurrentRead && activeDetail != null) {
-            readerController.syncReadingSnapshot(
-                providerId = providerId,
-                detail = activeDetail,
-                chapterPath = activeChapterPath,
-                chapterTitle = readerController.uiState.value.readerData?.chapterTitle.orEmpty(),
-            )
+        viewModelScope.launch {
+            readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
+            if (markCurrentRead && activeDetail != null) {
+                readerController.syncReadingSnapshot(
+                    providerId = providerId,
+                    detail = activeDetail,
+                    chapterPath = activeChapterPath,
+                    chapterTitle = readerController.uiState.value.readerData?.chapterTitle.orEmpty(),
+                )
+            }
+            libraryController.refreshState()
+            openReader(providerId, targetPath, replace = true, resumeProgress = false)
         }
-        libraryController.refreshState()
-        openReader(providerId, targetPath, replace = true, resumeProgress = false)
     }
 
     private fun updateLoadingState(isLoading: Boolean) {
@@ -627,7 +639,7 @@ class KomaViewModel(
         libraryController.refreshState()
     }
 
-    private fun syncMalFavoriteState(manga: SavedManga, isFavorite: Boolean) {
+    private suspend fun syncMalFavoriteState(manga: SavedManga, isFavorite: Boolean) {
         if (!malSyncController.uiState.isConnected) return
         val state = libraryController.currentState()
         val detail = readerController.uiState.value.selectedDetail?.takeIf {
@@ -653,7 +665,7 @@ class KomaViewModel(
         }
     }
 
-    private fun syncMalChapterReadState(providerId: String) {
+    private suspend fun syncMalChapterReadState(providerId: String) {
         if (!malSyncController.uiState.isConnected) return
         val detail = readerController.uiState.value.selectedDetail?.takeIf { it.providerId == providerId } ?: return
         val providerReadChapters = libraryStore.readChaptersForProvider(providerId)
