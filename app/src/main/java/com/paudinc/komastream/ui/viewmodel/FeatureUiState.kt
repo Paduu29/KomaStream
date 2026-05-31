@@ -47,6 +47,7 @@ data class LibraryUiState(
     val state: LibraryState,
     val allProvidersState: LibraryState = state,
     val lookup: LibraryLookupState = LibraryLookupState(),
+    val filterBySelectedProvider: Boolean = true,
     val selectedTab: LibraryTab = LibraryTab.ContinueReading,
     val downloadedChapterPaths: Set<String> = emptySet(),
     val isBulkUpdatingChapters: Boolean = false,

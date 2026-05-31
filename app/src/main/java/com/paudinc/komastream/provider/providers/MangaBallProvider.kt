@@ -17,7 +17,7 @@ import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
-import com.paudinc.komastream.data.local.LibraryDatabase
+import com.paudinc.komastream.utils.LibrarySettingsState
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -41,9 +41,9 @@ import kotlinx.coroutines.runBlocking
 
 class MangaBallProvider(
     context: Context,
+    private val settingsState: LibrarySettingsState,
     baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
-    private val appContext = context.applicationContext
     private val sessionLock = Any()
 
     override val id: String = PROVIDER_ID
@@ -425,8 +425,7 @@ class MangaBallProvider(
     }
 
     private fun isAdultContentEnabled(): Boolean =
-        appContext.getSharedPreferences("manga_library", android.content.Context.MODE_PRIVATE)
-            .getBoolean("adultContentEnabled", false)
+        settingsState.current.adultContentEnabled
 
     private fun getDocument(path: String, retry: Boolean = true): Document {
         return runCatching {

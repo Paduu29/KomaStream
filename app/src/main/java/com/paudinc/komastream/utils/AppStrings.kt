@@ -219,6 +219,10 @@ data class AppStrings(
     val allChaptersUnread: String,
     val couldNotDownloadChapter: String,
     val couldNotRemoveDownload: String,
+    val downloadAllChapters: String,
+    val chapterDownloadsQueuedOneTemplate: String,
+    val chapterDownloadsQueuedManyTemplate: String,
+    val noChaptersLeftToDownload: String,
     val backupExported: String,
     val backupImported: String,
     val invalidBackup: String,
@@ -265,6 +269,9 @@ data class AppStrings(
         else markedUntilUnreadTemplate.format(number)
     fun loadingProviderHome(providerName: String) = loadingProviderHomeTemplate.format(providerName)
     fun emptyProviderHome(providerName: String) = emptyProviderHomeTemplate.format(providerName)
+    fun chapterDownloadsQueued(count: Int) =
+        if (count == 1) chapterDownloadsQueuedOneTemplate.format(count)
+        else chapterDownloadsQueuedManyTemplate.format(count)
     fun chapterLabelWithNumber(chapterNumberUrl: String, chapterLabel: String): String {
         if (chapterLabel.isBlank()) return ""
         val rawTitle = chapterLabel.trim()
@@ -532,6 +539,10 @@ fun appStrings(): AppStrings {
         allChaptersUnread = stringResource(R.string.all_chapters_unread),
         couldNotDownloadChapter = stringResource(R.string.could_not_download_chapter),
         couldNotRemoveDownload = stringResource(R.string.could_not_remove_download),
+        downloadAllChapters = stringResource(R.string.download_all_chapters),
+        chapterDownloadsQueuedOneTemplate = stringResource(R.string.chapter_downloads_queued_one),
+        chapterDownloadsQueuedManyTemplate = stringResource(R.string.chapter_downloads_queued_many),
+        noChaptersLeftToDownload = stringResource(R.string.no_chapters_left_to_download),
         backupExported = stringResource(R.string.backup_exported),
         backupImported = stringResource(R.string.backup_imported),
         invalidBackup = stringResource(R.string.invalid_backup),

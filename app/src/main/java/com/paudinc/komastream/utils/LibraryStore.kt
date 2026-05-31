@@ -44,6 +44,9 @@ data class LibraryStoreSnapshot(
 class LibraryStore(
     context: Context,
     providerRegistry: ProviderRegistry = createDefaultProviderRegistry(context.applicationContext),
+    private val settingsState: LibrarySettingsState = LibrarySettingsState.fromPreferences(
+        context.applicationContext.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
+    ),
 ) {
     private val appContext = context.applicationContext
     private val legacyPrefs = context.getSharedPreferences("manga_library", Context.MODE_PRIVATE)
@@ -121,8 +124,7 @@ class LibraryStore(
     suspend fun toggleFavorite(manga: SavedManga) {
         ensureInitialized()
         database.withTransaction {
-            val current = dao.readFavorites()
-            val existing = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
+            val existing = findMatchingFavoriteEntity(manga.providerId, manga.detailPath)
             if (existing != null) {
                 dao.deleteFavorite(existing.providerId, existing.detailPath)
                 return@withTransaction
@@ -136,9 +138,8 @@ class LibraryStore(
     suspend fun upsertFavorite(manga: SavedManga) {
         ensureInitialized()
         database.withTransaction {
-            val current = dao.readFavorites()
-            val existingFavorite = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
-            val matchingReadingEntities = dao.readReading().filter { sameStoredManga(it.toSavedManga(), manga) }
+            val existingFavorite = findMatchingFavoriteEntity(manga.providerId, manga.detailPath)
+            val matchingReadingEntities = findMatchingReadingEntities(manga.providerId, manga.detailPath)
             val existingReading = matchingReadingEntities.firstOrNull()?.toSavedManga()
             val resolvedStatus = when {
                 manga.favoriteStatus != FavoriteMangaStatus.COMPLETED -> manga.favoriteStatus
@@ -189,9 +190,8 @@ class LibraryStore(
     suspend fun upsertReading(manga: SavedManga) {
         ensureInitialized()
         database.withTransaction {
-            val current = dao.readReading()
-            val existingReading = current.firstOrNull { sameStoredManga(it.toSavedManga(), manga) }
-            val matchingFavoriteEntities = dao.readFavorites().filter { sameStoredManga(it.toSavedManga(), manga) }
+            val existingReading = findMatchingReadingEntity(manga.providerId, manga.detailPath)
+            val matchingFavoriteEntities = findMatchingFavoriteEntities(manga.providerId, manga.detailPath)
             val existingFavorite = matchingFavoriteEntities.firstOrNull()?.toSavedManga()
             val mergedReading = manga.copy(
                 title = manga.title.ifBlank { existingReading?.title ?: existingFavorite?.title.orEmpty() },
@@ -230,8 +230,8 @@ class LibraryStore(
     suspend fun setFavoriteStatus(providerId: String, detailPath: String, status: FavoriteMangaStatus) {
         ensureInitialized()
         database.withTransaction {
-            dao.readFavorites().forEach { entity ->
-                if (sameStoredManga(entity.toSavedManga(), SavedManga(providerId, "", detailPath, "")) && entity.favoriteStatus != status.name) {
+            findMatchingFavoriteEntities(providerId, detailPath).forEach { entity ->
+                if (entity.favoriteStatus != status.name) {
                     dao.upsertFavorite(entity.copy(favoriteStatus = status.name))
                 }
             }
@@ -256,30 +256,27 @@ class LibraryStore(
 
     suspend fun isFavorite(providerId: String, detailPath: String): Boolean {
         ensureInitialized()
-        val target = SavedManga(providerId, "", detailPath, "")
-        return dao.readFavorites().any { sameStoredManga(it.toSavedManga(), target) }
+        return findMatchingFavoriteEntity(providerId, detailPath) != null
     }
 
     suspend fun getMangaMalId(providerId: String, detailPath: String): Long? {
         ensureInitialized()
-        val target = SavedManga(providerId, "", detailPath, "")
-        dao.readFavorites().firstOrNull { sameStoredManga(it.toSavedManga(), target) }?.malMangaId?.let { return it }
-        return dao.readReading().firstOrNull { sameStoredManga(it.toSavedManga(), target) }?.malMangaId
+        findMatchingFavoriteEntity(providerId, detailPath)?.malMangaId?.let { return it }
+        return findMatchingReadingEntity(providerId, detailPath)?.malMangaId
     }
 
     suspend fun setMangaMalId(providerId: String, detailPath: String, malMangaId: Long?): Boolean {
         ensureInitialized()
         return database.withTransaction {
-            val target = SavedManga(providerId, "", detailPath, "")
             var changed = false
-            dao.readFavorites().forEach { entity ->
-                if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
+            findMatchingFavoriteEntities(providerId, detailPath).forEach { entity ->
+                if (entity.malMangaId != malMangaId) {
                     dao.upsertFavorite(entity.copy(malMangaId = malMangaId))
                     changed = true
                 }
             }
-            dao.readReading().forEach { entity ->
-                if (sameStoredManga(entity.toSavedManga(), target) && entity.malMangaId != malMangaId) {
+            findMatchingReadingEntities(providerId, detailPath).forEach { entity ->
+                if (entity.malMangaId != malMangaId) {
                     dao.upsertReading(entity.copy(malMangaId = malMangaId))
                     changed = true
                 }
@@ -486,7 +483,13 @@ class LibraryStore(
     fun adultOnlyProvidersEnabled(): Boolean = legacyPrefs.getBoolean("adultOnlyProvidersEnabled", false)
 
     fun adultContentPinIsConfigured(): Boolean =
-        legacyPrefs.getString("adultContentPinHash", "").orEmpty().isNotBlank()
+        settingsState.current.adultContentPinHash.isNotBlank()
+
+    fun cacheAdultContentPin(pin: String) {
+        val snapshot = settingsState.current.copy(adultContentPinHash = hashPin(pin))
+        settingsState.update(snapshot)
+        legacyPrefs.edit().putString("adultContentPinHash", snapshot.adultContentPinHash).commit()
+    }
 
     suspend fun setAdultContentPin(pin: String) {
         updateSettings { it.copy(adultContentPinHash = hashPin(pin)) }
@@ -497,7 +500,7 @@ class LibraryStore(
     }
 
     fun verifyAdultContentPin(pin: String): Boolean {
-        val storedHash = legacyPrefs.getString("adultContentPinHash", "").orEmpty()
+        val storedHash = settingsState.current.adultContentPinHash
         if (storedHash.isBlank()) return true
         return storedHash == hashPin(pin)
     }
@@ -508,15 +511,15 @@ class LibraryStore(
 
     fun preferredChapterLanguage(): AppLanguage {
         return AppLanguage.fromStored(
-            legacyPrefs.getString("preferredChapterLanguage", AppLanguage.EN.name).orEmpty()
+            settingsState.current.preferredChapterLanguage
         ).takeIf {
             it != AppLanguage.MULTI
         } ?: AppLanguage.EN
     }
 
-    fun isMangaBallAdultContentEnabled(): Boolean = legacyPrefs.getBoolean("adultContentEnabled", false)
+    fun isMangaBallAdultContentEnabled(): Boolean = settingsState.current.adultContentEnabled
 
-    fun isManhwaLatinoAdultContentEnabled(): Boolean = legacyPrefs.getBoolean("adultContentEnabled", false)
+    fun isManhwaLatinoAdultContentEnabled(): Boolean = settingsState.current.adultContentEnabled
 
     suspend fun setAppLanguage(language: AppLanguage) {
         updateSettings { it.copy(appLanguage = language.name) }
@@ -550,14 +553,14 @@ class LibraryStore(
         }
     }
 
-    fun hasSeenProviderPicker(): Boolean = legacyPrefs.getBoolean("hasSeenProviderPicker", false)
+    fun hasSeenProviderPicker(): Boolean = settingsState.current.hasSeenProviderPicker
 
-    fun hasSeenProviderPickerFast(): Boolean = legacyPrefs.getBoolean("hasSeenProviderPicker", false)
+    fun hasSeenProviderPickerFast(): Boolean = settingsState.current.hasSeenProviderPicker
 
-    fun selectedProviderIdFast(): String = legacyPrefs.getString("selectedProviderId", "").orEmpty()
+    fun selectedProviderIdFast(): String = settingsState.current.selectedProviderId
 
     fun appLanguageFast(): AppLanguage =
-        AppLanguage.fromStored(legacyPrefs.getString("appLanguage", AppLanguage.EN.name).orEmpty())
+        AppLanguage.fromStored(settingsState.current.appLanguage)
 
     suspend fun setHasSeenProviderPicker(seen: Boolean) {
         updateSettings { it.copy(hasSeenProviderPicker = seen) }
@@ -1036,8 +1039,7 @@ class LibraryStore(
         val sourceProgressChapterNumber = source.lastProgressChapterNumber ?: source.lastChapterTitle.toProgressChapterNumber()
         if (sourceReadCount == null && sourceProgressChapterNumber == null) return
 
-        dao.readFavorites().forEach { entity ->
-            if (entity.malMangaId != sourceMalId) return@forEach
+        dao.readFavoritesByMalId(sourceMalId).forEach { entity ->
             val current = entity.toSavedManga()
             if (sameStoredManga(current, source)) return@forEach
             val resolvedChapterPath = resolveChapterPathForProgressReference(
@@ -1064,8 +1066,7 @@ class LibraryStore(
             )
         }
 
-        dao.readReading().forEach { entity ->
-            if (entity.malMangaId != sourceMalId) return@forEach
+        dao.readReadingByMalId(sourceMalId).forEach { entity ->
             val current = entity.toSavedManga()
             if (sameStoredManga(current, source)) return@forEach
             val resolvedChapterPath = resolveChapterPathForProgressReference(
@@ -1112,12 +1113,45 @@ class LibraryStore(
         dao.upsertSettings(transform(current).also(::syncBootstrapPrefs))
     }
 
+    private suspend fun findMatchingFavoriteEntity(providerId: String, detailPath: String): FavoriteMangaEntity? {
+        val normalizedPath = normalizeStoredPath(detailPath)
+        return dao.readFavorite(providerId, normalizedPath)
+            ?: dao.readFavoritesForProvider(providerId).firstOrNull {
+                sameMangaPath(providerId, it.detailPath, normalizedPath)
+            }
+    }
+
+    private suspend fun findMatchingFavoriteEntities(providerId: String, detailPath: String): List<FavoriteMangaEntity> {
+        val exact = findMatchingFavoriteEntity(providerId, detailPath) ?: return emptyList()
+        val canonicalPath = canonicalMangaPathKey(providerId, exact.detailPath)
+        return dao.readFavoritesForProvider(providerId).filter {
+            canonicalMangaPathKey(providerId, it.detailPath) == canonicalPath
+        }
+    }
+
+    private suspend fun findMatchingReadingEntity(providerId: String, detailPath: String): ReadingMangaEntity? {
+        val normalizedPath = normalizeStoredPath(detailPath)
+        return dao.readReading(providerId, normalizedPath)
+            ?: dao.readReadingForProvider(providerId).firstOrNull {
+                sameMangaPath(providerId, it.detailPath, normalizedPath)
+            }
+    }
+
+    private suspend fun findMatchingReadingEntities(providerId: String, detailPath: String): List<ReadingMangaEntity> {
+        val exact = findMatchingReadingEntity(providerId, detailPath) ?: return emptyList()
+        val canonicalPath = canonicalMangaPathKey(providerId, exact.detailPath)
+        return dao.readReadingForProvider(providerId).filter {
+            canonicalMangaPathKey(providerId, it.detailPath) == canonicalPath
+        }
+    }
+
     private suspend fun readSettings(): AppSettingsEntity {
         val settings = dao.readSettings()
         return settings ?: defaultSettings(legacyPrefsMigrated = false)
     }
 
     private fun syncBootstrapPrefs(settings: AppSettingsEntity) {
+        settingsState.update(settings.toSettingsSnapshot())
         legacyPrefs.edit()
             .putString("selectedProviderId", settings.selectedProviderId)
             .putBoolean("hasSeenProviderPicker", settings.hasSeenProviderPicker)

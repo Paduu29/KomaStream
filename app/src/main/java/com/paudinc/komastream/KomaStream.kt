@@ -674,6 +674,9 @@ fun KomaStream() {
                                         onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path, detail) },
                                         onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, read) },
                                         onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, value, read) },
+                                        onDownloadAllChapters = { chapterPaths ->
+                                            viewModel.downloadChapters(detail.providerId, chapterPaths)
+                                        },
                                         onToggleChapterDownload = { path, isDownloaded ->
                                             if (isDownloaded) viewModel.removeDownloadedChapter(detail.providerId, path)
                                             else viewModel.downloadChapter(detail.providerId, path)

@@ -47,11 +47,12 @@ class ProviderRegistry(
 }
 
 fun createDefaultProviderRegistry(): ProviderRegistry =
-    createDefaultProviderRegistry(context = null, sharedHttpClient = OkHttpClient())
+    createDefaultProviderRegistry(context = null, sharedHttpClient = OkHttpClient(), settingsState = LibrarySettingsState())
 
 fun createDefaultProviderRegistry(
     context: Context?,
     sharedHttpClient: OkHttpClient = OkHttpClient(),
+    settingsState: LibrarySettingsState = LibrarySettingsState(),
 ): ProviderRegistry =
     ProviderRegistry(
         buildList {
@@ -63,8 +64,8 @@ fun createDefaultProviderRegistry(
             add(MarmotaProvider(sharedHttpClient))
             add(MangadotProvider(sharedHttpClient))
             context?.let { add(Manhwa18Provider(it, sharedHttpClient)) }
-            context?.let { add(ManhwaLatinoProvider(it, sharedHttpClient)) }
-            context?.let { add(MangaBallProvider(it, sharedHttpClient)) }
+            context?.let { add(ManhwaLatinoProvider(it, settingsState, sharedHttpClient)) }
+            context?.let { add(MangaBallProvider(it, settingsState, sharedHttpClient)) }
             context?.let { add(AkaiComicProvider(it, sharedHttpClient)) }
         }
     )

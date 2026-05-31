@@ -34,7 +34,6 @@ import com.paudinc.komastream.utils.sameMangaPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.text.Normalizer
 import kotlin.math.max
@@ -87,9 +86,7 @@ class MalSyncController(
     }
 
     fun getMangaMalId(providerId: String, detailPath: String): Long? {
-        return runBlocking(Dispatchers.IO) {
-            libraryStore.getMangaMalId(providerId, detailPath)
-        } ?: linkStore.getMangaId(providerId, detailPath)
+        return linkStore.getMangaId(providerId, detailPath)
     }
 
     fun beginConnect(): String {
@@ -726,7 +723,7 @@ class MalSyncController(
         return detail
     }
 
-    private fun resolveMangaIdCached(
+    private suspend fun resolveMangaIdCached(
         accessToken: String,
         manga: SavedManga,
         cache: MutableMap<String, Long?>,
@@ -883,8 +880,10 @@ class MalSyncController(
         val lastChapterPath: String,
     )
 
-    private fun resolveMangaId(accessToken: String, manga: SavedManga): Long? {
-        getMangaMalId(manga.providerId, manga.detailPath)?.let { storedMangaId ->
+    private suspend fun resolveMangaId(accessToken: String, manga: SavedManga): Long? {
+        val storedMangaId = libraryStore.getMangaMalId(manga.providerId, manga.detailPath)
+            ?: linkStore.getMangaId(manga.providerId, manga.detailPath)
+        storedMangaId?.let {
             linkStore.setMangaId(manga.providerId, manga.detailPath, storedMangaId)
             return storedMangaId
         }

@@ -41,7 +41,6 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 class KomaViewModel(
@@ -279,6 +278,10 @@ class KomaViewModel(
         libraryController.downloadChapter(providerId, path)
     }
 
+    fun downloadChapters(providerId: String, chapterPaths: Collection<String>) {
+        libraryController.downloadChapters(providerId, chapterPaths)
+    }
+
     fun removeDownloadedChapter(providerId: String, path: String) {
         libraryController.removeDownloadedChapter(providerId, path, ::showError)
     }
@@ -453,8 +456,11 @@ class KomaViewModel(
     fun adultContentPinIsConfigured(): Boolean = libraryStore.adultContentPinIsConfigured()
 
     fun setAdultContentPin(pin: String) {
-        runBlocking(Dispatchers.IO) {
-            libraryStore.setAdultContentPin(pin)
+        libraryStore.cacheAdultContentPin(pin)
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                libraryStore.setAdultContentPin(pin)
+            }
         }
     }
 

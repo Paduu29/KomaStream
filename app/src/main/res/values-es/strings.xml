@@ -83,9 +83,16 @@
     <string name="remove_download">Eliminar descarga</string>
     <string name="offline_available">Disponible sin conexión</string>
     <string name="chapter_downloaded">Capítulo descargado</string>
+    <string name="download_cancelled">Descarga cancelada</string>
     <string name="chapter_removed">Capítulo sin conexión eliminado</string>
     <string name="could_not_download_chapter">No se pudo descargar el capítulo</string>
     <string name="could_not_remove_download">No se pudo eliminar el capítulo sin conexión</string>
+    <string name="download_all_chapters">Descargar todos los capítulos</string>
+    <string name="chapter_downloads_queued_one">Se puso en cola %1$d capítulo para leer sin conexión</string>
+    <string name="chapter_downloads_queued_many">Se pusieron en cola %1$d capítulos para leer sin conexión</string>
+    <string name="no_chapters_left_to_download">No quedan capítulos por descargar</string>
+    <string name="download_notification_status">Descargando %1$d%% a %2$s</string>
+    <string name="download_notification_pages">%1$d/%2$d páginas, %3$d restantes</string>
     <string name="theme">Tema</string>
     <string name="light">Claro</string>
     <string name="dark">Oscuro</string>

@@ -10,6 +10,18 @@ interface LibraryDao {
     @Query("SELECT * FROM favorite_manga ORDER BY order_index DESC")
     suspend fun readFavorites(): List<FavoriteMangaEntity>
 
+    @Query("SELECT * FROM favorite_manga WHERE provider_id = :providerId ORDER BY order_index DESC")
+    suspend fun readFavoritesForProvider(providerId: String): List<FavoriteMangaEntity>
+
+    @Query("SELECT * FROM favorite_manga WHERE provider_id = :providerId AND detail_path = :detailPath LIMIT 1")
+    suspend fun readFavorite(providerId: String, detailPath: String): FavoriteMangaEntity?
+
+    @Query("SELECT * FROM favorite_manga WHERE mal_manga_id = :malMangaId")
+    suspend fun readFavoritesByMalId(malMangaId: Long): List<FavoriteMangaEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_manga WHERE provider_id = :providerId AND detail_path = :detailPath LIMIT 1)")
+    suspend fun hasFavorite(providerId: String, detailPath: String): Boolean
+
     @Query("SELECT MAX(order_index) FROM favorite_manga")
     suspend fun readMaxFavoriteOrder(): Long?
 
@@ -27,6 +39,15 @@ interface LibraryDao {
 
     @Query("SELECT * FROM reading_manga ORDER BY order_index DESC")
     suspend fun readReading(): List<ReadingMangaEntity>
+
+    @Query("SELECT * FROM reading_manga WHERE provider_id = :providerId ORDER BY order_index DESC")
+    suspend fun readReadingForProvider(providerId: String): List<ReadingMangaEntity>
+
+    @Query("SELECT * FROM reading_manga WHERE provider_id = :providerId AND detail_path = :detailPath LIMIT 1")
+    suspend fun readReading(providerId: String, detailPath: String): ReadingMangaEntity?
+
+    @Query("SELECT * FROM reading_manga WHERE mal_manga_id = :malMangaId")
+    suspend fun readReadingByMalId(malMangaId: Long): List<ReadingMangaEntity>
 
     @Query("SELECT MAX(order_index) FROM reading_manga")
     suspend fun readMaxReadingOrder(): Long?

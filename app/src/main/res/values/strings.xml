@@ -91,9 +91,16 @@
     <string name="remove_download">Remove download</string>
     <string name="offline_available">Available offline</string>
     <string name="chapter_downloaded">Chapter downloaded</string>
+    <string name="download_cancelled">Download cancelled</string>
     <string name="chapter_removed">Offline chapter removed</string>
     <string name="could_not_download_chapter">Could not download chapter</string>
     <string name="could_not_remove_download">Could not remove offline chapter</string>
+    <string name="download_all_chapters">Download all chapters</string>
+    <string name="chapter_downloads_queued_one">Queued %1$d chapter for offline download</string>
+    <string name="chapter_downloads_queued_many">Queued %1$d chapters for offline download</string>
+    <string name="no_chapters_left_to_download">No chapters left to download</string>
+    <string name="download_notification_status">Downloading %1$d%% at %2$s</string>
+    <string name="download_notification_pages">%1$d/%2$d pages, %3$d left</string>
     <string name="theme">Theme</string>
     <string name="light">Light</string>
     <string name="dark">Dark</string>

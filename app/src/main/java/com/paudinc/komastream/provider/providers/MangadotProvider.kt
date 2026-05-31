@@ -33,14 +33,12 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
 import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.HttpCookie
 import java.net.URI
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 class MangadotProvider(
     baseClient: OkHttpClient = OkHttpClient(),
@@ -52,6 +50,7 @@ class MangadotProvider(
         private const val CLOUDFLARE_POLL_INTERVAL_MS = 500L
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+        private val HOME_FEED_EXECUTOR = Executors.newFixedThreadPool(5)
         val communityNoiseValues = setOf(
             "avatar_url",
             "banner_url",
@@ -91,19 +90,18 @@ class MangadotProvider(
         private set
 
     override fun fetchHomeFeed(): HomeFeed {
-        return runBlocking(Dispatchers.IO) {
-            val homeDeferred = async { getText("/") }
-            val latestDeferred = async { fetchSectionMangas("latest_updates") }
-            val recentlyDeferred = async { fetchSectionMangas("recently_added") }
-            val mostDeferred = async { fetchSectionMangas("most_tracked") }
-            val topDeferred = async { fetchSectionMangas("top_rated") }
-            val homeHtml = homeDeferred.await()
-            val latestUpdates = latestDeferred.await()
-            val recentlyAdded = recentlyDeferred.await()
-            val mostTracked = mostDeferred.await()
-            val topRated = topDeferred.await()
+        val homeFuture = HOME_FEED_EXECUTOR.submit(Callable { getText("/") })
+        val latestFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("latest_updates") })
+        val recentlyFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("recently_added") })
+        val mostFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("most_tracked") })
+        val topFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("top_rated") })
+        val homeHtml = homeFuture.get()
+        val latestUpdates = latestFuture.get()
+        val recentlyAdded = recentlyFuture.get()
+        val mostTracked = mostFuture.get()
+        val topRated = topFuture.get()
 
-            HomeFeed(
+        return HomeFeed(
             latestUpdates = emptyList(),
             popularChapters = emptyList(),
             popularMangas = mostTracked.ifEmpty { topRated }.ifEmpty { latestUpdates },
@@ -143,7 +141,6 @@ class MangadotProvider(
                 },
             ),
         )
-        }
     }
 
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {

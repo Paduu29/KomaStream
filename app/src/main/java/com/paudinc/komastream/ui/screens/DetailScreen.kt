@@ -58,6 +58,7 @@ fun DetailScreen(
     onToggleChapterRead: (String) -> Unit,
     onSetAllChaptersRead: (Boolean) -> Unit,
     onSetUntilChapterRead: (Double, Boolean) -> Unit,
+    onDownloadAllChapters: (List<String>) -> Unit,
     onToggleChapterDownload: (String, Boolean) -> Unit,
     onReadChapter: (String) -> Unit,
     onSelectChapterSource: (String) -> Unit,
@@ -521,6 +522,23 @@ fun DetailScreen(
                                 ) {
                                     Text(strings.unreadToX)
                                 }
+                            }
+                            FilledTonalButton(
+                                onClick = {
+                                    onDownloadAllChapters(
+                                        uniqueChapters.map { chapter -> buildChapterPath(detail.detailPath, chapter) }
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(strings.downloadAllChapters)
                             }
                         }
                     }

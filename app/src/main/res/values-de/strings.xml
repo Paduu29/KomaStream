@@ -83,9 +83,16 @@
     <string name="remove_download">Download entfernen</string>
     <string name="offline_available">Offline verfügbar</string>
     <string name="chapter_downloaded">Kapitel heruntergeladen</string>
+    <string name="download_cancelled">Download abgebrochen</string>
     <string name="chapter_removed">Offline-Kapitel entfernt</string>
     <string name="could_not_download_chapter">Kapitel konnte nicht heruntergeladen werden</string>
     <string name="could_not_remove_download">Offline-Kapitel konnte nicht entfernt werden</string>
+    <string name="download_all_chapters">Alle Kapitel herunterladen</string>
+    <string name="chapter_downloads_queued_one">%1$d Kapitel zum Offline-Lesen in die Warteschlange gestellt</string>
+    <string name="chapter_downloads_queued_many">%1$d Kapitel zum Offline-Lesen in die Warteschlange gestellt</string>
+    <string name="no_chapters_left_to_download">Keine Kapitel mehr zum Herunterladen</string>
+    <string name="download_notification_status">Download %1$d%% mit %2$s</string>
+    <string name="download_notification_pages">%1$d/%2$d Seiten, %3$d verbleibend</string>
     <string name="theme">Design</string>
     <string name="light">Hell</string>
     <string name="dark">Dunkel</string>

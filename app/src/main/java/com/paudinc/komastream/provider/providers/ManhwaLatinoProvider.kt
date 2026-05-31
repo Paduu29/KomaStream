@@ -16,6 +16,7 @@ import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.utils.LibrarySettingsState
 import com.paudinc.komastream.utils.chapterValue
 import com.paudinc.komastream.utils.normalizeStoredPath
 import com.paudinc.komastream.utils.sameChapterPath
@@ -35,6 +36,7 @@ import kotlinx.coroutines.runBlocking
 
 class ManhwaLatinoProvider(
     context: Context,
+    private val settingsState: LibrarySettingsState,
     baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     companion object {
@@ -52,7 +54,6 @@ class ManhwaLatinoProvider(
     override val websiteUrl: String = "https://manhwa-latino.com"
     override val logoUrl: String = "https://zai.manhwa-latino.com/wp-content/uploads/2023/05/icon-l.png"
 
-    private val appContext = context.applicationContext
     private val baseUrl = websiteUrl
     private val webkitCookieManager = WebkitCookieManager.getInstance()
     private val cookieManager = CookieManager().apply {
@@ -664,8 +665,7 @@ class ManhwaLatinoProvider(
     }
 
     private fun isAdultContentEnabled(): Boolean =
-        appContext.getSharedPreferences("manga_library", android.content.Context.MODE_PRIVATE)
-            .getBoolean("adultContentEnabled", false)
+        settingsState.current.adultContentEnabled
 
     private fun buildSearchPath(query: String, page: Int): String {
         val encodedQuery = query.trim().takeIf { it.isNotBlank() }?.let { java.net.URLEncoder.encode(it, Charsets.UTF_8.name()) }
