@@ -1130,11 +1130,22 @@ class LibraryStore(
     }
 
     private fun resolveSelectedProviderId(settings: AppSettingsEntity, disabledProviderIds: Set<String>): String {
-        val selected = settings.selectedProviderId
+        val selected = settings.selectedProviderId.trim()
+        if (selected.isBlank()) {
+            return if (settings.hasSeenProviderPicker) {
+                providerRegistry.selectableProviderId(disabledProviderIds, settings.adultOnlyProvidersEnabled)
+            } else {
+                ""
+            }
+        }
         if (providerRegistry.isSelectable(selected, disabledProviderIds, settings.adultOnlyProvidersEnabled)) {
             return selected
         }
-        return providerRegistry.selectableProviderId(disabledProviderIds, settings.adultOnlyProvidersEnabled)
+        return if (settings.hasSeenProviderPicker) {
+            providerRegistry.selectableProviderId(disabledProviderIds, settings.adultOnlyProvidersEnabled)
+        } else {
+            ""
+        }
     }
 
     private fun parseDisabledProviderIds(value: String): Set<String> {

@@ -41,6 +41,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 class KomaViewModel(
@@ -452,10 +453,8 @@ class KomaViewModel(
     fun adultContentPinIsConfigured(): Boolean = libraryStore.adultContentPinIsConfigured()
 
     fun setAdultContentPin(pin: String) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                libraryStore.setAdultContentPin(pin)
-            }
+        runBlocking(Dispatchers.IO) {
+            libraryStore.setAdultContentPin(pin)
         }
     }
 
