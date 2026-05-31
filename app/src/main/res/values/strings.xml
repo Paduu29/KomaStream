@@ -92,6 +92,13 @@
     <string name="offline_available">Available offline</string>
     <string name="chapter_downloaded">Chapter downloaded</string>
     <string name="download_cancelled">Download cancelled</string>
+    <string name="cancel_all_downloads">Cancel all downloads</string>
+    <string name="downloading_chapters">Downloading chapters</string>
+    <string name="download_all_cancelled">Downloads cancelled</string>
+    <string name="download_complete">Download complete</string>
+    <string name="batch_download_notification">%1$d/%2$d chapters — %3$d%%</string>
+    <string name="batch_download_complete_message">Downloaded %1$d of %2$d chapters</string>
+    <string name="batch_download_cancelled_message">Cancelled %1$d of %2$d chapters</string>
     <string name="chapter_removed">Offline chapter removed</string>
     <string name="could_not_download_chapter">Could not download chapter</string>
     <string name="could_not_remove_download">Could not remove offline chapter</string>

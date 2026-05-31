@@ -19,6 +19,7 @@ import com.paudinc.komastream.data.repository.LibraryActionInteractor
 import com.paudinc.komastream.ui.viewmodel.MalSyncController
 import com.paudinc.komastream.ui.navigation.LibraryTab
 import com.paudinc.komastream.utils.AppStrings
+import com.paudinc.komastream.utils.BatchDownloadWorker
 import com.paudinc.komastream.utils.DownloadChapterWorker
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
@@ -32,6 +33,7 @@ import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.resolveLatestReadChapterPath
 import com.paudinc.komastream.utils.sameMangaPath
 import com.paudinc.komastream.utils.toProgressChapterNumber
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -120,10 +122,20 @@ class LibraryController(
                         refreshOfflineDownloads()
                     }
                     val seenPaths = mutableSetOf<String>()
+                    var batchActive = false
+                    var batchCurrent = 0
+                    var batchTotal = 0
                     infos.forEach { info ->
                         val path = info.progress.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
                             ?: info.outputData.getString(DownloadChapterWorker.KEY_CHAPTER_PATH)
                         val progress = info.progress.getInt(DownloadChapterWorker.KEY_PROGRESS, -1)
+                        val batchCur = info.progress.getInt(BatchDownloadWorker.KEY_BATCH_CURRENT, 0)
+                        val batchTot = info.progress.getInt(BatchDownloadWorker.KEY_BATCH_TOTAL, 0)
+                        if (batchTot > 0 && info.state == WorkInfo.State.RUNNING) {
+                            batchActive = true
+                            batchCurrent = batchCur
+                            batchTotal = batchTot
+                        }
                         if (path != null) {
                             seenPaths += path
                             if (info.state == WorkInfo.State.SUCCEEDED || info.state == WorkInfo.State.FAILED || info.state == WorkInfo.State.CANCELLED) {
@@ -137,6 +149,26 @@ class LibraryController(
                         .filterNot { it in seenPaths }
                         .toList()
                         .forEach(downloadProgress::remove)
+                    _uiState.update {
+                        it.copy(
+                            isBatchDownloading = batchActive,
+                            batchCurrentChapter = batchCurrent,
+                            batchTotalChapters = batchTotal,
+                        )
+                    }
+                }
+        }
+        scope.launch {
+            workManager.getWorkInfosByTagFlow(BatchDownloadWorker.TAG)
+                .collect { infos ->
+                    val anyActive = infos.any { info ->
+                        info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED
+                    }
+                    if (!anyActive) {
+                        _uiState.update {
+                            it.copy(isBatchDownloading = false)
+                        }
+                    }
                 }
         }
     }
@@ -145,7 +177,7 @@ class LibraryController(
         enqueueDownload(providerId, path)
     }
 
-    fun downloadChapters(providerId: String, chapterPaths: Collection<String>) {
+    fun downloadChapters(providerId: String, detailPath: String, mangaTitle: String, chapterPaths: Collection<String>) {
         scope.launch {
             val queuedPaths = withContext(Dispatchers.IO) {
                 val downloaded = offlineStore.getDownloadedChapterPaths()
@@ -159,13 +191,47 @@ class LibraryController(
                     }
                     .toList()
             }
-            queuedPaths.forEach { path -> enqueueDownload(providerId, path) }
+            if (queuedPaths.isEmpty()) {
+                Toast.makeText(context, strings.noChaptersLeftToDownload, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val orderedPaths = queuedPaths.reversed()
+            val batchWorkName = batchWorkName(providerId, detailPath)
+            val safeFileName = batchWorkName.replace(Regex("[:/]"), "_")
+            val batchFile = File(context.cacheDir, "batch_${safeFileName}.txt")
+            withContext(Dispatchers.IO) {
+                batchFile.writeText(orderedPaths.joinToString("\n"))
+            }
+            val data = Data.Builder()
+                .putString(BatchDownloadWorker.KEY_BATCH_FILE, batchFile.absolutePath)
+                .putString(BatchDownloadWorker.KEY_PROVIDER_ID, providerId)
+                .putString(BatchDownloadWorker.KEY_MANGA_TITLE, mangaTitle)
+                .build()
+            val request = OneTimeWorkRequestBuilder<BatchDownloadWorker>()
+                .setInputData(data)
+                .addTag(BatchDownloadWorker.TAG)
+                .addTag(DownloadChapterWorker.TAG)
+                .build()
+            workManager.enqueueUniqueWork(batchWorkName, ExistingWorkPolicy.KEEP, request)
+            _uiState.update {
+                it.copy(
+                    isBatchDownloading = true,
+                    batchTotalChapters = orderedPaths.size,
+                    batchCurrentChapter = 0,
+                )
+            }
             Toast.makeText(
                 context,
-                if (queuedPaths.isEmpty()) strings.noChaptersLeftToDownload else strings.chapterDownloadsQueued(queuedPaths.size),
+                strings.chapterDownloadsQueued(orderedPaths.size),
                 Toast.LENGTH_SHORT,
             ).show()
         }
+    }
+
+    fun cancelAllDownloads() {
+        workManager.cancelAllWorkByTag(BatchDownloadWorker.TAG)
+        _uiState.update { it.copy(isBatchDownloading = false) }
+        Toast.makeText(context, strings.downloadAllCancelled, Toast.LENGTH_SHORT).show()
     }
 
     private fun enqueueDownload(providerId: String, path: String) {
@@ -514,6 +580,9 @@ class LibraryController(
 
     private fun downloadWorkName(providerId: String, path: String): String =
         "download:$providerId:$path"
+
+    private fun batchWorkName(providerId: String, detailPath: String): String =
+        "batch_download:$providerId:${canonicalMangaPathKey(providerId, detailPath)}"
 
     private fun qualifyMangaLookupKey(providerId: String, detailPath: String): String =
         "$providerId::${canonicalMangaPathKey(providerId, detailPath)}"

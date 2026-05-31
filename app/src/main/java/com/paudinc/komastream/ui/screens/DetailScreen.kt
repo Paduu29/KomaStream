@@ -59,6 +59,8 @@ fun DetailScreen(
     onSetAllChaptersRead: (Boolean) -> Unit,
     onSetUntilChapterRead: (Double, Boolean) -> Unit,
     onDownloadAllChapters: (List<String>) -> Unit,
+    onCancelAllDownloads: () -> Unit,
+    isBatchDownloading: Boolean,
     onToggleChapterDownload: (String, Boolean) -> Unit,
     onReadChapter: (String) -> Unit,
     onSelectChapterSource: (String) -> Unit,
@@ -525,20 +527,27 @@ fun DetailScreen(
                             }
                             FilledTonalButton(
                                 onClick = {
-                                    onDownloadAllChapters(
-                                        uniqueChapters.map { chapter -> buildChapterPath(detail.detailPath, chapter) }
-                                    )
+                                    if (isBatchDownloading) {
+                                        onCancelAllDownloads()
+                                    } else {
+                                        onDownloadAllChapters(
+                                            uniqueChapters.map { chapter -> buildChapterPath(detail.detailPath, chapter) }
+                                        )
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    containerColor = if (isBatchDownloading) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = if (isBatchDownloading) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
                                 ),
                             ) {
-                                Icon(Icons.Default.Download, contentDescription = null)
+                                Icon(
+                                    if (isBatchDownloading) Icons.Default.Close else Icons.Default.Download,
+                                    contentDescription = null,
+                                )
                                 Spacer(Modifier.width(8.dp))
-                                Text(strings.downloadAllChapters)
+                                Text(if (isBatchDownloading) strings.cancelAllDownloads else strings.downloadAllChapters)
                             }
                         }
                     }

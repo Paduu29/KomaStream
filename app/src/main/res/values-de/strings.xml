@@ -84,6 +84,13 @@
     <string name="offline_available">Offline verfügbar</string>
     <string name="chapter_downloaded">Kapitel heruntergeladen</string>
     <string name="download_cancelled">Download abgebrochen</string>
+    <string name="cancel_all_downloads">Alle Downloads abbrechen</string>
+    <string name="downloading_chapters">Kapitel werden heruntergeladen</string>
+    <string name="download_all_cancelled">Downloads abgebrochen</string>
+    <string name="download_complete">Download abgeschlossen</string>
+    <string name="batch_download_notification">%1$d/%2$d Kapitel — %3$d%%</string>
+    <string name="batch_download_complete_message">%1$d von %2$d Kapiteln heruntergeladen</string>
+    <string name="batch_download_cancelled_message">%1$d von %2$d Kapiteln abgebrochen</string>
     <string name="chapter_removed">Offline-Kapitel entfernt</string>
     <string name="could_not_download_chapter">Kapitel konnte nicht heruntergeladen werden</string>
     <string name="could_not_remove_download">Offline-Kapitel konnte nicht entfernt werden</string>

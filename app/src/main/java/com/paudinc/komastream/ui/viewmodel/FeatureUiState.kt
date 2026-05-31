@@ -51,6 +51,9 @@ data class LibraryUiState(
     val selectedTab: LibraryTab = LibraryTab.ContinueReading,
     val downloadedChapterPaths: Set<String> = emptySet(),
     val isBulkUpdatingChapters: Boolean = false,
+    val isBatchDownloading: Boolean = false,
+    val batchTotalChapters: Int = 0,
+    val batchCurrentChapter: Int = 0,
 )
 
 data class LibraryLookupState(

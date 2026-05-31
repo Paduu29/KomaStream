@@ -278,8 +278,12 @@ class KomaViewModel(
         libraryController.downloadChapter(providerId, path)
     }
 
-    fun downloadChapters(providerId: String, chapterPaths: Collection<String>) {
-        libraryController.downloadChapters(providerId, chapterPaths)
+    fun downloadChapters(providerId: String, detailPath: String, mangaTitle: String, chapterPaths: Collection<String>) {
+        libraryController.downloadChapters(providerId, detailPath, mangaTitle, chapterPaths)
+    }
+
+    fun cancelAllDownloads() {
+        libraryController.cancelAllDownloads()
     }
 
     fun removeDownloadedChapter(providerId: String, path: String) {
