@@ -1,6 +1,8 @@
 package com.paudinc.komastream.provider.providers
 
 import android.content.Context
+import android.util.Log
+import android.webkit.CookieManager as WebkitCookieManager
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CatalogSearchResult
@@ -45,6 +47,7 @@ class MangaBallProvider(
     baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     private val sessionLock = Any()
+    private val cloudflareLock = Any()
 
     override val id: String = PROVIDER_ID
     override val displayName: String = "MangaBall"
@@ -54,12 +57,17 @@ class MangaBallProvider(
 
     private val baseUrl = "https://mangaball.net"
     private val baseUri = URI(baseUrl)
+    private val webkitCookieManager = WebkitCookieManager.getInstance()
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
     private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
+
+    @Volatile
+    var cloudflareReady: Boolean = false
+        private set
 
     @Volatile
     private var csrfToken: String? = null
@@ -368,9 +376,12 @@ class MangaBallProvider(
     }
 
     override fun downloadBytes(url: String, referer: String?): ByteArray {
+        ensureCloudflareReady()
+        Log.d(TAG, "downloadBytes url=$url referer=${referer.orEmpty()} ready=$cloudflareReady cookies=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
+            .applyCookieHeader()
             .apply {
                 if (!referer.isNullOrBlank()) {
                     header("Referer", toAbsoluteUrl(referer))
@@ -384,6 +395,24 @@ class MangaBallProvider(
 
     override fun invalidateCaches() {
         synchronized(sessionLock) {
+            synchronized(cloudflareLock) {
+                cloudflareReady = false
+            }
+            csrfToken = null
+            homeFeedCache = null
+            catalogFilterCache = null
+            chapterListingCache.clear()
+        }
+        runCatching {
+            webkitCookieManager.setAcceptCookie(true)
+            webkitCookieManager.removeAllCookies(null)
+            webkitCookieManager.flush()
+        }
+        Log.d(TAG, "invalidateCaches cloudflareReady=false")
+    }
+
+    private fun clearSessionCaches() {
+        synchronized(sessionLock) {
             csrfToken = null
             homeFeedCache = null
             catalogFilterCache = null
@@ -394,6 +423,7 @@ class MangaBallProvider(
     private fun ensureSession(path: String = "/") {
         synchronized(sessionLock) {
             ensureAdultCookie()
+            ensureCloudflareReady()
             if (!csrfToken.isNullOrBlank()) return
             val document = getDocument(path, retry = false)
             csrfToken = document.selectFirst("meta[name=csrf-token]")?.attr("content")?.trim()
@@ -421,22 +451,129 @@ class MangaBallProvider(
                 }
             )
         }
-        invalidateCaches()
+        clearSessionCaches()
+        Log.d(TAG, "ensureAdultCookie adultEnabled=$adultContentEnabled cookies=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
     }
 
     private fun isAdultContentEnabled(): Boolean =
         settingsState.current.adultContentEnabled
 
+    fun waitForCloudflareCookie(timeoutMs: Long = CLOUDFLARE_WAIT_TIMEOUT_MS): Boolean {
+        if (cloudflareReady) return true
+        Log.d(TAG, "waitForCloudflareCookie start timeoutMs=$timeoutMs")
+        val deadlineMs = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadlineMs) {
+            if (markCloudflareReadyIfCookiesPresent()) {
+                Log.d(TAG, "waitForCloudflareCookie resolved via cf_clearance")
+                return true
+            }
+            Thread.sleep(CLOUDFLARE_POLL_INTERVAL_MS)
+        }
+        Log.w(TAG, "waitForCloudflareCookie timed out cookies=${snapshotWebkitCookies()}")
+        throw IllegalStateException("Cloudflare challenge was not fully solved before timeout")
+    }
+
+    fun markCloudflareReadyIfCookiesPresent(): Boolean {
+        if (cloudflareReady) return true
+        val cookieHeader = snapshotWebkitCookies()
+        Log.d(TAG, "markCloudflareReadyIfCookiesPresent cookieHeader=$cookieHeader")
+        if (!cookieHeader.contains("cf_clearance=")) {
+            return false
+        }
+        synchronized(cloudflareLock) {
+            if (!cloudflareReady) {
+                syncCookies(cookieHeader)
+                cloudflareReady = true
+                Log.d(TAG, "cloudflareReady=true syncedCookies=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
+            }
+        }
+        return true
+    }
+
+    private fun ensureCloudflareReady() {
+        if (cloudflareReady) return
+        waitForCloudflareCookie()
+    }
+
+    private fun snapshotWebkitCookies(): String {
+        return runCatching {
+            webkitCookieManager.setAcceptCookie(true)
+            webkitCookieManager.flush()
+            val cookies = webkitCookieManager.getCookie(baseUrl).orEmpty()
+            Log.d(TAG, "snapshotWebkitCookies cookies=$cookies")
+            cookies
+        }.getOrElse {
+            Log.w(TAG, "snapshotWebkitCookies failed", it)
+            ""
+        }
+    }
+
+    private fun syncCookies(cookieHeader: String) {
+        runCatching {
+            cookieManager.cookieStore.removeAll()
+            cookieHeader.split(';')
+                .asSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() && it.contains('=') }
+                .forEach { token ->
+                    val parts = token.split('=', limit = 2)
+                    val name = parts.getOrNull(0)?.trim().orEmpty()
+                    val value = parts.getOrNull(1)?.trim().orEmpty()
+                    if (name.isBlank() || value.isBlank()) return@forEach
+                    cookieManager.cookieStore.add(
+                        baseUri,
+                        HttpCookie(name, value).apply {
+                            domain = baseUri.host
+                            path = "/"
+                        },
+                    )
+                }
+            Log.d(TAG, "syncCookies synced=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
+        }.onFailure {
+            Log.w(TAG, "syncCookies failed", it)
+        }
+    }
+
+    private fun Request.Builder.applyCookieHeader(): Request.Builder {
+        val cookieHeader = cookieManager.cookieStore.get(baseUri)
+            .joinToString("; ") { cookie -> "${cookie.name}=${cookie.value}" }
+        if (cookieHeader.isNotBlank()) {
+            header("Cookie", cookieHeader)
+        }
+        Log.d(TAG, "applyCookieHeader cookieHeader=${cookieHeader.ifBlank { "<empty>" }}")
+        return this
+    }
+
+    private fun looksLikeCloudflareChallenge(body: String): Boolean {
+        val lower = body.lowercase()
+        return lower.contains("just a moment") ||
+            lower.contains("cf-browser-verification") ||
+            lower.contains("challenge-platform") ||
+            lower.contains("cloudflare")
+    }
+
     private fun getDocument(path: String, retry: Boolean = true): Document {
         return runCatching {
+            ensureCloudflareReady()
+            Log.d(TAG, "getDocument path=$path ready=$cloudflareReady")
             val request = Request.Builder()
                 .url(toAbsoluteUrl(path))
                 .header("User-Agent", USER_AGENT)
+                .applyCookieHeader()
                 .build()
             client.newCall(request).execute().use { response ->
-                Jsoup.parse(response.body?.string().orEmpty(), baseUrl)
+                val body = response.body?.string().orEmpty()
+                Log.d(TAG, "getDocument response path=$path bodyPrefix=${body.take(120)}")
+                if (looksLikeCloudflareChallenge(body)) {
+                    Log.w(TAG, "getDocument cloudflare still active path=$path")
+                    throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+                }
+                Jsoup.parse(body, baseUrl)
             }
         }.getOrElse { error ->
+            if (error is IllegalStateException && error.message?.contains("Cloudflare challenge still active", ignoreCase = true) == true) {
+                throw error
+            }
             if (!retry) throw error
             invalidateCaches()
             ensureSession(path)
@@ -452,6 +589,7 @@ class MangaBallProvider(
     ): JSONObject {
         return runCatching {
             ensureSession(referer)
+            Log.d(TAG, "postJson path=$path referer=$referer ready=$cloudflareReady csrf=${csrfToken.orEmpty().take(8)}")
             val body = FormBody.Builder().apply {
                 formValues.forEach { (key, value) -> add(key, value) }
             }.build()
@@ -460,12 +598,22 @@ class MangaBallProvider(
                 .header("User-Agent", USER_AGENT)
                 .header("Referer", toAbsoluteUrl(referer))
                 .header("X-CSRF-TOKEN", csrfToken.orEmpty())
+                .applyCookieHeader()
                 .post(body)
                 .build()
             client.newCall(request).execute().use { response ->
-                JSONObject(response.body?.string().orEmpty())
+                val responseBody = response.body?.string().orEmpty()
+                Log.d(TAG, "postJson response path=$path bodyPrefix=${responseBody.take(120)}")
+                if (looksLikeCloudflareChallenge(responseBody)) {
+                    Log.w(TAG, "postJson cloudflare still active path=$path")
+                    throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+                }
+                JSONObject(responseBody)
             }
         }.getOrElse { error ->
+            if (error is IllegalStateException && error.message?.contains("Cloudflare challenge still active", ignoreCase = true) == true) {
+                throw error
+            }
             if (!retry) throw error
             invalidateCaches()
             ensureSession(referer)
@@ -795,14 +943,17 @@ class MangaBallProvider(
     companion object {
         const val PROVIDER_ID = "mangaball-en"
         const val PREF_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
+        private const val TAG = "MangaBallProvider"
         private const val DETAIL_LANGUAGE_QUERY = "__lang"
         private const val LANGUAGE_ALL = "all"
+        private const val CLOUDFLARE_WAIT_TIMEOUT_MS = 60_000L
+        private const val CLOUDFLARE_POLL_INTERVAL_MS = 500L
         private const val HOME_FEED_CACHE_MS = 2 * 60 * 1000L
         private const val FILTER_CACHE_MS = 30 * 60 * 1000L
         private const val CHAPTER_LISTING_CACHE_MS = 10 * 60 * 1000L
         private const val HOME_SECTION_PARALLELISM = 4
         private const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
     }
 
     private data class ChapterEntry(

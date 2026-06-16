@@ -2,6 +2,7 @@ package com.paudinc.komastream.ui.viewmodel
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +59,10 @@ class KomaViewModel(
     catalogStateInteractor: CatalogStateInteractor = CatalogStateInteractor(),
     readerActionInteractor: ReaderActionInteractor = ReaderActionInteractor(),
 ) : ViewModel() {
+    companion object {
+        private const val TAG = "KomaViewModel"
+    }
+
     private var backgroundWorkStarted = false
     private var pendingBrowserBootstrapProviderId by mutableStateOf<String?>(null)
     private var cloudflareBootstrapRetryBlockedUntilMs: Long = 0L
@@ -101,6 +106,7 @@ class KomaViewModel(
         providerRegistry = providerRegistry,
         libraryStore = libraryStore,
         offlineStore = offlineStore,
+        workManager = workManager,
         readerActionInteractor = readerActionInteractor,
         strings = strings,
     )
@@ -185,26 +191,33 @@ class KomaViewModel(
     }
 
     fun refreshHome(providerId: String = currentProvider.id, force: Boolean = false) {
+        Log.d(TAG, "refreshHome providerId=$providerId force=$force awaiting=$isAwaitingBrowserBootstrap")
         providerAccessError(providerId)?.let {
             showError(it)
             return
         }
         val provider = providerRegistry.get(providerId)
         if (requiresCloudflareBootstrap(providerId) && !cloudflareReady(providerId)) {
-            requestBrowserBootstrap(providerId)
+            requestBrowserBootstrap(providerId, force = true)
             return
         }
-        homeController.refreshHome(provider, ::showError, force = force)
+        homeController.refreshHome(
+            provider = provider,
+            onError = ::showError,
+            onCloudflareChallenge = { requestBrowserBootstrap(providerId) },
+            force = force,
+        )
     }
 
     fun refreshCatalogFilterOptions() {
         val provider = currentProvider
+        Log.d(TAG, "refreshCatalogFilterOptions providerId=${provider.id} awaiting=$isAwaitingBrowserBootstrap")
         providerAccessError(provider.id)?.let {
             showError(it)
             return
         }
         if (requiresCloudflareBootstrap(provider.id) && !cloudflareReady(provider.id)) {
-            requestBrowserBootstrap(provider.id)
+            requestBrowserBootstrap(provider.id, force = true)
             return
         }
         catalogController.refreshFilterOptions(provider)
@@ -440,8 +453,8 @@ class KomaViewModel(
 
     fun changeAdultContentEnabled(enabled: Boolean) {
         libraryController.changeAdultContentEnabled(enabled)
-        providerRegistry.get(MangaBallProvider.PROVIDER_ID).invalidateCaches()
-        providerRegistry.get(ManhwaLatinoProvider.PROVIDER_ID).invalidateCaches()
+        providerRegistry.all().firstOrNull { it.id == MangaBallProvider.PROVIDER_ID }?.invalidateCaches()
+        providerRegistry.all().firstOrNull { it.id == ManhwaLatinoProvider.PROVIDER_ID }?.invalidateCaches()
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         if (currentProvider.isAdultContent) {
@@ -475,18 +488,22 @@ class KomaViewModel(
     }
 
     fun invalidateCloudflareClearance(providerId: String) {
-        when (val provider = providerRegistry.get(providerId)) {
+        when (val provider = providerRegistry.all().firstOrNull { it.id == providerId }) {
             is MangadotProvider -> provider.invalidateCaches()
             is ManhwaLatinoProvider -> provider.invalidateCaches()
+            is MangaBallProvider -> provider.invalidateCaches()
             else -> Unit
         }
     }
 
     fun invalidateCloudflareClearanceAndRetry(providerId: String) {
-        if (!requiresCloudflareBootstrap(providerId)) return
+        Log.d(TAG, "invalidateCloudflareClearanceAndRetry providerId=$providerId")
+        if (!supportsCloudflareBootstrap(providerId)) return
         invalidateCloudflareClearance(providerId)
-        resetCloudflareBootstrapRetryBlock()
-        requestBrowserBootstrap(providerId)
+        if (providerId != MangaBallProvider.PROVIDER_ID) {
+            resetCloudflareBootstrapRetryBlock()
+        }
+        requestBrowserBootstrap(providerId, force = true)
     }
 
     fun exportBackup(uri: Uri) {
@@ -516,7 +533,11 @@ class KomaViewModel(
         ) {
             libraryController.refreshState()
             libraryController.changeLanguage(libraryController.currentState().appLanguage)
-            homeController.refreshHome(currentProvider, ::showError)
+            homeController.refreshHome(
+                provider = currentProvider,
+                onError = ::showError,
+                onCloudflareChallenge = { requestBrowserBootstrap(currentProvider.id, force = true) },
+            )
         }
     }
 
@@ -525,12 +546,15 @@ class KomaViewModel(
     }
 
     fun selectProvider(providerId: String) {
+        Log.d(TAG, "selectProvider providerId=$providerId")
         libraryController.selectProvider(providerId)
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         navigationController.replaceRoot(RootTab.Home)
         if (requiresCloudflareBootstrap(providerId)) {
-            if (cloudflareReady(providerId)) {
+            if (providerId == MangaBallProvider.PROVIDER_ID) {
+                pendingBrowserBootstrapProviderId = providerId
+            } else if (cloudflareReady(providerId)) {
                 pendingBrowserBootstrapProviderId = null
             } else {
                 pendingBrowserBootstrapProviderId = providerId
@@ -540,9 +564,12 @@ class KomaViewModel(
         }
     }
 
-    fun requestBrowserBootstrap(providerId: String) {
-        if (!requiresCloudflareBootstrap(providerId)) return
-        if (cloudflareReady(providerId)) {
+    fun requestBrowserBootstrap(providerId: String, force: Boolean = false) {
+        Log.d(TAG, "requestBrowserBootstrap providerId=$providerId force=$force")
+        if (!supportsCloudflareBootstrap(providerId)) return
+        if (providerId == MangaBallProvider.PROVIDER_ID) {
+            pendingBrowserBootstrapProviderId = providerId
+        } else if (!force && cloudflareReady(providerId)) {
             pendingBrowserBootstrapProviderId = null
         } else {
             pendingBrowserBootstrapProviderId = providerId
@@ -551,7 +578,8 @@ class KomaViewModel(
 
     fun resumePendingBrowserBootstrap(): Boolean {
         val providerId = pendingBrowserBootstrapProviderId ?: return false
-        if (!requiresCloudflareBootstrap(providerId)) {
+        Log.d(TAG, "resumePendingBrowserBootstrap providerId=$providerId")
+        if (!supportsCloudflareBootstrap(providerId)) {
             pendingBrowserBootstrapProviderId = null
             return false
         }
@@ -705,28 +733,42 @@ class KomaViewModel(
         private set
 
     private fun showError(message: String) {
+        Log.d(TAG, "showError message=$message provider=${currentProvider.id}")
         maybeRequestCloudflareBootstrap(message)
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun maybeRequestCloudflareBootstrap(message: String) {
+        Log.d(TAG, "maybeRequestCloudflareBootstrap provider=${currentProvider.id} message=$message")
         if (
-            requiresCloudflareBootstrap(currentProvider.id) &&
+            supportsCloudflareBootstrap(currentProvider.id) &&
             message.contains("Cloudflare challenge still active", ignoreCase = true) &&
             !isCloudflareBootstrapRetryBlocked()
         ) {
-            requestBrowserBootstrap(currentProvider.id)
+            if (currentProvider.id == MangaBallProvider.PROVIDER_ID) {
+                resetCloudflareBootstrapRetryBlock()
+            }
+            requestBrowserBootstrap(currentProvider.id, force = true)
         }
     }
 
     private fun requiresCloudflareBootstrap(providerId: String): Boolean {
-        return providerId == MangadotProvider.PROVIDER_ID || providerId == ManhwaLatinoProvider.PROVIDER_ID
+        return providerId == MangadotProvider.PROVIDER_ID ||
+            providerId == ManhwaLatinoProvider.PROVIDER_ID ||
+            providerId == MangaBallProvider.PROVIDER_ID
+    }
+
+    private fun supportsCloudflareBootstrap(providerId: String): Boolean {
+        return providerId == MangadotProvider.PROVIDER_ID ||
+            providerId == ManhwaLatinoProvider.PROVIDER_ID ||
+            providerId == MangaBallProvider.PROVIDER_ID
     }
 
     private fun cloudflareReady(providerId: String): Boolean {
         return when (val provider = providerRegistry.get(providerId)) {
             is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
             is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            is MangaBallProvider -> provider.markCloudflareReadyIfCookiesPresent()
             else -> true
         }
     }
@@ -735,6 +777,7 @@ class KomaViewModel(
         return when (val provider = providerRegistry.get(providerId)) {
             is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
             is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            is MangaBallProvider -> provider.markCloudflareReadyIfCookiesPresent()
             else -> false
         }
     }
@@ -743,6 +786,7 @@ class KomaViewModel(
         return when (val provider = providerRegistry.get(providerId)) {
             is MangadotProvider -> provider.waitForCloudflareCookie()
             is ManhwaLatinoProvider -> provider.waitForCloudflareCookie()
+            is MangaBallProvider -> provider.waitForCloudflareCookie()
             else -> false
         }
     }

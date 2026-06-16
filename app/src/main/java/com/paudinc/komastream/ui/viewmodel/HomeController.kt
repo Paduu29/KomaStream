@@ -26,6 +26,7 @@ class HomeController(
     fun refreshHome(
         provider: MangaProvider,
         onError: (String) -> Unit,
+        onCloudflareChallenge: (() -> Unit)? = null,
         force: Boolean = false,
     ) {
         if (_uiState.value.isRefreshing && !force) return
@@ -58,6 +59,7 @@ class HomeController(
                             message.contains("challenge was not fully solved", ignoreCase = true)
                         ) {
                             _uiState.update { state -> state.copy(feed = emptyHomeFeed()) }
+                            onCloudflareChallenge?.invoke()
                         }
                         onError(it.message ?: "Could not load home")
                     }

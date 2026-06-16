@@ -31,6 +31,8 @@ class InMangaProvider(
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
     private val mangaUuidRegex = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    @Volatile
+    private var sessionPrimed = false
 
     override fun fetchHomeFeed(): HomeFeed {
         ensureSession()
@@ -200,8 +202,7 @@ class InMangaProvider(
         val chapterDocument = getDocument(normalizedChapterPath, referer = "/")
         val scriptText = chapterDocument.select("script").joinToString("\n") { it.html() }
         val chapterId = Regex("var cid = '([^']+)'").find(scriptText)?.groupValues?.get(1).orEmpty()
-        val chapterTitle = chapterDocument.selectFirst(".ChapterDescriptionContainer h1")?.text().orEmpty()
-        val mangaTitle = chapterTitle.substringBefore("Capítulo").trim()
+        val chapterTitleFromDocument = chapterDocument.selectFirst(".ChapterDescriptionContainer h1")?.text()?.trim().orEmpty()
         val controls = getDocument("/chapter/chapterIndexControls?identification=$chapterId", referer = normalizedChapterPath)
         var mangaDetailPath = extractMangaDetailPathFromChapterMetadata(chapterDocument, normalizedChapterPath)
             .ifBlank { extractMangaDetailPathFromChapterScript(chapterDocument) }
@@ -234,6 +235,24 @@ class InMangaProvider(
         val currentChapterValue = selectedOption?.let { option ->
             parseChapterNumber(option.text())
         }
+        val chapterTitleFromPath = parseChapterNumber(chapterNumberFromPath)?.let {
+            "Capítulo ${formatChapterNumber(it)}"
+        }.orEmpty()
+        val chapterTitle = selectedOption?.let { option ->
+            parseChapterNumber(option.text())?.let { "Capítulo ${formatChapterNumber(it)}" }
+                ?: option.text().trim()
+        }.orEmpty()
+            .ifBlank { chapterTitleFromPath }
+            .ifBlank { chapterTitleFromDocument }
+        val mangaTitle = chapterTitleFromDocument
+            .substringBefore("Capítulo")
+            .substringBefore("Capitulo")
+            .trim()
+            .ifBlank {
+                chapterTitle.substringBefore("Capítulo")
+                    .substringBefore("Capitulo")
+                    .trim()
+            }
         val chapterEntries = chapterOptions.mapNotNull { option ->
             parseChapterNumber(option.text())?.let { value ->
                 Triple(value, option, option.attr("value"))
@@ -399,7 +418,12 @@ class InMangaProvider(
     }
 
     private fun ensureSession() {
-        getDocument("/")
+        if (sessionPrimed) return
+        synchronized(this) {
+            if (sessionPrimed) return
+            getDocument("/")
+            sessionPrimed = true
+        }
     }
 
     private fun getDocument(path: String, referer: String? = null, userAgent: String = MOBILE_USER_AGENT): Document {
@@ -576,7 +600,8 @@ class InMangaProvider(
     }
 
     private fun buildChapterPath(mangaDetailPath: String, chapterLabel: String, chapterId: String): String {
-        val chapterNumberUrl = chapterLabel.replace(",", "").trim()
+        val chapterNumberUrl = parseChapterNumber(chapterLabel)?.let { formatChapterNumber(it) }
+            ?: chapterLabel.replace(",", "").trim()
         return "${mangaDetailPath.substringBeforeLast("/")}/$chapterNumberUrl/$chapterId".normalizePath()
     }
 
@@ -602,6 +627,11 @@ class InMangaProvider(
             startsWith("/") -> normalizeStoredPath(this)
             else -> normalizeStoredPath("/$this")
         }
+    }
+
+    private fun formatChapterNumber(value: Double): String {
+        val whole = value.toLong()
+        return if (value == whole.toDouble()) whole.toString() else value.toString().trimEnd('0').trimEnd('.')
     }
 
     companion object {

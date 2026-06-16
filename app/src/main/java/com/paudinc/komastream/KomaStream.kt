@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
+import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 
@@ -232,11 +233,14 @@ fun KomaStream() {
 
     LaunchedEffect(viewModel.isAwaitingBrowserBootstrap, currentProvider.id) {
         if (viewModel.isAwaitingBrowserBootstrap &&
-            (currentProvider is MangadotProvider || currentProvider is ManhwaLatinoProvider)
+            (currentProvider is MangadotProvider ||
+                currentProvider is ManhwaLatinoProvider ||
+                currentProvider is MangaBallProvider)
         ) {
             val providerUrl = when (val provider = currentProvider) {
                 is MangadotProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
                 is ManhwaLatinoProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
+                is MangaBallProvider -> provider.websiteUrl
                 else -> null
             }
             if (providerUrl != null && browserBootstrapUrl != providerUrl) {

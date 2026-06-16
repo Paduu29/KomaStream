@@ -19,8 +19,10 @@ import javax.crypto.spec.GCMParameterSpec
 class OfflineChapterStore(val context: Context) {
     private val rootDir = File(context.filesDir, "offline_chapters").apply { mkdirs() }
     private val readerCacheDir = File(context.cacheDir, "offline_reader_pages").apply { mkdirs() }
+    private val readerPreviewCacheDir = File(context.cacheDir, "offline_reader_preview_pages").apply { mkdirs() }
     private val cryptoLock = Any()
     private val readerCacheLock = Any()
+    private val readerPreviewCacheLock = Any()
     private val migrationLock = Any()
     @Volatile
     private var legacyMigrationComplete = false
@@ -138,11 +140,44 @@ class OfflineChapterStore(val context: Context) {
         return targetFile
     }
 
+    fun getPreviewPageFile(providerId: String, chapterPath: String, page: ReaderPage): File? {
+        ensureMigrated()
+        val file = previewPageFile(providerId, chapterPath, page)
+        return file.takeIf { it.exists() && it.length() > 0L }
+    }
+
+    fun getAvailableReaderPageFile(providerId: String, chapterPath: String, page: ReaderPage): File? {
+        return getReadablePageFile(providerId, chapterPath, page)
+            ?: getPreviewPageFile(providerId, chapterPath, page)
+    }
+
+    fun cachePreviewPage(providerId: String, chapterPath: String, page: ReaderPage, pageBytes: ByteArray): File {
+        ensureMigrated()
+        val targetFile = previewPageFile(providerId, chapterPath, page)
+        synchronized(readerPreviewCacheLock) {
+            targetFile.parentFile?.mkdirs()
+            val tmpFile = File(targetFile.parentFile, "${targetFile.name}.tmp")
+            tmpFile.outputStream().use { output ->
+                output.write(pageBytes)
+            }
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            if (!tmpFile.renameTo(targetFile)) {
+                tmpFile.copyTo(targetFile, overwrite = true)
+                tmpFile.delete()
+            }
+            targetFile.setLastModified(System.currentTimeMillis())
+        }
+        return targetFile
+    }
+
     fun removeChapter(providerId: String, chapterPath: String) {
         ensureMigrated()
         chapterStagingDir(providerId, chapterPath).deleteRecursively()
         chapterBackupDir(providerId, chapterPath).deleteRecursively()
         readerCacheChapterDir(providerId, chapterPath).deleteRecursively()
+        readerPreviewCacheChapterDir(providerId, chapterPath).deleteRecursively()
         chapterDir(providerId, chapterPath).deleteRecursively()
     }
 
@@ -168,6 +203,10 @@ class OfflineChapterStore(val context: Context) {
         return File(readerCacheDir, chapterDirectoryName(providerId, chapterPath))
     }
 
+    private fun readerPreviewCacheChapterDir(providerId: String, chapterPath: String): File {
+        return File(readerPreviewCacheDir, chapterDirectoryName(providerId, chapterPath))
+    }
+
     private fun chapterDirectoryName(providerId: String, chapterPath: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(qualifyProviderValue(providerId, chapterPath).toByteArray(StandardCharsets.UTF_8))
@@ -175,6 +214,20 @@ class OfflineChapterStore(val context: Context) {
     }
 
     private fun manifestFile(providerId: String, chapterPath: String): File = File(chapterDir(providerId, chapterPath), "manifest.json")
+
+    private fun previewPageFile(providerId: String, chapterPath: String, page: ReaderPage): File {
+        val fileName = previewPageFileName(providerId, chapterPath, page)
+        return File(readerPreviewCacheChapterDir(providerId, chapterPath), fileName)
+    }
+
+    private fun previewPageFileName(providerId: String, chapterPath: String, page: ReaderPage): String {
+        val canonicalPath = canonicalChapterPathKey(providerId, chapterPath)
+        val sourceKey = listOf(providerId, canonicalPath, page.offlineFileName, page.id, page.imageUrl)
+            .joinToString("|")
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(sourceKey.toByteArray(StandardCharsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) } + ".img"
+    }
 
     private fun buildManifest(readerData: ReaderData, pageJson: JSONArray): JSONObject {
         return JSONObject()

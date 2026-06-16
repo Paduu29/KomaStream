@@ -1,6 +1,7 @@
 package com.paudinc.komastream.ui.components
 
 import android.webkit.CookieManager as WebkitCookieManager
+import android.util.Log
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -44,16 +45,35 @@ fun BrowserBootstrapDialog(
     title: String = "Cloudflare",
     onClose: () -> Unit,
 ) {
+    val tag = "BrowserBootstrap"
     var webView by remember(url) { mutableStateOf<WebView?>(null) }
+    var pageFinished by remember(url) { mutableStateOf(false) }
     val latestOnClose by rememberUpdatedState(onClose)
 
     BackHandler(onBack = onClose)
 
     LaunchedEffect(url) {
+        Log.d(tag, "open url=$url")
+        var lastCookieHeader = ""
+        var lastCookieChangeAt = 0L
+        var firstClearanceSeenAt = 0L
         while (true) {
             val cookieHeader = WebkitCookieManager.getInstance().getCookie(url).orEmpty()
-            if (cookieHeader.contains("cf_clearance=")) {
-                delay(1500)
+            Log.d(tag, "poll cookies=${cookieHeader.ifBlank { "<empty>" }}")
+            if (cookieHeader != lastCookieHeader) {
+                lastCookieHeader = cookieHeader
+                lastCookieChangeAt = System.currentTimeMillis()
+                if (cookieHeader.contains("cf_clearance=") && firstClearanceSeenAt == 0L) {
+                    firstClearanceSeenAt = System.currentTimeMillis()
+                    Log.d(tag, "cf_clearance first seen, waiting for page completion")
+                }
+            }
+            val hasClearance = cookieHeader.contains("cf_clearance=")
+            val settledForMs = System.currentTimeMillis() - lastCookieChangeAt
+            val clearanceAgeMs = if (firstClearanceSeenAt == 0L) 0L else System.currentTimeMillis() - firstClearanceSeenAt
+            if (hasClearance && pageFinished && clearanceAgeMs >= 8000L && settledForMs >= 2500L) {
+                Log.d(tag, "cf_clearance settled for ${settledForMs}ms after ${clearanceAgeMs}ms, closing dialog")
+                delay(500)
                 latestOnClose()
                 break
             }
@@ -105,6 +125,7 @@ fun BrowserBootstrapDialog(
                         factory = { viewContext ->
                             WebView(viewContext).apply {
                                 webView = this
+                                Log.d(tag, "webview created for url=$url")
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 settings.cacheMode = WebSettings.LOAD_DEFAULT
@@ -112,6 +133,10 @@ fun BrowserBootstrapDialog(
                                 WebkitCookieManager.getInstance().setAcceptCookie(true)
                                 WebkitCookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                                 webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, finishedUrl: String?) {
+                                        pageFinished = true
+                                        Log.d(tag, "page finished url=${finishedUrl ?: "<unknown>"} current=${view?.url ?: "<none>"}")
+                                    }
                                 }
                                 loadUrl(url)
                             }

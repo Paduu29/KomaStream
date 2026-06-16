@@ -1,5 +1,8 @@
 package com.paudinc.komastream.ui.viewmodel
 
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
@@ -11,6 +14,7 @@ import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.CachedMangaDetailSnapshot
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
+import com.paudinc.komastream.utils.ReaderPagePrefetchWorker
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.Manhwa18Provider
@@ -18,6 +22,7 @@ import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.canonicalChapterKey
 import com.paudinc.komastream.utils.chapterPathProgressNumber
+import com.paudinc.komastream.utils.qualifyProviderValue
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.toProgressChapterNumber
@@ -36,6 +41,7 @@ class ReaderController(
     private val providerRegistry: ProviderRegistry,
     private val libraryStore: LibraryStore,
     private val offlineStore: OfflineChapterStore,
+    private val workManager: WorkManager,
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
 ) {
@@ -524,6 +530,10 @@ class ReaderController(
                 isChapterLoading = false,
             )
         }
+        scope.launch(Dispatchers.IO) {
+            warmupReaderPreviewPages(providerId, resolvedData)
+            enqueueReaderPagePrefetchWork(providerId, resolvedData)
+        }
         libraryStore.upsertReading(
             readerActionInteractor.buildReadingEntry(
                 providerId = providerId,
@@ -577,6 +587,50 @@ class ReaderController(
         return "$providerId::${canonicalChapterKey(providerId, path)}"
     }
 
+    private suspend fun warmupReaderPreviewPages(
+        providerId: String,
+        readerData: com.paudinc.komastream.data.model.ReaderData,
+    ) {
+        if (readerData.pages.isEmpty() || offlineStore.isChapterDownloaded(providerId, readerData.chapterPath)) return
+        val provider = providerRegistry.get(providerId)
+        readerData.pages.take(PREVIEW_PAGE_COUNT).forEach { page ->
+            if (offlineStore.getAvailableReaderPageFile(providerId, readerData.chapterPath, page) != null) return@forEach
+            runCatching {
+                val bytes = provider.downloadBytes(page.imageUrl, referer = readerData.chapterPath)
+                if (bytes.isNotEmpty()) {
+                    offlineStore.cachePreviewPage(providerId, readerData.chapterPath, page, bytes)
+                }
+            }
+        }
+    }
+
+    private fun enqueueReaderPagePrefetchWork(
+        providerId: String,
+        readerData: com.paudinc.komastream.data.model.ReaderData,
+    ) {
+        if (readerData.pages.size <= PREVIEW_PAGE_COUNT) return
+        if (offlineStore.isChapterDownloaded(providerId, readerData.chapterPath)) return
+        val request = OneTimeWorkRequestBuilder<ReaderPagePrefetchWorker>()
+            .setInputData(
+                androidx.work.Data.Builder()
+                    .putString(ReaderPagePrefetchWorker.KEY_PROVIDER_ID, providerId)
+                    .putString(ReaderPagePrefetchWorker.KEY_CHAPTER_PATH, readerData.chapterPath)
+                    .putInt(ReaderPagePrefetchWorker.KEY_START_INDEX, PREVIEW_PAGE_COUNT)
+                    .build()
+            )
+            .addTag(ReaderPagePrefetchWorker.TAG)
+            .build()
+        workManager.enqueueUniqueWork(
+            readerPrefetchWorkName(providerId, readerData.chapterPath),
+            ExistingWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    private fun readerPrefetchWorkName(providerId: String, chapterPath: String): String {
+        return "reader-prefetch:${qualifyProviderValue(providerId, canonicalChapterKey(providerId, chapterPath))}"
+    }
+
     private data class CachedReaderData(
         val readerData: com.paudinc.komastream.data.model.ReaderData,
         val cachedAtMillis: Long,
@@ -585,5 +639,6 @@ class ReaderController(
     private companion object {
         private const val DETAIL_REVALIDATE_AFTER_MS = 30L * 60L * 1000L
         private const val READER_DATA_CACHE_TTL_MS = 2L * 60L * 1000L
+        private const val PREVIEW_PAGE_COUNT = 3
     }
 }
