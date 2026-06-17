@@ -1,14 +1,10 @@
 package com.paudinc.komastream.provider.providers
 
-import android.content.Context
-import android.util.Log
 import android.webkit.CookieManager as WebkitCookieManager
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.CatalogFilterOptions
 import com.paudinc.komastream.data.model.CatalogSearchResult
 import com.paudinc.komastream.data.model.CategoryOption
-import com.paudinc.komastream.data.model.ChapterSourceOption
-import com.paudinc.komastream.data.model.ChapterSummary
 import com.paudinc.komastream.data.model.FilterOption
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.HomeFeedSection
@@ -22,7 +18,6 @@ import com.paudinc.komastream.provider.MangaProvider
 import com.paudinc.komastream.utils.LibrarySettingsState
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.FormBody
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.JavaNetCookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -37,17 +32,23 @@ import java.net.URI
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 
 class MangaBallProvider(
-    context: Context,
     private val settingsState: LibrarySettingsState,
     baseClient: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
-    private val sessionLock = Any()
-    private val cloudflareLock = Any()
+    companion object {
+        const val PROVIDER_ID = "mangaball-en"
+        const val PREF_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
+        private const val CLOUDFLARE_WAIT_TIMEOUT_MS = 60_000L
+        private const val CLOUDFLARE_POLL_INTERVAL_MS = 500L
+        private const val HOME_FEED_CACHE_MS = 2 * 60 * 1000L
+        private const val FILTER_CACHE_MS = 30 * 60 * 1000L
+        private const val CHAPTER_LISTING_CACHE_MS = 10 * 60 * 1000L
+        const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+        private val HOME_FEED_EXECUTOR = Executors.newFixedThreadPool(5)
+    }
 
     override val id: String = PROVIDER_ID
     override val displayName: String = "MangaBall"
@@ -61,10 +62,11 @@ class MangaBallProvider(
     private val cookieManager = CookieManager().apply {
         setCookiePolicy(CookiePolicy.ACCEPT_ALL)
     }
+    private val sessionLock = Any()
+    private val cloudflareLock = Any()
     private val client = baseClient.newBuilder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .build()
-
     @Volatile
     var cloudflareReady: Boolean = false
         private set
@@ -80,133 +82,79 @@ class MangaBallProvider(
     override fun fetchHomeFeed(): HomeFeed {
         val adultContentEnabled = isAdultContentEnabled()
         homeFeedCache?.takeIf { it.isValidFor(adultContentEnabled, HOME_FEED_CACHE_MS) }?.let { return it.value }
-        ensureSession()
-        val sectionRequests = listOf(
-            HomeSectionRequest(
-                id = "featured",
-                title = "Featured",
-                type = HomeSectionType.MANGAS,
-                formValues = listOf(
-                    "search_type" to "getFeatured",
-                    "search_limit" to "12",
-                ),
-            ),
-            HomeSectionRequest(
-                id = "latest-updates",
-                title = "Latest Updates",
-                type = HomeSectionType.CHAPTERS,
-                formValues = listOf(
-                    "search_type" to "getLatestTable",
-                    "search_limit" to "24",
-                ),
-            ),
-            HomeSectionRequest(
-                id = "recommended-titles",
-                title = "Titles Recommended",
-                type = HomeSectionType.MANGAS,
-                formValues = listOf(
-                    "search_type" to "getRecommend",
-                    "search_limit" to "24",
-                ),
-            ),
-            HomeSectionRequest(
-                id = "top-viewed-titles",
-                title = "Top Viewed Titles",
-                type = HomeSectionType.MANGAS,
-                formValues = listOf(
-                    "search_type" to "getRecentRead",
-                    "search_limit" to "24",
-                    "search_time" to "week",
-                ),
-            ),
-            HomeSectionRequest(
-                id = "by-origin",
-                title = "By Origin",
-                type = HomeSectionType.MANGAS,
-                formValues = listOf(
-                    "search_type" to "getByOrigin",
-                    "search_limit" to "24",
-                    "search_origin" to "all",
-                ),
-            ),
-            HomeSectionRequest(
-                id = "recent-chapter-read",
-                title = "Recent Chapter Read",
-                type = HomeSectionType.CHAPTERS,
-                formValues = listOf(
-                    "search_type" to "getRecentChapterRead",
-                    "search_limit" to "24",
-                    "search_time" to "week",
-                ),
-            ),
-            HomeSectionRequest(
-                id = "popular-this-season",
-                title = "Popular This Season",
-                type = HomeSectionType.MANGAS,
-                formValues = listOf(
-                    "search_type" to "getPopular",
-                    "search_limit" to "24",
-                ),
-            ),
-        )
-        val sectionsById = fetchHomeSections(sectionRequests)
-        val latestUpdates = sectionsById.getValue("latest-updates")
-        val recentChapterRead = sectionsById.getValue("recent-chapter-read")
-        val popularThisSeason = sectionsById.getValue("popular-this-season")
-        val sections = listOf(
-            sectionsById.getValue("featured"),
-            sectionsById.getValue("recommended-titles"),
-            sectionsById.getValue("top-viewed-titles"),
-            latestUpdates,
-            sectionsById.getValue("by-origin"),
-            recentChapterRead,
-            popularThisSeason,
-        ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() }
+        val latestFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("getLatestTable") })
+        val recommendedFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("getRecommend") })
+        val popularFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("getPopular") })
+        val featuredFuture = HOME_FEED_EXECUTOR.submit(Callable { fetchSectionMangas("getFeatured") })
+        val latestUpdates = latestFuture.get()
+        val recommended = recommendedFuture.get()
+        val popular = popularFuture.get()
+        val featured = featuredFuture.get()
 
         return HomeFeed(
-            latestUpdates = latestUpdates.chapters,
-            popularChapters = recentChapterRead.chapters,
-            popularMangas = popularThisSeason.mangas,
-            sections = sections,
+            latestUpdates = emptyList(),
+            popularChapters = emptyList(),
+            popularMangas = popular.ifEmpty { recommended },
+            sections = listOfNotNull(
+                featured.takeIf { it.isNotEmpty() }?.let {
+                    HomeFeedSection(
+                        id = "featured",
+                        title = "Featured",
+                        type = HomeSectionType.MANGAS,
+                        mangas = it,
+                    )
+                },
+                latestUpdates.takeIf { it.isNotEmpty() }?.let {
+                    HomeFeedSection(
+                        id = "latest-updates",
+                        title = "Latest Updates",
+                        type = HomeSectionType.MANGAS,
+                        mangas = latestUpdates,
+                    )
+                },
+                recommended.takeIf { it.isNotEmpty() }?.let {
+                    HomeFeedSection(
+                        id = "recommended",
+                        title = "Recommended",
+                        type = HomeSectionType.MANGAS,
+                        mangas = it,
+                    )
+                },
+                popular.takeIf { it.isNotEmpty() }?.let {
+                    HomeFeedSection(
+                        id = "popular",
+                        title = "Popular",
+                        type = HomeSectionType.MANGAS,
+                        mangas = it,
+                    )
+                },
+            ),
         ).also { homeFeedCache = TimedValue(adultContentEnabled, it) }
     }
 
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {
         val adultContentEnabled = isAdultContentEnabled()
         catalogFilterCache?.takeIf { it.isValidFor(adultContentEnabled, FILTER_CACHE_MS) }?.let { return it.value }
-        ensureSession("/search-advanced")
-        val document = getDocument("/search-advanced")
-        val sortOptions = document.select("#sortBy option[value]").mapNotNull { option ->
-            val value = option.attr("value").trim()
-            val label = option.text().trim()
-            if (value.isBlank() || label.isBlank()) null else FilterOption(value, label)
-        }
-        val statusOptions = document.select("#publicationStatus option[value]").mapNotNull { option ->
-            val value = option.attr("value").trim()
-            val label = option.text().trim()
-            if (value.isBlank() || label.isBlank() || value == "any") null else FilterOption(value, label)
-        }
-        val tagGroups = postJson(
-            path = "/api/v1/tag/search/",
-            referer = "/search-advanced",
-            formValues = listOf("search_type" to "getTagFilter"),
-        ).optJSONObject("data")
-        val categories = tagGroups?.optJSONArray("genre")?.let { genres ->
-            buildList(genres.length()) {
-                for (index in 0 until genres.length()) {
-                    val tag = genres.optJSONObject(index) ?: continue
-                    val tagId = tag.optString("_id")
-                    val name = tag.optString("name")
-                    if (tagId.isNotBlank() && name.isNotBlank()) {
-                        add(CategoryOption(tagId, name))
-                    }
-                }
-            }
-        }.orEmpty()
         return CatalogFilterOptions(
-            categories = categories,
-            sortOptions = sortOptions,
-            statusOptions = statusOptions,
+            categories = listOf(
+                CategoryOption("JP", "Manga"),
+                CategoryOption("KR", "Manhwa"),
+                CategoryOption("CN", "Manhua"),
+                CategoryOption("ONESHOT", "One Shot"),
+            ),
+            sortOptions = listOf(
+                FilterOption("updated_chapters_desc", "Latest"),
+                FilterOption("name_asc", "A \u2192 Z"),
+                FilterOption("name_desc", "Z \u2192 A"),
+                FilterOption("views_desc", "Most viewed"),
+                FilterOption("rating_desc", "Top rated"),
+            ),
+            statusOptions = listOf(
+                FilterOption("any", "Any"),
+                FilterOption("Ongoing", "Ongoing"),
+                FilterOption("Completed", "Completed"),
+                FilterOption("Hiatus", "Hiatus"),
+            ),
         ).also { catalogFilterCache = TimedValue(adultContentEnabled, it) }
     }
 
@@ -219,7 +167,6 @@ class MangaBallProvider(
         skip: Int,
         take: Int,
     ): CatalogSearchResult {
-        ensureSession("/search-advanced")
         val page = (skip / take.coerceAtLeast(1)) + 1
         val formValues = buildList {
             add("search_input" to query)
@@ -237,7 +184,6 @@ class MangaBallProvider(
         }
         val response = postJson(
             path = "/api/v1/title/search-advanced/",
-            referer = "/search-advanced",
             formValues = formValues,
         )
         val items = (response.optJSONArray("data") ?: JSONArray()).toMangaSummaries()
@@ -250,40 +196,30 @@ class MangaBallProvider(
     }
 
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
-        val detailRequest = parseDetailRequest(detailPath)
-        ensureSession(detailRequest.basePath)
-        val document = getDocument(detailRequest.basePath)
+        val normalizedPath = normalizePath(detailPath)
+        val document = getDocument(normalizedPath)
         val title = document.selectFirst("#comicDetail h6")?.text()?.trim()
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.substringBefore(" Online Free")?.trim()
             .orEmpty()
         val coverUrl = document.selectFirst(".featured-cover")?.absUrl("src")
             ?: document.selectFirst("meta[property=og:image]")?.attr("content")
             .orEmpty()
-        val alternateTitle = document.selectFirst(".alternate-name-container")?.text()?.trim().orEmpty()
         val synopsis = document.selectFirst("#comicDescription .description-text p")?.text()?.trim().orEmpty()
-        val description = listOf(synopsis, alternateTitle)
-            .filter { it.isNotBlank() }
-            .joinToString("\n\n")
-            .ifBlank { "No description" }
+        val description = synopsis.ifBlank { "No description" }
         val status = document.selectFirst(".badge-status")?.text()?.trim().orEmpty()
         val publicationDate = document.select("span.badge").firstOrNull { it.text().contains("Published:", ignoreCase = true) }
             ?.text()
             ?.substringAfter("Published:")
             ?.trim()
             .orEmpty()
-        val titleId = Regex("const\\s+titleId\\s*=\\s*'([^']+)'")
-            .find(document.html())
-            ?.groupValues
-            ?.getOrNull(1)
-            .orEmpty()
-        val allChapters = fetchChapterListing(titleId, detailRequest.basePath)
-        val chapterSources = buildLanguageOptions(detailRequest.basePath, allChapters)
-        val chapters = parseChapters(allChapters)
+        val titleId = extractTitleId(document.html())
+        val chapters = parseChapters(fetchChapterListing(titleId, normalizedPath))
+
         return MangaDetail(
             providerId = id,
-            identification = titleId.ifBlank { detailRequest.basePath.substringAfterLast('-').trimEnd('/') },
+            identification = titleId.ifBlank { normalizedPath.trimEnd('/').substringAfterLast('-') },
             title = title,
-            detailPath = detailRequest.basePath,
+            detailPath = normalizedPath,
             coverUrl = coverUrl,
             bannerUrl = coverUrl,
             description = description,
@@ -291,13 +227,10 @@ class MangaBallProvider(
             publicationDate = publicationDate,
             periodicity = "",
             chapters = chapters,
-            chapterSources = chapterSources,
-            selectedChapterSourceId = LANGUAGE_ALL,
         )
     }
 
     override fun fetchReaderData(chapterPath: String): ReaderData {
-        ensureSession(chapterPath)
         val normalizedPath = normalizePath(chapterPath)
         val document = getDocument(normalizedPath)
         val html = document.html()
@@ -338,30 +271,21 @@ class MangaBallProvider(
             for (index in 0 until chapterListing.length()) {
                 val chapter = chapterListing.optJSONObject(index) ?: continue
                 val translations = chapter.optJSONArray("translations") ?: continue
-                val number = chapter.optDouble("number_float", Double.NaN)
                 for (translationIndex in 0 until translations.length()) {
                     val translation = translations.optJSONObject(translationIndex) ?: continue
                     add(
-                        ChapterEntry(
-                            number = number,
-                            translationId = translation.optString("id"),
+                        ChapterNavEntry(
+                            id = translation.optString("id"),
                             path = normalizePath(translation.optString("url")),
-                            languageCode = translation.optString("language").trim().lowercase(),
                         )
                     )
                 }
             }
         }
         val currentChapterId = normalizedPath.trim('/').substringAfterLast('/')
-        val currentEntry = chapterEntries.firstOrNull { it.translationId == currentChapterId }
-        val navigationEntries = if (currentEntry?.languageCode.isNullOrBlank()) {
-            chapterEntries
-        } else {
-            chapterEntries.filter { it.languageCode == currentEntry?.languageCode }
-        }
-        val currentIndex = navigationEntries.indexOfFirst { it.translationId == currentChapterId }
-        val previousChapterPath = navigationEntries.getOrNull(currentIndex + 1)?.path
-        val nextChapterPath = navigationEntries.getOrNull(currentIndex - 1)?.path
+        val currentIndex = chapterEntries.indexOfFirst { it.id == currentChapterId }
+        val previousChapterPath = chapterEntries.getOrNull(currentIndex + 1)?.path
+        val nextChapterPath = chapterEntries.getOrNull(currentIndex - 1)?.path
 
         return ReaderData(
             providerId = id,
@@ -377,14 +301,12 @@ class MangaBallProvider(
 
     override fun downloadBytes(url: String, referer: String?): ByteArray {
         ensureCloudflareReady()
-        Log.d(TAG, "downloadBytes url=$url referer=${referer.orEmpty()} ready=$cloudflareReady cookies=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .applyCookieHeader()
             .apply {
-                if (!referer.isNullOrBlank()) {
-                    header("Referer", toAbsoluteUrl(referer))
+                if (referer != null) {
+                    header("Referer", referer.toAbsoluteUrl())
                 }
             }
             .build()
@@ -404,79 +326,30 @@ class MangaBallProvider(
             chapterListingCache.clear()
         }
         runCatching {
+            cookieManager.cookieStore.removeAll()
+        }
+        runCatching {
             webkitCookieManager.setAcceptCookie(true)
             webkitCookieManager.removeAllCookies(null)
             webkitCookieManager.flush()
         }
-        Log.d(TAG, "invalidateCaches cloudflareReady=false")
     }
-
-    private fun clearSessionCaches() {
-        synchronized(sessionLock) {
-            csrfToken = null
-            homeFeedCache = null
-            catalogFilterCache = null
-            chapterListingCache.clear()
-        }
-    }
-
-    private fun ensureSession(path: String = "/") {
-        synchronized(sessionLock) {
-            ensureAdultCookie()
-            ensureCloudflareReady()
-            if (!csrfToken.isNullOrBlank()) return
-            val document = getDocument(path, retry = false)
-            csrfToken = document.selectFirst("meta[name=csrf-token]")?.attr("content")?.trim()
-        }
-    }
-
-    private fun ensureAdultCookie() {
-        val cookieStore = cookieManager.cookieStore
-        val adultContentEnabled = isAdultContentEnabled()
-        val existingCookies = cookieStore.get(baseUri)
-        val adultCookies = existingCookies.filter { it.name == "show18PlusContent" }
-        val currentValue = adultCookies.lastOrNull()?.value
-
-        // MangaBall works with the opt-in cookie present for adult mode.
-        // When adult mode is off, omitting the cookie is more reliable than sending "false".
-        if (!adultContentEnabled && adultCookies.isEmpty()) return
-        if (adultContentEnabled && currentValue == "true") return
-
-        adultCookies.forEach { cookieStore.remove(baseUri, it) }
-        if (adultContentEnabled) {
-            cookieStore.add(
-                baseUri,
-                HttpCookie("show18PlusContent", "true").apply {
-                    path = "/"
-                }
-            )
-        }
-        clearSessionCaches()
-        Log.d(TAG, "ensureAdultCookie adultEnabled=$adultContentEnabled cookies=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
-    }
-
-    private fun isAdultContentEnabled(): Boolean =
-        settingsState.current.adultContentEnabled
 
     fun waitForCloudflareCookie(timeoutMs: Long = CLOUDFLARE_WAIT_TIMEOUT_MS): Boolean {
         if (cloudflareReady) return true
-        Log.d(TAG, "waitForCloudflareCookie start timeoutMs=$timeoutMs")
         val deadlineMs = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadlineMs) {
             if (markCloudflareReadyIfCookiesPresent()) {
-                Log.d(TAG, "waitForCloudflareCookie resolved via cf_clearance")
                 return true
             }
             Thread.sleep(CLOUDFLARE_POLL_INTERVAL_MS)
         }
-        Log.w(TAG, "waitForCloudflareCookie timed out cookies=${snapshotWebkitCookies()}")
         throw IllegalStateException("Cloudflare challenge was not fully solved before timeout")
     }
 
     fun markCloudflareReadyIfCookiesPresent(): Boolean {
         if (cloudflareReady) return true
         val cookieHeader = snapshotWebkitCookies()
-        Log.d(TAG, "markCloudflareReadyIfCookiesPresent cookieHeader=$cookieHeader")
         if (!cookieHeader.contains("cf_clearance=")) {
             return false
         }
@@ -484,7 +357,6 @@ class MangaBallProvider(
             if (!cloudflareReady) {
                 syncCookies(cookieHeader)
                 cloudflareReady = true
-                Log.d(TAG, "cloudflareReady=true syncedCookies=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
             }
         }
         return true
@@ -499,17 +371,13 @@ class MangaBallProvider(
         return runCatching {
             webkitCookieManager.setAcceptCookie(true)
             webkitCookieManager.flush()
-            val cookies = webkitCookieManager.getCookie(baseUrl).orEmpty()
-            Log.d(TAG, "snapshotWebkitCookies cookies=$cookies")
-            cookies
-        }.getOrElse {
-            Log.w(TAG, "snapshotWebkitCookies failed", it)
-            ""
-        }
+            webkitCookieManager.getCookie(baseUrl).orEmpty()
+        }.getOrElse { "" }
     }
 
     private fun syncCookies(cookieHeader: String) {
         runCatching {
+            val uri = URI(baseUrl)
             cookieManager.cookieStore.removeAll()
             cookieHeader.split(';')
                 .asSequence()
@@ -521,252 +389,83 @@ class MangaBallProvider(
                     val value = parts.getOrNull(1)?.trim().orEmpty()
                     if (name.isBlank() || value.isBlank()) return@forEach
                     cookieManager.cookieStore.add(
-                        baseUri,
+                        uri,
                         HttpCookie(name, value).apply {
-                            domain = baseUri.host
+                            domain = uri.host
                             path = "/"
                         },
                     )
                 }
-            Log.d(TAG, "syncCookies synced=${cookieManager.cookieStore.get(baseUri).joinToString(";") { "${it.name}=${it.value}" }}")
-        }.onFailure {
-            Log.w(TAG, "syncCookies failed", it)
         }
     }
 
-    private fun Request.Builder.applyCookieHeader(): Request.Builder {
-        val cookieHeader = cookieManager.cookieStore.get(baseUri)
-            .joinToString("; ") { cookie -> "${cookie.name}=${cookie.value}" }
-        if (cookieHeader.isNotBlank()) {
-            header("Cookie", cookieHeader)
-        }
-        Log.d(TAG, "applyCookieHeader cookieHeader=${cookieHeader.ifBlank { "<empty>" }}")
-        return this
-    }
-
-    private fun looksLikeCloudflareChallenge(body: String): Boolean {
-        val lower = body.lowercase()
-        return lower.contains("just a moment") ||
-            lower.contains("cf-browser-verification") ||
-            lower.contains("challenge-platform") ||
-            lower.contains("cloudflare")
-    }
-
-    private fun getDocument(path: String, retry: Boolean = true): Document {
-        return runCatching {
+    private fun ensureSession() {
+        synchronized(sessionLock) {
+            ensureAdultCookie()
             ensureCloudflareReady()
-            Log.d(TAG, "getDocument path=$path ready=$cloudflareReady")
-            val request = Request.Builder()
-                .url(toAbsoluteUrl(path))
-                .header("User-Agent", USER_AGENT)
-                .applyCookieHeader()
-                .build()
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                Log.d(TAG, "getDocument response path=$path bodyPrefix=${body.take(120)}")
-                if (looksLikeCloudflareChallenge(body)) {
-                    Log.w(TAG, "getDocument cloudflare still active path=$path")
-                    throw IllegalStateException("Cloudflare challenge still active for MangaBall")
-                }
-                Jsoup.parse(body, baseUrl)
-            }
-        }.getOrElse { error ->
-            if (error is IllegalStateException && error.message?.contains("Cloudflare challenge still active", ignoreCase = true) == true) {
-                throw error
-            }
-            if (!retry) throw error
-            invalidateCaches()
-            ensureSession(path)
-            getDocument(path, retry = false)
+            if (csrfToken != null) return
+            val document = getDocument("/")
+            csrfToken = document.selectFirst("meta[name=csrf-token]")?.attr("content")?.trim()
         }
     }
 
-    private fun postJson(
-        path: String,
-        referer: String,
-        formValues: List<Pair<String, String>>,
-        retry: Boolean = true,
-    ): JSONObject {
-        return runCatching {
-            ensureSession(referer)
-            Log.d(TAG, "postJson path=$path referer=$referer ready=$cloudflareReady csrf=${csrfToken.orEmpty().take(8)}")
-            val body = FormBody.Builder().apply {
-                formValues.forEach { (key, value) -> add(key, value) }
-            }.build()
-            val request = Request.Builder()
-                .url(toAbsoluteUrl(path))
-                .header("User-Agent", USER_AGENT)
-                .header("Referer", toAbsoluteUrl(referer))
-                .header("X-CSRF-TOKEN", csrfToken.orEmpty())
-                .applyCookieHeader()
-                .post(body)
-                .build()
-            client.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string().orEmpty()
-                Log.d(TAG, "postJson response path=$path bodyPrefix=${responseBody.take(120)}")
-                if (looksLikeCloudflareChallenge(responseBody)) {
-                    Log.w(TAG, "postJson cloudflare still active path=$path")
-                    throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+    private fun isAdultContentEnabled(): Boolean =
+        settingsState.current.adultContentEnabled
+
+    private fun ensureAdultCookie() {
+        val cookieStore = cookieManager.cookieStore
+        val adultContentEnabled = isAdultContentEnabled()
+        val existingCookies = cookieStore.get(baseUri)
+        val adultCookies = existingCookies.filter { it.name == "show18PlusContent" }
+        val currentValue = adultCookies.lastOrNull()?.value
+
+        if (!adultContentEnabled && adultCookies.isEmpty()) return
+        if (adultContentEnabled && currentValue == "true") return
+
+        adultCookies.forEach { cookieStore.remove(baseUri, it) }
+        if (adultContentEnabled) {
+            cookieStore.add(
+                baseUri,
+                HttpCookie("show18PlusContent", "true").apply {
+                    path = "/"
                 }
-                JSONObject(responseBody)
-            }
-        }.getOrElse { error ->
-            if (error is IllegalStateException && error.message?.contains("Cloudflare challenge still active", ignoreCase = true) == true) {
-                throw error
-            }
-            if (!retry) throw error
-            invalidateCaches()
-            ensureSession(referer)
-            postJson(path, referer, formValues, retry = false)
+            )
+        }
+        clearSessionCaches()
+    }
+
+    private fun clearSessionCaches() {
+        synchronized(sessionLock) {
+            csrfToken = null
+            homeFeedCache = null
+            catalogFilterCache = null
+            chapterListingCache.clear()
         }
     }
 
-    private fun fetchHomeSection(
-        id: String,
-        title: String,
-        type: HomeSectionType,
-        formValues: List<Pair<String, String>>,
-    ): HomeFeedSection {
-        val items = postJson(
+    private fun fetchSectionMangas(sectionType: String): List<MangaSummary> {
+        val response = postJson(
             path = "/api/v1/title/search/",
-            referer = "/",
-            formValues = formValues,
-        ).optJSONArray("data") ?: JSONArray()
-        return when (type) {
-            HomeSectionType.CHAPTERS -> HomeFeedSection(
-                id = id,
-                title = title,
-                type = type,
-                chapters = items.toChapterSummaries(),
-            )
-            HomeSectionType.MANGAS -> HomeFeedSection(
-                id = id,
-                title = title,
-                type = type,
-                mangas = items.toMangaSummaries(),
-            )
-        }
-    }
-
-    private fun fetchHomeSections(requests: List<HomeSectionRequest>): Map<String, HomeFeedSection> {
-        if (requests.isEmpty()) return emptyMap()
-        return runCatching {
-            val executor = Executors.newFixedThreadPool(minOf(requests.size, HOME_SECTION_PARALLELISM))
-            try {
-                executor.invokeAll(
-                    requests.map { request ->
-                        Callable {
-                            request.id to fetchHomeSection(
-                                id = request.id,
-                                title = request.title,
-                                type = request.type,
-                                formValues = request.formValues,
-                            )
-                        }
-                    }
-                ).associate { it.get() }
-            } finally {
-                executor.shutdown()
-                executor.awaitTermination(5, TimeUnit.SECONDS)
-            }
-        }.getOrElse {
-            invalidateCaches()
-            ensureSession()
-            requests.associate { request ->
-                request.id to fetchHomeSection(
-                    id = request.id,
-                    title = request.title,
-                    type = request.type,
-                    formValues = request.formValues,
-                )
-            }
-        }
+            formValues = listOf(
+                "search_type" to sectionType,
+                "search_limit" to "24",
+            ),
+        )
+        return (response.optJSONArray("data") ?: JSONArray()).toMangaSummaries()
     }
 
     private fun fetchChapterListing(titleId: String, referer: String): JSONArray {
         if (titleId.isBlank()) return JSONArray()
-        val cacheKey = "${isAdultContentEnabled()}::$titleId"
-        chapterListingCache[cacheKey]
-            ?.takeIf { System.currentTimeMillis() - it.cachedAtMillis <= CHAPTER_LISTING_CACHE_MS }
-            ?.let { return JSONArray(it.value.toString()) }
-        val chapters = postJson(
+        return postJson(
             path = "/api/v1/chapter/chapter-listing-by-title-id/",
-            referer = referer,
             formValues = listOf(
                 "title_id" to titleId,
                 "userSettingsEnabled" to "false",
             ),
         ).optJSONArray("ALL_CHAPTERS") ?: JSONArray()
-        chapterListingCache[cacheKey] = TimedValue(isAdultContentEnabled(), JSONArray(chapters.toString()))
-        return chapters
     }
 
-    private fun JSONArray.toMangaSummaries(): List<MangaSummary> = buildList(length()) {
-        for (index in 0 until length()) {
-            val item = optJSONObject(index) ?: continue
-            add(item.toMangaSummary())
-        }
-    }
-
-    private fun JSONArray.toChapterSummaries(): List<ChapterSummary> = buildList {
-        for (index in 0 until length()) {
-            val item = optJSONObject(index) ?: continue
-            addAll(item.toChapterSummaries())
-        }
-    }
-
-    private fun JSONObject.toMangaSummary(): MangaSummary =
-        MangaSummary(
-            providerId = id,
-            title = optString("name"),
-            detailPath = normalizePath(optString("url")),
-            coverUrl = optString("cover"),
-            status = optString("status").htmlText(),
-            latestPublication = optString("updated_at"),
-            views = "",
-        )
-
-    private fun JSONObject.toChapterSummaries(): List<ChapterSummary> {
-        val document = Jsoup.parseBodyFragment(optString("last_chapter"), baseUrl)
-        val mangaTitle = optString("name")
-        val mangaPath = normalizePath(optString("url"))
-        val coverUrl = optString("cover")
-        return document.select("div.d-flex.align-items-center.gap-2.flex-nowrap").mapNotNull { row ->
-            val languageCode = row.select("img[title], img[alt]").lastOrNull()
-                ?.attr("title")
-                ?.ifBlank { row.select("img[title], img[alt]").lastOrNull()?.attr("alt") }
-                ?.trim()
-                .orEmpty()
-            val chapterLink = row.selectFirst("a[href*=chapter-detail]") ?: return@mapNotNull null
-            val chapterPath = normalizePath(chapterLink.attr("href"))
-            val chapterLabel = chapterLink.text().trim()
-            if (chapterPath.isBlank() || chapterLabel.isBlank()) return@mapNotNull null
-            val registrationLabel = buildList {
-                languageCode.takeIf { it.isNotBlank() }?.let { add(languageDisplayLabel(it, it)) }
-                row.selectFirst(".text-muted")
-                    ?.text()
-                    ?.substringAfterLast(' ')
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let(::add)
-            }.joinToString(" • ")
-            ChapterSummary(
-                providerId = id,
-                mangaTitle = mangaTitle,
-                chapterLabel = chapterLabel,
-                chapterNumberUrl = chapterLabel,
-                chapterId = chapterPath.trim('/').substringAfterLast('/'),
-                mangaPath = mangaPath,
-                chapterPath = chapterPath,
-                coverUrl = coverUrl,
-                registrationLabel = registrationLabel,
-            )
-        }
-    }
-
-    private fun parseChapters(
-        chapters: JSONArray,
-    ): List<MangaChapter> = buildList {
+    private fun parseChapters(chapters: JSONArray): List<MangaChapter> = buildList {
         for (index in 0 until chapters.length()) {
             val chapter = chapters.optJSONObject(index) ?: continue
             val chapterNumber = chapter.optDouble("number_float", Double.NaN)
@@ -781,14 +480,8 @@ class MangaBallProvider(
             visibleTranslations.forEach { translation ->
                 val path = normalizePath(translation.optString("url"))
                 val group = translation.optJSONObject("group")?.optString("name").orEmpty()
-                val languageCode = canonicalLanguageId(
-                    code = translation.optString("language"),
-                    label = translation.optString("languageName"),
-                )
-                val languageLabel = languageDisplayLabel(
-                    code = languageCode,
-                    label = translation.optString("languageName").trim(),
-                )
+                val languageCode = translation.optString("language").trim().lowercase()
+                val languageLabel = translation.optString("languageName").trim()
                 val label = translation.optString("name")
                     .trim()
                     .ifBlank { chapterNumberLabel.ifBlank { formatChapterNumber(chapterNumber) } }
@@ -809,92 +502,17 @@ class MangaBallProvider(
         }
     }
 
-    private fun buildLanguageOptions(
-        detailPath: String,
-        chapters: JSONArray,
-    ): List<ChapterSourceOption> {
-        val languages = linkedMapOf<String, String>()
-        for (index in 0 until chapters.length()) {
-            val chapter = chapters.optJSONObject(index) ?: continue
-            val translations = chapter.optJSONArray("translations") ?: continue
-            for (translationIndex in 0 until translations.length()) {
-                val translation = translations.optJSONObject(translationIndex) ?: continue
-                val languageCode = canonicalLanguageId(
-                    code = translation.optString("language"),
-                    label = translation.optString("languageName"),
-                )
-                if (languageCode.isBlank()) continue
-                languages.putIfAbsent(
-                    languageCode,
-                    languageDisplayLabel(
-                        code = languageCode,
-                        label = translation.optString("languageName").trim(),
-                    ),
-                )
-            }
-        }
-        if (languages.isEmpty()) return emptyList()
-        return buildList {
-            add(ChapterSourceOption(LANGUAGE_ALL, "All languages", detailPath))
-            languages
-                .toList()
-                .sortedBy { (_, label) -> label.lowercase() }
-                .forEach { (languageCode, label) ->
-                    add(ChapterSourceOption(languageCode, label, detailPath))
-                }
-        }
-    }
-
-    private fun parseDetailRequest(detailPath: String): DetailRequest {
-        val normalizedPath = normalizePath(detailPath)
-        val pathPart = normalizedPath.substringBefore("?")
-        val queryPart = normalizedPath.substringAfter("?", "")
-        if (queryPart.isBlank()) return DetailRequest(pathPart, LANGUAGE_ALL)
-
-        var selectedLanguageId = LANGUAGE_ALL
-        val remainingQueryParts = mutableListOf<String>()
-        queryPart.split("&")
-            .filter { it.isNotBlank() }
-            .forEach { part ->
-                val key = part.substringBefore("=")
-                val value = part.substringAfter("=", "")
-                if (key == DETAIL_LANGUAGE_QUERY && value.isNotBlank()) {
-                    selectedLanguageId = canonicalLanguageId(value)
-                } else {
-                    remainingQueryParts += part
-                }
-            }
-        val basePath = if (remainingQueryParts.isEmpty()) {
-            pathPart
-        } else {
-            "$pathPart?${remainingQueryParts.joinToString("&")}"
-        }
-        return DetailRequest(basePath, selectedLanguageId)
-    }
-
-    private fun languageDisplayLabel(code: String, label: String): String {
-        if (label.isNotBlank()) return label
-        if (code.isBlank()) return ""
-        return if (code.length <= 3) code.uppercase() else code.replaceFirstChar { it.uppercase() }
-    }
-
-    private fun canonicalLanguageId(code: String, label: String = ""): String {
-        val normalizedCode = code.trim().lowercase()
-        val normalizedLabel = label.trim().lowercase()
-        return when {
-            normalizedCode.isBlank() -> ""
-            normalizedCode in setOf("en", "eng", "english") || normalizedLabel in setOf("en", "eng", "english") -> "en"
-            normalizedCode in setOf("es", "spa", "spanish", "espanol", "español") ||
-                normalizedLabel in setOf("es", "spa", "spanish", "espanol", "español") -> "es"
-            normalizedCode in setOf("de", "ger", "german", "deutsch") ||
-                normalizedLabel in setOf("de", "ger", "german", "deutsch") -> "de"
-            else -> normalizedCode
-        }
-    }
-
     private fun formatChapterNumber(value: Double): String {
         val whole = value.toLong()
         return if (value == whole.toDouble()) whole.toString() else value.toString().trimEnd('0').trimEnd('.')
+    }
+
+    private fun extractTitleId(html: String): String {
+        return Regex("const\\s+titleId\\s*=\\s*'([^']+)'")
+            .find(html)
+            ?.groupValues
+            ?.getOrNull(1)
+            .orEmpty()
     }
 
     private fun extractMangaDetailPath(document: Document, html: String, titleId: String): String {
@@ -905,8 +523,6 @@ class MangaBallProvider(
                 ?.let(::normalizePath)
             if (!match.isNullOrBlank()) return match
         }
-
-        document.select("meta[property=og:image]").attr("content")
 
         val scriptPath = Regex("window\\.location\\.href\\s*=\\s*'([^']+/title-detail/[^']+)'")
             .find(html)
@@ -924,55 +540,90 @@ class MangaBallProvider(
         return ""
     }
 
-    private fun String.htmlText(): String =
-        if (isBlank()) "" else Jsoup.parseBodyFragment(this).text().trim()
-
-    private fun toAbsoluteUrl(path: String): String =
-        if (path.startsWith("http://") || path.startsWith("https://")) path else "$baseUrl${normalizePath(path)}"
-
-    private fun normalizePath(path: String): String {
-        if (path.isBlank()) return ""
-        val parsed = path.toHttpUrlOrNull()
-        return when {
-            parsed != null -> normalizeStoredPath(parsed.encodedPath + parsed.encodedQuery?.let { "?$it" }.orEmpty())
-            path.startsWith("/") -> normalizeStoredPath(path)
-            else -> normalizeStoredPath("/$path")
+    private fun getDocument(path: String): Document {
+        ensureCloudflareReady()
+        val request = Request.Builder()
+            .url(path.toAbsoluteUrl())
+            .header("User-Agent", USER_AGENT)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (body.isBlank() || body.contains("Just a moment", ignoreCase = true)) {
+                invalidateCaches()
+                throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+            }
+            return Jsoup.parse(body, baseUrl)
         }
     }
 
-    companion object {
-        const val PROVIDER_ID = "mangaball-en"
-        const val PREF_MANGABALL_ADULT_CONTENT = "mangaballAdultContentEnabled"
-        private const val TAG = "MangaBallProvider"
-        private const val DETAIL_LANGUAGE_QUERY = "__lang"
-        private const val LANGUAGE_ALL = "all"
-        private const val CLOUDFLARE_WAIT_TIMEOUT_MS = 60_000L
-        private const val CLOUDFLARE_POLL_INTERVAL_MS = 500L
-        private const val HOME_FEED_CACHE_MS = 2 * 60 * 1000L
-        private const val FILTER_CACHE_MS = 30 * 60 * 1000L
-        private const val CHAPTER_LISTING_CACHE_MS = 10 * 60 * 1000L
-        private const val HOME_SECTION_PARALLELISM = 4
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+    private fun postJson(
+        path: String,
+        formValues: List<Pair<String, String>>,
+    ): JSONObject {
+        ensureSession()
+        val body = FormBody.Builder().apply {
+            formValues.forEach { (key, value) -> add(key, value) }
+        }.build()
+        val request = Request.Builder()
+            .url(path.toAbsoluteUrl())
+            .header("User-Agent", USER_AGENT)
+            .header("Referer", baseUrl)
+            .header("X-CSRF-TOKEN", csrfToken.orEmpty())
+            .post(body)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            val trimmed = responseBody.trimStart()
+            if (!trimmed.startsWith("{")) {
+                if (looksLikeCloudflareChallenge(trimmed)) {
+                    invalidateCaches()
+                    throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+                }
+                throw IllegalStateException(
+                    "Expected JSON from $path but received ${trimmed.take(80)}"
+                )
+            }
+            return JSONObject(responseBody)
+        }
     }
 
-    private data class ChapterEntry(
-        val number: Double,
-        val translationId: String,
-        val path: String,
-        val languageCode: String,
-    )
+    private fun JSONArray.toMangaSummaries(): List<MangaSummary> = buildList(length()) {
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            add(item.toMangaSummary())
+        }
+    }
 
-    private data class HomeSectionRequest(
+    private fun JSONObject.toMangaSummary(): MangaSummary =
+        MangaSummary(
+            providerId = id,
+            title = optString("name"),
+            detailPath = normalizePath(optString("url")),
+            coverUrl = optString("cover"),
+            status = optString("status"),
+            latestPublication = optString("updated_at"),
+            views = "",
+        )
+
+    private fun looksLikeCloudflareChallenge(body: String): Boolean {
+        val lower = body.lowercase()
+        return lower.contains("just a moment") ||
+            lower.contains("cf-browser-verification") ||
+            lower.contains("challenge-platform") ||
+            lower.contains("cloudflare")
+    }
+
+    private fun String.toAbsoluteUrl(): String {
+        val trimmed = trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
+        return if (trimmed.startsWith("/")) "$baseUrl$trimmed" else "$baseUrl/$trimmed"
+    }
+
+    private fun normalizePath(path: String): String = normalizeStoredPath(path)
+
+    private data class ChapterNavEntry(
         val id: String,
-        val title: String,
-        val type: HomeSectionType,
-        val formValues: List<Pair<String, String>>,
-    )
-
-    private data class DetailRequest(
-        val basePath: String,
-        val selectedLanguageId: String,
+        val path: String,
     )
 
     private data class TimedValue<T>(

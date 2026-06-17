@@ -453,8 +453,8 @@ class KomaViewModel(
 
     fun changeAdultContentEnabled(enabled: Boolean) {
         libraryController.changeAdultContentEnabled(enabled)
-        providerRegistry.all().firstOrNull { it.id == MangaBallProvider.PROVIDER_ID }?.invalidateCaches()
-        providerRegistry.all().firstOrNull { it.id == ManhwaLatinoProvider.PROVIDER_ID }?.invalidateCaches()
+        providerRegistry.get(MangaBallProvider.PROVIDER_ID).invalidateCaches()
+        providerRegistry.get(ManhwaLatinoProvider.PROVIDER_ID).invalidateCaches()
         homeController.clearFeed()
         catalogController.resetForProviderChange()
         if (currentProvider.isAdultContent) {
@@ -587,7 +587,7 @@ class KomaViewModel(
             pendingBrowserBootstrapProviderId = null
             blockCloudflareBootstrapRetry()
             viewModelScope.launch {
-                delay(1500)
+                delay(500)
                 refreshHome(providerId = providerId, force = true)
             }
             return true
@@ -600,7 +600,7 @@ class KomaViewModel(
                 }
             }.onSuccess {
                 blockCloudflareBootstrapRetry()
-                delay(1500)
+                delay(500)
                 refreshHome(providerId = providerId, force = true)
             }.onFailure { throwable ->
                 homeController.showEmptyFeed()

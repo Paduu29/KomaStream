@@ -38,6 +38,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun BrowserBootstrapDialog(
@@ -71,13 +72,13 @@ fun BrowserBootstrapDialog(
             val hasClearance = cookieHeader.contains("cf_clearance=")
             val settledForMs = System.currentTimeMillis() - lastCookieChangeAt
             val clearanceAgeMs = if (firstClearanceSeenAt == 0L) 0L else System.currentTimeMillis() - firstClearanceSeenAt
-            if (hasClearance && pageFinished && clearanceAgeMs >= 8000L && settledForMs >= 2500L) {
+            if (hasClearance && pageFinished && clearanceAgeMs >= 1500L && settledForMs >= 500L) {
                 Log.d(tag, "cf_clearance settled for ${settledForMs}ms after ${clearanceAgeMs}ms, closing dialog")
-                delay(500)
+                delay(200.milliseconds)
                 latestOnClose()
                 break
             }
-            delay(500)
+            delay(200.milliseconds)
         }
     }
 
