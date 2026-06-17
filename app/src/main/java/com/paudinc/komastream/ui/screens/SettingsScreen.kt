@@ -553,10 +553,25 @@ private fun ProviderAccessSettingCard(
     if (showPinDialog) {
         AlertDialog(
             onDismissRequest = { showPinDialog = false },
-            title = { Text(strings.enterParentalPin) },
+            title = {
+                Text(
+                    when (pinMode) {
+                        PinMode.CREATE -> strings.setParentalPin
+                        PinMode.VERIFY -> strings.enterParentalPin
+                        PinMode.NONE -> strings.setParentalPin
+                    }
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(strings.enterParentalPinDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        when (pinMode) {
+                            PinMode.CREATE -> strings.setParentalPinDescription
+                            PinMode.VERIFY -> strings.enterParentalPinDescription
+                            PinMode.NONE -> strings.setParentalPinDescription
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     OutlinedTextField(
                         value = pinValue,
                         onValueChange = { pinValue = it; pinError = "" },
@@ -564,6 +579,15 @@ private fun ProviderAccessSettingCard(
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                     )
+                    if (pinMode == PinMode.CREATE) {
+                        OutlinedTextField(
+                            value = pinConfirmation,
+                            onValueChange = { pinConfirmation = it; pinError = "" },
+                            label = { Text(strings.confirmParentalPin) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                        )
+                    }
                     if (pinError.isNotBlank()) {
                         Text(pinError, color = MaterialTheme.colorScheme.error)
                     }
@@ -572,15 +596,32 @@ private fun ProviderAccessSettingCard(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (onVerifyAdultContentPin(pinValue)) {
-                            onProviderEnabledChange(pendingProviderId, pendingProviderEnabled)
-                            showPinDialog = false
+                        if (pinMode == PinMode.CREATE) {
+                            val trimmedPin = pinValue.trim()
+                            if (trimmedPin.length < 4) {
+                                pinError = strings.parentalPinTooShort
+                            } else if (trimmedPin != pinConfirmation.trim()) {
+                                pinError = strings.parentalPinMismatch
+                            } else {
+                                onSetAdultContentPin(trimmedPin)
+                                onProviderEnabledChange(pendingProviderId, pendingProviderEnabled)
+                                showPinDialog = false
+                            }
                         } else {
-                            pinError = strings.parentalPinInvalid
+                            if (onVerifyAdultContentPin(pinValue)) {
+                                onProviderEnabledChange(pendingProviderId, pendingProviderEnabled)
+                                showPinDialog = false
+                            } else {
+                                pinError = strings.parentalPinInvalid
+                            }
                         }
                     }
                 ) {
-                    Text(strings.save)
+                    when (pinMode) {
+                        PinMode.CREATE -> Text(strings.enableAdultContent)
+                        PinMode.VERIFY -> Text(strings.save)
+                        PinMode.NONE -> Text(strings.save)
+                    }
                 }
             },
             dismissButton = {

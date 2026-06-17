@@ -24,6 +24,8 @@ import com.paudinc.komastream.utils.toProgressChapterNumber
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -58,7 +60,7 @@ class LibraryStore(
     private val backupPayloadCodec = LibraryBackupPayloadCodec()
     private val mangaDetailCacheCodec = MangaDetailCacheCodec()
     private val initLock = Any()
-
+    private val settingsMutex = Mutex()
     @Volatile
     private var initialized = false
 
@@ -1108,9 +1110,11 @@ class LibraryStore(
     }
 
     private suspend fun updateSettings(transform: (AppSettingsEntity) -> AppSettingsEntity) {
-        ensureInitialized()
-        val current = readSettings()
-        dao.upsertSettings(transform(current).also(::syncBootstrapPrefs))
+        settingsMutex.withLock {
+            ensureInitialized()
+            val current = readSettings()
+            dao.upsertSettings(transform(current).also(::syncBootstrapPrefs))
+        }
     }
 
     private suspend fun findMatchingFavoriteEntity(providerId: String, detailPath: String): FavoriteMangaEntity? {
