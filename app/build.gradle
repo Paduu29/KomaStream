@@ -59,8 +59,8 @@ android {
         minSdk 24
         targetSdk 36
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        versionCode ciVersionCode ?: 66
-        versionName ciVersionName ?: "3.2"
+        versionCode ciVersionCode ?: 67
+        versionName ciVersionName ?: "3.3"
         buildConfigField "String", "MAL_CLIENT_ID", asBuildConfigString(malClientId)
         buildConfigField "String", "GITHUB_RELEASE_REPO", asBuildConfigString(githubReleaseRepo)
         buildConfigField "String", "GITHUB_RELEASE_ASSET_PATTERN", asBuildConfigString(githubReleaseAssetPattern)
