@@ -204,12 +204,16 @@ class LeerMangaEspProvider(
             ?.first
             ?.let(::normalizePath)
 
-        val pages = document.select("#cascade-view img, #page-by-page-view img")
+        val pages = document.select("#cascade-view img, #page-by-page-view img, img.manga-image, img[class*=single-manga-page]")
             .mapNotNull { image ->
-                val imageUrl = image.absUrl("data-src")
-                    .ifBlank { resolveAbsoluteUrl(image.attr("data-src")) }
-                    .ifBlank { image.absUrl("src") }
-                    .ifBlank { resolveAbsoluteUrl(image.attr("src")) }
+                val src = image.attr("src")
+                val dataSrc = image.attr("data-src")
+
+                val imageUrl = when {
+                    dataSrc.isNotBlank() -> image.absUrl("data-src")
+                    src.isNotBlank() -> image.absUrl("src")
+                    else -> ""
+                }
                 if (imageUrl.isBlank()) return@mapNotNull null
                 val pageNumber = Regex("(\\d+)").find(image.attr("alt"))?.groupValues?.get(1).orEmpty()
                 ReaderPage(
