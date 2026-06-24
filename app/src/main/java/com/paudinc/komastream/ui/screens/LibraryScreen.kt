@@ -88,9 +88,9 @@ fun LibraryScreen(
     }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var favoritesQuery by rememberSaveable { mutableStateOf("") }
-    var favoritesSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.TitleAscending.name) }
+    var favoritesSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.LastEngagementDescending.name) }
     var readingQuery by rememberSaveable { mutableStateOf("") }
-    var readingSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.TitleAscending.name) }
+    var readingSortOption by rememberSaveable { mutableStateOf(LibrarySortOption.LastEngagementDescending.name) }
     val pagerState = rememberPagerState(
         initialPage = 0,
         pageCount = { favoriteTabs.size },
@@ -214,13 +214,13 @@ fun LibraryScreen(
                 }
                 if (
                     selectedQuery.isNotBlank() ||
-                    selectedSortOption != LibrarySortOption.TitleAscending ||
+                    selectedSortOption != LibrarySortOption.LastEngagementDescending ||
                     currentFavoriteTab.filter != FavoriteLibraryStatusFilter.All
                 ) {
                     TextButton(
                         onClick = {
                             favoritesQuery = ""
-                            favoritesSortOption = LibrarySortOption.TitleAscending.name
+                            favoritesSortOption = LibrarySortOption.LastEngagementDescending.name
                             coroutineScope.launch {
                                 pagerState.animateScrollToPage(0)
                             }
@@ -373,12 +373,12 @@ fun LibraryScreen(
                         }
                         if (
                             selectedQuery.isNotBlank() ||
-                            selectedSortOption != LibrarySortOption.TitleAscending
+                            selectedSortOption != LibrarySortOption.LastEngagementDescending
                         ) {
                             TextButton(
                                 onClick = {
                                     readingQuery = ""
-                                    readingSortOption = LibrarySortOption.TitleAscending.name
+                                    readingSortOption = LibrarySortOption.LastEngagementDescending.name
                                 }
                             ) {
                                 Text(strings.clearFilters)
@@ -460,6 +460,8 @@ private fun favoriteLibrarySeries(
 }
 
 private enum class LibrarySortOption {
+    LastEngagementDescending,
+    LastEngagementAscending,
     TitleAscending,
     TitleDescending,
     CompletionDescending,
@@ -469,6 +471,8 @@ private enum class LibrarySortOption {
     ;
 
     fun label(strings: AppStrings): String = when (this) {
+        LastEngagementDescending -> strings.librarySortLastEngagementDescending
+        LastEngagementAscending -> strings.librarySortLastEngagementAscending
         TitleAscending -> strings.librarySortTitleAscending
         TitleDescending -> strings.librarySortTitleDescending
         CompletionDescending -> strings.librarySortCompletionDescending
@@ -479,7 +483,7 @@ private enum class LibrarySortOption {
 
     companion object {
         fun fromName(value: String): LibrarySortOption =
-            entries.firstOrNull { it.name == value } ?: TitleAscending
+            entries.firstOrNull { it.name == value } ?: LastEngagementDescending
     }
 }
 
@@ -544,6 +548,16 @@ private fun sortLibrarySeries(
 
         LibrarySortOption.ProgressAscending -> compareBy<com.paudinc.komastream.utils.LibrarySeriesGroup> {
             progressScore(it)
+        }.thenBy { librarySeriesSortTitle(it) }
+            .thenBy { it.key }
+
+        LibrarySortOption.LastEngagementDescending -> compareByDescending<com.paudinc.komastream.utils.LibrarySeriesGroup> {
+            preferredEntry(it).lastReadAt ?: Long.MIN_VALUE
+        }.thenBy { librarySeriesSortTitle(it) }
+            .thenBy { it.key }
+
+        LibrarySortOption.LastEngagementAscending -> compareBy<com.paudinc.komastream.utils.LibrarySeriesGroup> {
+            preferredEntry(it).lastReadAt ?: Long.MAX_VALUE
         }.thenBy { librarySeriesSortTitle(it) }
             .thenBy { it.key }
     }

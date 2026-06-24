@@ -61,6 +61,7 @@ class LibraryJsonCodec(
                         lastProgressChapterNumber = item.optDoubleOrNull("lastProgressChapterNumber"),
                         malMangaId = item.optLongOrNull("malMangaId"),
                         lastReadChapterNumber = item.optIntOrNull("lastReadChapterNumber"),
+                        lastReadAt = item.optLongOrNull("lastReadAt"),
                     )
                 )
             }
@@ -83,6 +84,7 @@ class LibraryJsonCodec(
                     .put("lastProgressChapterNumber", item.lastProgressChapterNumber ?: JSONObject.NULL)
                     .put("malMangaId", item.malMangaId ?: JSONObject.NULL)
                     .put("lastReadChapterNumber", item.lastReadChapterNumber ?: JSONObject.NULL)
+                    .put("lastReadAt", item.lastReadAt ?: JSONObject.NULL)
             )
         }
         return json.toString()

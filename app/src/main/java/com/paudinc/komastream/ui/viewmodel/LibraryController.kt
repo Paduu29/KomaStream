@@ -554,6 +554,7 @@ class LibraryController(
             lastProgressChapterNumber = progressChapter.chapterNumberUrl.toProgressChapterNumber()
                 ?: progressChapter.chapterLabel.toProgressChapterNumber(),
             lastReadChapterNumber = lastReadChapterNumber,
+            lastReadAt = System.currentTimeMillis(),
         )
         libraryStore.upsertReading(readingEntry)
         return readingEntry
@@ -710,5 +711,6 @@ class LibraryController(
             lastProgressChapterNumber = incoming.lastProgressChapterNumber ?: current.lastProgressChapterNumber,
             malMangaId = incoming.malMangaId ?: current.malMangaId,
             lastReadChapterNumber = incoming.lastReadChapterNumber ?: current.lastReadChapterNumber,
+            lastReadAt = incoming.lastReadAt ?: current.lastReadAt,
         )
 }

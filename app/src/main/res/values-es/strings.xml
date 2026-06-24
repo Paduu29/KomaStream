@@ -50,6 +50,8 @@
     <string name="library_sort_completion_ascending">Finalización de menor a mayor</string>
     <string name="library_sort_progress_descending">Progreso de mayor a menor</string>
     <string name="library_sort_progress_ascending">Progreso de menor a mayor</string>
+    <string name="library_sort_last_engagement_descending">Leídos recientemente</string>
+    <string name="library_sort_last_engagement_ascending">Menos recientes</string>
     <string name="additional_filters">Filtros avanzados</string>
     <string name="state">Estado</string>
     <string name="only_favorites">Solo favoritos</string>

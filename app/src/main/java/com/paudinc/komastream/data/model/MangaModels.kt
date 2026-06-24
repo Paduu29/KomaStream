@@ -266,6 +266,7 @@ data class SavedManga(
     val lastProgressChapterNumber: Double? = null,
     val malMangaId: Long? = null,
     val lastReadChapterNumber: Int? = null,
+    val lastReadAt: Long? = null,
 )
 
 enum class FavoriteMangaStatus {

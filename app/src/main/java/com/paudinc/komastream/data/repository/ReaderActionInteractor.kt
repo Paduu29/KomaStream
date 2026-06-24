@@ -56,6 +56,7 @@ class ReaderActionInteractor {
             lastProgressChapterNumber = chapterPathProgressNumber(providerId, readerData.chapterPath)
                 ?: readerData.chapterTitle.toProgressChapterNumber(),
             lastReadChapterNumber = currentManga?.lastReadChapterNumber,
+            lastReadAt = System.currentTimeMillis(),
         )
     }
 

@@ -50,6 +50,8 @@
     <string name="library_sort_completion_ascending">Fertigstellung niedrig nach hoch</string>
     <string name="library_sort_progress_descending">Fortschritt hoch nach niedrig</string>
     <string name="library_sort_progress_ascending">Fortschritt niedrig nach hoch</string>
+    <string name="library_sort_last_engagement_descending">Zuletzt gelesen</string>
+    <string name="library_sort_last_engagement_ascending">Am längsten nicht gelesen</string>
     <string name="additional_filters">Zusätzliche Filter</string>
     <string name="state">Status</string>
     <string name="only_favorites">Nur Favoriten</string>

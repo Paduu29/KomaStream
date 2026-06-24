@@ -354,6 +354,7 @@ class ReaderController(
                     ?: chapterPathProgressNumber(providerId, progressChapterPath)
                     ?: chapterTitle.toProgressChapterNumber(),
                 lastReadChapterNumber = lastReadChapterNumber,
+                lastReadAt = System.currentTimeMillis(),
             )
         )
     }

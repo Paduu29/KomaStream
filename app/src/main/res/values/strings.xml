@@ -52,6 +52,8 @@
     <string name="clear_filters">Clear filters</string>
     <string name="categories">Categories</string>
     <string name="sort_by">Sort by</string>
+    <string name="library_sort_last_engagement_descending">Recently read</string>
+    <string name="library_sort_last_engagement_ascending">Least recently read</string>
     <string name="library_sort_title_ascending">Title A-Z</string>
     <string name="library_sort_title_descending">Title Z-A</string>
     <string name="library_sort_completion_descending">Completion high to low</string>
