@@ -13,6 +13,7 @@ import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.provider.providers.MangaFireProvider
 import com.paudinc.komastream.provider.providers.MangaTubeProvider
 import com.paudinc.komastream.provider.providers.Manhwa18Provider
+import com.paudinc.komastream.provider.providers.MkissaMangaProvider
 import com.paudinc.komastream.provider.providers.OlympusBibliotecaProvider
 import okhttp3.OkHttpClient
 
@@ -67,5 +68,6 @@ fun createDefaultProviderRegistry(
             context?.let { add(ManhwaLatinoProvider(it, settingsState, sharedHttpClient)) }
             add(MangaBallProvider(settingsState, sharedHttpClient))
             context?.let { add(AkaiComicProvider(it, sharedHttpClient)) }
+            add(MkissaMangaProvider(sharedHttpClient, settingsState))
         }
     )

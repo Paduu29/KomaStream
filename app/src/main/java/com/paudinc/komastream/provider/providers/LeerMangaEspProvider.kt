@@ -240,7 +240,8 @@ class LeerMangaEspProvider(
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .apply { if (referer != null) header("Referer", resolveAbsoluteUrl(referer)) }
+            .header("Accept", IMAGE_ACCEPT)
+            .header("Referer", referer?.let(::resolveAbsoluteUrl) ?: baseUrl)
             .build()
         client.newCall(request).execute().use { response ->
             return response.body?.bytes() ?: ByteArray(0)
@@ -479,11 +480,12 @@ class LeerMangaEspProvider(
     private fun normalizePath(path: String): String {
         if (path.isBlank()) return ""
         val parsed = path.toHttpUrlOrNull()
-        return when {
+        val normalized = when {
             parsed != null -> normalizeStoredPath(parsed.encodedPath + parsed.query?.let { "?$it" }.orEmpty())
             path.startsWith("/") -> normalizeStoredPath(path)
             else -> normalizeStoredPath("/$path")
         }
+        return normalizeLeerMangaChapterPath(normalized)
     }
 
     private fun chapterValueFromPath(path: String): Double {
@@ -497,6 +499,13 @@ class LeerMangaEspProvider(
             ?: Double.MIN_VALUE
     }
 
+    private fun normalizeLeerMangaChapterPath(path: String): String {
+        val segments = path.substringBefore('?').trim('/').split('/').filter { it.isNotBlank() }
+        if (segments.size != 3 || segments[0] != "leer-m") return path
+        val chapter = Regex("^(\\d+)(?:\\.0+)?$").matchEntire(segments[2])?.groupValues?.get(1) ?: return path
+        return "/${segments[0]}/${segments[1]}/$chapter/"
+    }
+
     private fun formatChapterNumber(value: Double): String {
         val whole = value.toLong()
         return if (value == whole.toDouble()) whole.toString() else value.toString().trimEnd('0').trimEnd('.')
@@ -507,9 +516,10 @@ class LeerMangaEspProvider(
         return if (value == whole.toDouble()) String.format(Locale.US, "%d.00", whole) else value.toString()
     }
 
-    private companion object {
+    companion object {
         private const val HOME_SECTION_PAGE_SIZE = 20
-        private const val USER_AGENT =
+        const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        const val IMAGE_ACCEPT = "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
     }
 }

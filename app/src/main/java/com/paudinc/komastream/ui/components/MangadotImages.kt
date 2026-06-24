@@ -12,6 +12,19 @@ import coil.request.ImageRequest
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import okhttp3.Headers
 
+private val MANGADOT_HOSTS = setOf(
+    "mangadot.net",
+    "manhwa-latino.com",
+    "zai.manhwa-latino.com",
+    "redhive.cyou",
+)
+private val MKISSA_HOSTS = setOf(
+    "wp.youtube-anime.com",
+    "aln.youtube-anime.com",
+    "mangayaro.to",
+    "allanime.day",
+)
+
 @Composable
 fun MangadotAwareAsyncImage(
     model: String?,
@@ -28,6 +41,7 @@ fun MangadotAwareAsyncImage(
                 .data(imageUrl)
                 .apply {
                     mangadotImageHeaders(imageUrl)?.let { headers(it) }
+                    mkissaImageHeaders(imageUrl)?.let { headers(it) }
                 }
                 .build()
         }
@@ -44,13 +58,7 @@ fun MangadotAwareAsyncImage(
 
 fun mangadotImageHeaders(url: String): Headers? {
     val host = Uri.parse(url).host.orEmpty().lowercase()
-    val allowedHosts = setOf(
-        "mangadot.net",
-        "manhwa-latino.com",
-        "zai.manhwa-latino.com",
-        "redhive.cyou",
-    )
-    if (host !in allowedHosts && allowedHosts.none { host.endsWith(".$it") }) {
+    if (host !in MANGADOT_HOSTS && MANGADOT_HOSTS.none { host.endsWith(".$it") }) {
         return null
     }
 
@@ -68,4 +76,17 @@ fun mangadotImageHeaders(url: String): Headers? {
         builder.add("Cookie", cookieHeader)
     }
     return builder.build()
+}
+
+fun mkissaImageHeaders(url: String): Headers? {
+    val host = Uri.parse(url).host.orEmpty().lowercase()
+    if (host !in MKISSA_HOSTS && MKISSA_HOSTS.none { host.endsWith(".$it") }) {
+        return null
+    }
+    return Headers.Builder()
+        .add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0")
+        .add("Referer", "https://mkissa.to/manga")
+        .add("Origin", "https://mkissa.to")
+        .add("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5")
+        .build()
 }

@@ -188,12 +188,15 @@ private fun initialHasMore(providerId: String, section: HomeFeedSection): Boolea
         providerId == "manhwa-latino-es" && section.id == "latest-updates" -> section.chapters.size >= 20
         providerId == "olympusbiblioteca-es" && section.id == "nuevos-lanzamientos" -> section.mangas.size >= 15
         providerId == "olympusbiblioteca-es" && section.id == "top-series" -> section.mangas.size >= 15
+        providerId == "mkissa-en" && section.id == "latest-updates" -> section.chapters.size >= 20
+        providerId == "mkissa-en" && section.type == HomeSectionType.MANGAS -> section.mangas.size >= 10
         else -> false
     }
 
 private fun shouldRefreshFromPagedSource(providerId: String, sectionId: String): Boolean {
-    return providerId == "olympusbiblioteca-es" &&
-        (sectionId == "nuevos-lanzamientos" || sectionId == "top-series")
+    return (providerId == "olympusbiblioteca-es" &&
+        (sectionId == "nuevos-lanzamientos" || sectionId == "top-series")) ||
+        providerId == "mkissa-en"
 }
 
 private fun mergeSectionPage(

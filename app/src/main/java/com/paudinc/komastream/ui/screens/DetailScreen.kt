@@ -377,7 +377,7 @@ fun DetailScreen(
                                         onClick = { onReadChapter(targetUnreadChapterPath) },
                                         label = {
                                             Text(
-                                                detail.chapters.firstOrNull { buildChapterPath(detail.detailPath, it) == targetUnreadChapterPath }?.chapterLabel
+                                                detail.chapters.firstOrNull { buildChapterPathForProvider(detail.providerId, detail.detailPath, it) == targetUnreadChapterPath }?.chapterLabel
                                                     ?: strings.read
                                             )
                                         },
@@ -531,7 +531,7 @@ fun DetailScreen(
                                         onCancelAllDownloads()
                                     } else {
                                         onDownloadAllChapters(
-                                            uniqueChapters.map { chapter -> buildChapterPath(detail.detailPath, chapter) }
+                                            uniqueChapters.map { chapter -> buildChapterPathForProvider(detail.providerId, detail.detailPath, chapter) }
                                         )
                                     }
                                 },
@@ -554,7 +554,7 @@ fun DetailScreen(
                 }
             }
             items(filteredChapters) { chapter ->
-                val path = buildChapterPath(detail.detailPath, chapter)
+                val path = buildChapterPathForProvider(detail.providerId, detail.detailPath, chapter)
                 val isRead = chapterPathsByLabel[path] in canonicalReadChapterKeys
                 val isDownloaded = isChapterDownloaded(path)
                 val progress = downloadProgress[path]
@@ -934,12 +934,12 @@ private fun computeDetailChapterUiData(
         }
     }
     val chapterPathsByLabel = filteredChapters.associate { chapter ->
-        val path = buildChapterPath(detailPath, chapter)
+        val path = buildChapterPathForProvider(providerId, detailPath, chapter)
         path to chapterReadKey(providerId, detailPath, chapter)
     }
     val totalChapterCount = chapterCountForProvider(providerId, logicalChapters)
     val readChapterCount = logicalChapters.count { chapter ->
-        val path = buildChapterPath(detailPath, chapter)
+        val path = buildChapterPathForProvider(providerId, detailPath, chapter)
         chapterPathsByLabel[path] in canonicalReadChapterKeys
     }
     val targetUnreadChapterPath = if (autoJumpToUnread) {
@@ -955,15 +955,15 @@ private fun computeDetailChapterUiData(
         null
     }
     val targetUnreadIndex = targetUnreadChapterPath?.let { path ->
-        filteredChapters.indexOfFirst { chapter -> buildChapterPath(detailPath, chapter) == path }
+        filteredChapters.indexOfFirst { chapter -> buildChapterPathForProvider(providerId, detailPath, chapter) == path }
             .takeIf { it >= 0 }
     }
     val lastUnreadIndex = filteredChapters.indexOfLast { chapter ->
-        val path = buildChapterPath(detailPath, chapter)
+        val path = buildChapterPathForProvider(providerId, detailPath, chapter)
         chapterPathsByLabel[path] !in canonicalReadChapterKeys
     }.takeIf { it >= 0 }
     val lastOpenedChapterLabel = filteredChapters.firstOrNull { chapter ->
-        buildChapterPath(detailPath, chapter) == lastOpenedChapterPath
+        buildChapterPathForProvider(providerId, detailPath, chapter) == lastOpenedChapterPath
     }?.chapterLabel.orEmpty()
     val unreadCount = (totalChapterCount - readChapterCount).coerceAtLeast(0)
     return DetailChapterUiData(

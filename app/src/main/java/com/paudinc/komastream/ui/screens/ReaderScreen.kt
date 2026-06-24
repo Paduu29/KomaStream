@@ -74,7 +74,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -85,7 +84,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.imageLoader
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.size.Dimension
 import coil.size.Size
@@ -310,6 +309,7 @@ fun ReaderScreen(
                             chapterPath = reader.chapterPath,
                             page = page,
                             offlineStore = offlineStore,
+                            useOfflineFile = isDownloaded || reader.providerId != "mkissa-en",
                             targetWidthPx = imageWidthPx,
                             onZoomStateChanged = { isZoomed ->
                                 zoomedPageKey = when {
@@ -699,6 +699,7 @@ fun ZoomableReaderPage(
     chapterPath: String,
     page: ReaderPage,
     offlineStore: OfflineChapterStore,
+    useOfflineFile: Boolean,
     targetWidthPx: Int,
     onZoomStateChanged: (Boolean) -> Unit,
 ) {
@@ -720,6 +721,7 @@ fun ZoomableReaderPage(
         providerId = providerId,
         chapterPath = chapterPath,
         page = page,
+        enabled = useOfflineFile,
     )
 
     val pageZoomModifier = Modifier
@@ -849,14 +851,40 @@ private fun ReaderNetworkImage(
     imageRequest: ImageRequest,
     pageSurfaceColor: Color,
 ) {
-    AsyncImage(
+    SubcomposeAsyncImage(
         model = imageRequest,
         contentDescription = "Page $pageNumberLabel",
-        modifier = imageModifier,
+        modifier = imageModifier.background(pageSurfaceColor),
         contentScale = ContentScale.FillWidth,
-        placeholder = ColorPainter(pageSurfaceColor),
-        error = ColorPainter(pageSurfaceColor),
+        loading = {
+            ReaderImageLoadingPlaceholder(pageSurfaceColor = pageSurfaceColor)
+        },
+        error = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .background(pageSurfaceColor),
+            )
+        },
     )
+}
+
+@Composable
+private fun ReaderImageLoadingPlaceholder(pageSurfaceColor: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .background(pageSurfaceColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(28.dp),
+            strokeWidth = 3.dp,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 @Composable
@@ -865,8 +893,13 @@ private fun offlineReaderPageFileState(
     providerId: String,
     chapterPath: String,
     page: ReaderPage,
+    enabled: Boolean,
 ): State<File?> {
-    return produceState<File?>(initialValue = null, providerId, chapterPath, page.offlineFileName) {
+    return produceState<File?>(initialValue = null, providerId, chapterPath, page.offlineFileName, enabled) {
+        if (!enabled) {
+            value = null
+            return@produceState
+        }
         value = withContext(Dispatchers.IO) {
             offlineStore.getAvailableReaderPageFile(providerId, chapterPath, page)
         }
@@ -977,6 +1010,17 @@ private fun readerRequestHeaders(providerId: String, chapterPath: String): Heade
             .add("User-Agent", com.paudinc.komastream.provider.providers.ManhwaLatinoProvider.USER_AGENT)
             .add("Referer", "https://manhwa-latino.com/")
             .add("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5")
+            .build()
+        "mkissa-en" -> Headers.Builder()
+            .add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0")
+            .add("Referer", "https://mkissa.to/")
+            .add("Origin", "https://mkissa.to")
+            .add("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5")
+            .build()
+        "leermangaesp-es" -> Headers.Builder()
+            .add("User-Agent", com.paudinc.komastream.provider.providers.LeerMangaEspProvider.USER_AGENT)
+            .add("Referer", "https://leermangaesp.net$chapterPath")
+            .add("Accept", com.paudinc.komastream.provider.providers.LeerMangaEspProvider.IMAGE_ACCEPT)
             .build()
         else -> null
     }

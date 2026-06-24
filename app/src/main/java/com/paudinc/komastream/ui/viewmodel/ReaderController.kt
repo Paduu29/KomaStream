@@ -1,5 +1,6 @@
 package com.paudinc.komastream.ui.viewmodel
 
+import android.util.Log
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -20,6 +21,7 @@ import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.Manhwa18Provider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.utils.buildChapterPath
+import com.paudinc.komastream.utils.buildChapterPathForProvider
 import com.paudinc.komastream.utils.canonicalChapterKey
 import com.paudinc.komastream.utils.chapterPathProgressNumber
 import com.paudinc.komastream.utils.qualifyProviderValue
@@ -45,6 +47,7 @@ class ReaderController(
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
 ) {
+    private val tag = "ReaderController"
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
@@ -326,11 +329,11 @@ class ReaderController(
     ) {
         val readChapters = libraryStore.readChaptersForProvider(providerId)
         val progressChapterPath = detail.chapters.firstOrNull { chapter ->
-            canonicalChapterKey(providerId, buildChapterPath(detail.detailPath, chapter)) ==
+            canonicalChapterKey(providerId, buildChapterPathForProvider(providerId, detail.detailPath, chapter)) ==
                 canonicalChapterKey(providerId, chapterPath)
-        }?.let { buildChapterPath(detail.detailPath, it) } ?: return
+        }?.let { buildChapterPathForProvider(providerId, detail.detailPath, it) } ?: return
         val progressChapter = detail.chapters.firstOrNull { chapter ->
-            buildChapterPath(detail.detailPath, chapter) == progressChapterPath
+            buildChapterPathForProvider(providerId, detail.detailPath, chapter) == progressChapterPath
         } ?: return
         val lastReadChapterNumber = resolveMalReadCountForReadChapters(
             providerId = providerId,
@@ -362,6 +365,7 @@ class ReaderController(
         onError: (String) -> Unit,
     ) {
         val detailPath = resolvePreferredDetailPath(providerId, path)
+        Log.d(tag, "loadDetail providerId=$providerId path=$path detailPath=$detailPath")
         val preferredSourceId = preferredChapterSourceId(providerId)
         val currentSourceId = _uiState.value.selectedDetail
             ?.takeIf { it.providerId == providerId && it.detailPath == detailPath }
@@ -376,11 +380,17 @@ class ReaderController(
             libraryStore.getCachedMangaDetailSnapshot(providerId, detailPath)
         }
         if (cachedSnapshot != null) {
+            Log.d(
+                tag,
+                "loadDetail cacheHit providerId=$providerId detailPath=$detailPath title=${cachedSnapshot.detail.title} chapters=${cachedSnapshot.detail.chapters.size}"
+            )
             if (
                 providerId == ManhwaLatinoProvider.PROVIDER_ID ||
-                    providerId == Manhwa18Provider.PROVIDER_ID
+                    providerId == Manhwa18Provider.PROVIDER_ID ||
+                    providerId == "mkissa-en"
             ) {
-                if (cachedSnapshot.detail.chapters.isEmpty()) {
+                if (cachedSnapshot.detail.chapters.isEmpty() || (providerId == "mkissa-en" && cachedSnapshot.detail.title.isBlank())) {
+                    Log.d(tag, "loadDetail refreshing empty cached detail providerId=$providerId detailPath=$detailPath")
                     refreshDetailCache(providerId, detailPath, cachedSnapshot.detail)
                     return
                 }
@@ -405,6 +415,7 @@ class ReaderController(
         }
 
         val provider = providerRegistry.get(providerId)
+        Log.d(tag, "loadDetail provider=${provider.id} detailPath=$detailPath")
         runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(detailPath) } }
             .onSuccess { detail ->
                 val resolvedDetail = detail.withSelectedChapterSource(
@@ -546,7 +557,9 @@ class ReaderController(
     }
 
     private fun resolvePreferredDetailPath(providerId: String, path: String): String {
-        return path.trim()
+        val resolved = path.trim()
+        Log.d(tag, "resolvePreferredDetailPath providerId=$providerId input=$path resolved=$resolved")
+        return resolved
     }
 
     private fun resolvePreferredCommunityPath(path: String): String {
@@ -591,6 +604,8 @@ class ReaderController(
         providerId: String,
         readerData: com.paudinc.komastream.data.model.ReaderData,
     ) {
+        if (providerId == "mkissa-en") return
+        if (providerId == "leermangaesp-es") return
         if (readerData.pages.isEmpty() || offlineStore.isChapterDownloaded(providerId, readerData.chapterPath)) return
         val provider = providerRegistry.get(providerId)
         readerData.pages.take(PREVIEW_PAGE_COUNT).forEach { page ->
@@ -608,6 +623,8 @@ class ReaderController(
         providerId: String,
         readerData: com.paudinc.komastream.data.model.ReaderData,
     ) {
+        if (providerId == "mkissa-en") return
+        if (providerId == "leermangaesp-es") return
         if (readerData.pages.size <= PREVIEW_PAGE_COUNT) return
         if (offlineStore.isChapterDownloaded(providerId, readerData.chapterPath)) return
         val request = OneTimeWorkRequestBuilder<ReaderPagePrefetchWorker>()
