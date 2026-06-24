@@ -242,10 +242,8 @@ class MangaBallProvider(
         val mangaDetailPath = extractMangaDetailPath(document, html, titleId)
         val mangaTitle = document.selectFirst("meta[property=og:title]")
             ?.attr("content")
-            ?.substringBefore(" Ch.")
-            ?.substringBefore(" Online Free")
-            ?.trim()
-            .orEmpty()
+            .cleanReaderMangaTitle()
+            .ifBlank { mangaDetailPath.titleFromMangaDetailPath() }
         val chapterTitle = document.selectFirst("#chapterTitle")?.text()?.trim().orEmpty()
         val imagesRaw = Regex("const\\s+chapterImages\\s*=\\s*JSON\\.parse\\(`(.*?)`\\);", setOf(RegexOption.DOT_MATCHES_ALL))
             .find(html)
@@ -538,6 +536,26 @@ class MangaBallProvider(
         if (!titleSlug.isNullOrBlank()) return "/title-detail/$titleSlug/"
 
         return ""
+    }
+
+    private fun String?.cleanReaderMangaTitle(): String {
+        return this
+            ?.replace(Regex("""\s+Ch(?:apter)?\.?\s*\d+.*$""", RegexOption.IGNORE_CASE), "")
+            ?.replace(Regex("""\s+Online\s+Free.*$""", RegexOption.IGNORE_CASE), "")
+            ?.replace(Regex("""\s*[|\\-–—]\s*MangaBall.*$""", RegexOption.IGNORE_CASE), "")
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            .orEmpty()
+    }
+
+    private fun String.titleFromMangaDetailPath(): String {
+        return normalizePath(this)
+            .trim('/')
+            .substringAfterLast('/')
+            .replace(Regex("""-\d+$"""), "")
+            .replace('-', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
     }
 
     private fun getDocument(path: String): Document {

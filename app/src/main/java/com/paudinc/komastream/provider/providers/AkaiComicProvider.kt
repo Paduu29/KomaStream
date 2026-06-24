@@ -115,7 +115,8 @@ class AkaiComicProvider(
         val (mid, cn) = parts
         return try {
             val pages = webViewResolver.fetchPages(mid, cn)
-            ReaderData(id, "", normalizeStoredPath("/manga/$mid"), "Chapter $cn", normalizedPath, null, null, pages)
+            val detailPath = normalizeStoredPath("/manga/$mid")
+            ReaderData(id, fetchReaderMangaTitle(mid), detailPath, "Chapter $cn", normalizedPath, null, null, pages)
         } catch (e: Exception) { rd(chapterPath) }
     }
 
@@ -126,5 +127,17 @@ class AkaiComicProvider(
         popularMangas = emptyList(),
         sections = emptyList(),
     )
+
+    private fun fetchReaderMangaTitle(mangaId: String): String {
+        return runCatching {
+            val detail = JSONObject(webViewResolver.fetchMangaDetail(mangaId)).optJSONObject("manga")
+            val seriesName = detail?.optString("series_name", "").orEmpty()
+            val altName = detail?.optString("alternative_name", "").orEmpty()
+            seriesName.ifBlank { altName.split(",").firstOrNull()?.trim().orEmpty() }
+        }.getOrDefault("")
+            .ifBlank { mangaId.replace('-', ' ').replace('_', ' ') }
+            .trim()
+    }
+
     private fun rd(p: String) = ReaderData(id, "", "", "", p, null, null, emptyList())
 }

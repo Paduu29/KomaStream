@@ -205,11 +205,20 @@ class ManhwaLatinoProvider(
         val document = getDocument(normalizedPath)
         val chapterTitle = document.selectFirst("#chapter-heading")?.text()?.trim().orEmpty()
             .ifBlank { document.title().trim() }
-        val mangaDetailPath = document.selectFirst(".M-breadcrumb a[href*='/manga/']")?.attr("href")?.normalizePath().orEmpty()
+        val mangaLink = document.selectFirst(".M-breadcrumb a[href*='/manga/']")
+        val mangaDetailPath = mangaLink?.attr("href")?.normalizePath().orEmpty()
             .ifBlank { normalizedPath.substringBeforeLast('/').substringBeforeLast('/').let { "$it/" } }
-        val mangaTitle = document.selectFirst(".M-breadcrumb img")?.attr("alt")?.trim().orEmpty()
-            .ifBlank { document.selectFirst(".M-breadcrumb a[href*='/manga/']")?.text()?.trim().orEmpty() }
-            .ifBlank { chapterTitle.substringAfter(" - ").trim() }
+        val mangaTitle = listOf(
+            mangaLink?.text(),
+            document.selectFirst(".M-breadcrumb img")?.attr("alt"),
+            document.selectFirst("meta[property=og:title]")?.attr("content"),
+            document.selectFirst("meta[name=twitter:title]")?.attr("content"),
+            document.title(),
+            mangaDetailPath.trim('/').substringAfterLast('/').replace('-', ' '),
+        ).asSequence()
+            .map { it.toReaderMangaTitle(chapterTitle) }
+            .firstOrNull { it.isUsableReaderMangaTitle() }
+            .orEmpty()
         val chapterOptions = fetchMangaChapters(document, normalizedPath)
         val currentIndex = chapterOptions.indexOfFirst { sameChapterPath(id, it.path, normalizedPath) }
         val previousChapterPath = chapterOptions.getOrNull(currentIndex + 1)?.path
@@ -662,6 +671,53 @@ class ManhwaLatinoProvider(
             .replace(Regex("\\bNEW\\b", RegexOption.IGNORE_CASE), "")
             .replace(Regex("\\s{2,}"), " ")
             .trim()
+    }
+
+    private fun String?.toReaderMangaTitle(chapterTitle: String): String {
+        val cleaned = this
+            ?.trim()
+            ?.replace(Regex("\\s*[|\\-–—]\\s*Manhwa\\s+Latino.*$", RegexOption.IGNORE_CASE), "")
+            ?.replace(Regex("\\s{2,}"), " ")
+            ?.trim()
+            .orEmpty()
+        if (cleaned.isBlank()) return ""
+
+        val parts = cleaned.split(Regex("\\s+[-–—|]\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        if (parts.size > 1) {
+            val chapterPartIndex = parts.indexOfFirst { it.isChapterTitlePart(chapterTitle) }
+            if (chapterPartIndex >= 0) {
+                parts.getOrNull(chapterPartIndex + 1)
+                    ?.takeIf { it.isUsableReaderMangaTitle() }
+                    ?.let { return it }
+                parts.getOrNull(chapterPartIndex - 1)
+                    ?.takeIf { it.isUsableReaderMangaTitle() }
+                    ?.let { return it }
+            }
+            parts.firstOrNull { it.isUsableReaderMangaTitle() && !it.isChapterTitlePart(chapterTitle) }
+                ?.let { return it }
+        }
+
+        return cleaned
+    }
+
+    private fun String.isUsableReaderMangaTitle(): Boolean {
+        val normalized = trim()
+        if (normalized.isBlank()) return false
+        return normalized.lowercase() !in setOf(
+            "manga",
+            "image",
+            "manga image",
+            "imagen manga",
+            "manga imagen",
+        )
+    }
+
+    private fun String.isChapterTitlePart(chapterTitle: String): Boolean {
+        val normalized = trim()
+        return normalized.equals(chapterTitle.trim(), ignoreCase = true) ||
+            Regex("""(?i)\b(chapter|cap[ií]tulo|cap)\.?\s*\d+""").containsMatchIn(normalized)
     }
 
     private fun isAdultContentEnabled(): Boolean =

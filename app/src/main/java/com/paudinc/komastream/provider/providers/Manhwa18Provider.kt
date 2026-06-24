@@ -190,7 +190,11 @@ class Manhwa18Provider(
             document.selectFirst(".chapter-navigator a[href*='/manga/']")?.text()?.trim(),
             document.selectFirst("meta[property=og:title]")?.attr("content")?.trim(),
             chapterTitle.substringBefore(" -").trim(),
-        ).firstOrNull { it.isNotBlank() }.orEmpty()
+            mangaDetailPath.trim('/').substringAfterLast('/').replace('-', ' '),
+        ).asSequence()
+            .map { it.cleanReaderMangaTitle() }
+            .firstOrNull { it.isNotBlank() && !it.isChapterLabel() }
+            .orEmpty()
 
         val chapterOptions = parseDetailChapters(document)
         val currentIndex = chapterOptions.indexOfFirst { sameChapterPath(id, it.path, normalizedPath) }
@@ -459,6 +463,18 @@ class Manhwa18Provider(
 
     private fun String.cleanText(): String {
         return replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun String.cleanReaderMangaTitle(): String {
+        return replace(Regex("""\s*[|\\-–—]\s*Manhwa18.*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*[|\\-–—]\s*Read\s+Online.*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+Chapter\s+\d+.*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun String.isChapterLabel(): Boolean {
+        return Regex("""(?i)^\s*(chapter|chap|ch)\.?\s*\d+""").containsMatchIn(this)
     }
 
     private fun detailPathFromChapterPath(chapterPath: String): String {

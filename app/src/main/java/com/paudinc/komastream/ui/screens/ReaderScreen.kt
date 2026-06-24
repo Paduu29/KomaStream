@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -279,7 +278,7 @@ fun ReaderScreen(
                     state = listState,
                     userScrollEnabled = zoomedPageKey == null,
                     contentPadding = PaddingValues(top = 6.dp, bottom = 86.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     item {
                         ReaderHeaderCard(
@@ -708,7 +707,6 @@ fun ZoomableReaderPage(
     val useLightReaderChrome = colorScheme.background.luminance() > 0.5f
     val pageSurfaceColor = if (useLightReaderChrome) colorScheme.surfaceContainerLow else Color.Black
     val zoomBorderColor = if (useLightReaderChrome) colorScheme.primary else colorScheme.tertiary
-    val configuration = LocalConfiguration.current
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val pageKey = remember(providerId, chapterPath, page.id) { "$providerId:$chapterPath:${page.id}" }
@@ -817,10 +815,7 @@ fun ZoomableReaderPage(
         targetWidthPx = targetWidthPx,
         offlineImageFile = offlineFile,
     )
-    val minPageHeight = remember(configuration.screenHeightDp) {
-        (configuration.screenHeightDp.dp * 0.82f).coerceAtLeast(280.dp)
-    }
-    Box(modifier = pageZoomModifier.heightIn(min = minPageHeight)) {
+    Box(modifier = pageZoomModifier) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
