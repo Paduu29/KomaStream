@@ -149,6 +149,7 @@ fun ReaderScreen(
     var overflowExpanded by remember(reader.chapterPath) { mutableStateOf(false) }
     var zoomedPageKey by remember(reader.chapterPath) { mutableStateOf<String?>(null) }
     val prefetchedPageKeys = remember(reader.chapterPath) { mutableSetOf<String>() }
+    var hasLoadedPageImage by remember(reader.chapterPath) { mutableStateOf(false) }
     var showFloatingHeader by remember(reader.chapterPath) { mutableStateOf(false) }
     var showChapterNavigationBar by remember(reader.chapterPath) { mutableStateOf(true) }
     val chapterSubtitle = remember(reader.chapterTitle) { readerChapterSubtitle(reader.chapterTitle) }
@@ -159,6 +160,7 @@ fun ReaderScreen(
     LaunchedEffect(reader.chapterPath, restoredPageIndex, reader.pages.size) {
         pageTrackingReady = false
         allowAutoReadMark = false
+        hasLoadedPageImage = false
         prefetchedPageKeys.clear()
         listState.scrollToItem(initialReaderItemIndex(restoredPageIndex, reader.pages.size))
         pageTrackingReady = true
@@ -186,6 +188,15 @@ fun ReaderScreen(
                 )
             )
             allowAutoReadMark = true
+        }
+    }
+
+    LaunchedEffect(reader.chapterPath, pageTrackingReady, hasLoadedPageImage) {
+        if (pageTrackingReady && hasLoadedPageImage) {
+            latestOnPagePositionChanged(
+                currentReaderPageIndex(listState, reader.pages.size, sliderPage),
+                allowAutoReadMark,
+            )
         }
     }
 
@@ -310,6 +321,9 @@ fun ReaderScreen(
                             offlineStore = offlineStore,
                             useOfflineFile = isDownloaded || reader.providerId != "mkissa-en",
                             targetWidthPx = imageWidthPx,
+                            onImageLoaded = {
+                                hasLoadedPageImage = true
+                            },
                             onZoomStateChanged = { isZoomed ->
                                 zoomedPageKey = when {
                                     isZoomed -> pageKey
@@ -700,6 +714,7 @@ fun ZoomableReaderPage(
     offlineStore: OfflineChapterStore,
     useOfflineFile: Boolean,
     targetWidthPx: Int,
+    onImageLoaded: () -> Unit,
     onZoomStateChanged: (Boolean) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -833,6 +848,7 @@ fun ZoomableReaderPage(
                     imageModifier = Modifier.fillMaxWidth(),
                     imageRequest = imageRequest,
                     pageSurfaceColor = pageSurfaceColor,
+                    onSuccess = onImageLoaded,
                 )
             }
         }
@@ -845,12 +861,14 @@ private fun ReaderNetworkImage(
     imageModifier: Modifier,
     imageRequest: ImageRequest,
     pageSurfaceColor: Color,
+    onSuccess: () -> Unit,
 ) {
     SubcomposeAsyncImage(
         model = imageRequest,
         contentDescription = "Page $pageNumberLabel",
         modifier = imageModifier.background(pageSurfaceColor),
         contentScale = ContentScale.FillWidth,
+        onSuccess = { onSuccess() },
         loading = {
             ReaderImageLoadingPlaceholder(pageSurfaceColor = pageSurfaceColor)
         },
