@@ -186,6 +186,7 @@ private fun initialHasMore(providerId: String, section: HomeFeedSection): Boolea
         providerId == "mangatube-de" && section.id == "latest-updates" -> section.chapters.size >= 40
         providerId == "manhwa-latino-es" && section.id == "featured" -> section.mangas.size >= 20
         providerId == "manhwa-latino-es" && section.id == "latest-updates" -> section.chapters.size >= 20
+        providerId == "kagane-en" && section.type == HomeSectionType.MANGAS -> section.mangas.size >= 6
         providerId == "olympusbiblioteca-es" && section.id == "nuevos-lanzamientos" -> section.mangas.size >= 15
         providerId == "olympusbiblioteca-es" && section.id == "top-series" -> section.mangas.size >= 15
         providerId == "mkissa-en" && section.id == "latest-updates" -> section.chapters.size >= 20
@@ -196,6 +197,7 @@ private fun initialHasMore(providerId: String, section: HomeFeedSection): Boolea
 private fun shouldRefreshFromPagedSource(providerId: String, sectionId: String): Boolean {
     return (providerId == "olympusbiblioteca-es" &&
         (sectionId == "nuevos-lanzamientos" || sectionId == "top-series")) ||
+        providerId == "kagane-en" ||
         providerId == "mkissa-en"
 }
 

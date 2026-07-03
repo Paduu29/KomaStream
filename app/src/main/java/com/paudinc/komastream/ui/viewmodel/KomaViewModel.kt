@@ -26,6 +26,7 @@ import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.updater.GitHubRelease
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.provider.providers.MangaBallProvider
+import com.paudinc.komastream.provider.providers.KaganeProvider
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.utils.AppStrings
@@ -490,6 +491,7 @@ class KomaViewModel(
     fun invalidateCloudflareClearance(providerId: String) {
         when (val provider = providerRegistry.all().firstOrNull { it.id == providerId }) {
             is MangadotProvider -> provider.invalidateCaches()
+            is KaganeProvider -> provider.invalidateCaches()
             is ManhwaLatinoProvider -> provider.invalidateCaches()
             is MangaBallProvider -> provider.invalidateCaches()
             else -> Unit
@@ -754,12 +756,14 @@ class KomaViewModel(
 
     private fun requiresCloudflareBootstrap(providerId: String): Boolean {
         return providerId == MangadotProvider.PROVIDER_ID ||
+            providerId == KaganeProvider.PROVIDER_ID ||
             providerId == ManhwaLatinoProvider.PROVIDER_ID ||
             providerId == MangaBallProvider.PROVIDER_ID
     }
 
     private fun supportsCloudflareBootstrap(providerId: String): Boolean {
         return providerId == MangadotProvider.PROVIDER_ID ||
+            providerId == KaganeProvider.PROVIDER_ID ||
             providerId == ManhwaLatinoProvider.PROVIDER_ID ||
             providerId == MangaBallProvider.PROVIDER_ID
     }
@@ -767,6 +771,7 @@ class KomaViewModel(
     private fun cloudflareReady(providerId: String): Boolean {
         return when (val provider = providerRegistry.get(providerId)) {
             is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            is KaganeProvider -> provider.markCloudflareReadyIfCookiesPresent()
             is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
             is MangaBallProvider -> provider.markCloudflareReadyIfCookiesPresent()
             else -> true
@@ -776,6 +781,7 @@ class KomaViewModel(
     private fun markCloudflareReadyIfCookiesPresent(providerId: String): Boolean {
         return when (val provider = providerRegistry.get(providerId)) {
             is MangadotProvider -> provider.markCloudflareReadyIfCookiesPresent()
+            is KaganeProvider -> provider.markCloudflareReadyIfCookiesPresent()
             is ManhwaLatinoProvider -> provider.markCloudflareReadyIfCookiesPresent()
             is MangaBallProvider -> provider.markCloudflareReadyIfCookiesPresent()
             else -> false
@@ -785,6 +791,7 @@ class KomaViewModel(
     private fun waitForCloudflareCookie(providerId: String): Boolean {
         return when (val provider = providerRegistry.get(providerId)) {
             is MangadotProvider -> provider.waitForCloudflareCookie()
+            is KaganeProvider -> provider.waitForCloudflareCookie()
             is ManhwaLatinoProvider -> provider.waitForCloudflareCookie()
             is MangaBallProvider -> provider.waitForCloudflareCookie()
             else -> false

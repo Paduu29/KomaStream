@@ -8,6 +8,7 @@ import com.paudinc.komastream.provider.providers.InMangaProvider
 import com.paudinc.komastream.provider.providers.LeerMangaEspProvider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.provider.providers.MarmotaProvider
+import com.paudinc.komastream.provider.providers.KaganeProvider
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.provider.providers.MangaFireProvider
@@ -64,6 +65,7 @@ fun createDefaultProviderRegistry(
             add(MangaFireProvider(context, sharedHttpClient))
             add(MarmotaProvider(sharedHttpClient))
             add(MangadotProvider(sharedHttpClient))
+            add(KaganeProvider(sharedHttpClient))
             context?.let { add(Manhwa18Provider(it, sharedHttpClient)) }
             context?.let { add(ManhwaLatinoProvider(it, settingsState, sharedHttpClient)) }
             add(MangaBallProvider(settingsState, sharedHttpClient))

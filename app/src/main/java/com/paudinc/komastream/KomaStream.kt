@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.paudinc.komastream.ui.components.MangadotAwareAsyncImage
+import com.paudinc.komastream.provider.providers.KaganeProvider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
 import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
@@ -234,11 +235,13 @@ fun KomaStream() {
     LaunchedEffect(viewModel.isAwaitingBrowserBootstrap, currentProvider.id) {
         if (viewModel.isAwaitingBrowserBootstrap &&
             (currentProvider is MangadotProvider ||
+                currentProvider is KaganeProvider ||
                 currentProvider is ManhwaLatinoProvider ||
                 currentProvider is MangaBallProvider)
         ) {
             val providerUrl = when (val provider = currentProvider) {
                 is MangadotProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
+                is KaganeProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
                 is ManhwaLatinoProvider -> if (!provider.markCloudflareReadyIfCookiesPresent()) provider.websiteUrl else null
                 is MangaBallProvider -> provider.websiteUrl
                 else -> null
@@ -528,6 +531,9 @@ fun KomaStream() {
                                         is MangadotProvider, is ManhwaLatinoProvider -> {
                                             { viewModel.invalidateCloudflareClearanceAndRetry(currentProvider.id) }
                                         }
+                                        is KaganeProvider -> {
+                                            { viewModel.invalidateCloudflareClearanceAndRetry(currentProvider.id) }
+                                        }
                                         else -> null
                                     },
                                 )
@@ -689,7 +695,15 @@ fun KomaStream() {
                                         },
                                         onReadChapter = { path -> viewModel.openReader(detail.providerId, path) },
                                         onSelectChapterSource = { sourceId -> viewModel.selectChapterSource(detail.providerId, detail.detailPath, sourceId) },
-                                        onSolveCloudflare = null,
+                                        onSolveCloudflare = when (detail.providerId) {
+                                            KaganeProvider.PROVIDER_ID,
+                                            MangadotProvider.PROVIDER_ID,
+                                            ManhwaLatinoProvider.PROVIDER_ID,
+                                            MangaBallProvider.PROVIDER_ID -> {
+                                                { viewModel.invalidateCloudflareClearanceAndRetry(detail.providerId) }
+                                            }
+                                            else -> null
+                                        },
                                     )
                                 } ?: DetailLoadingPlaceholder(strings)
                             }
