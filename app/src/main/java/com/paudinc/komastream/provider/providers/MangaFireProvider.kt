@@ -3,91 +3,109 @@ package com.paudinc.komastream.provider.providers
 import android.content.Context
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
-import com.paudinc.komastream.utils.MangaFireWebViewResolver
-import com.paudinc.komastream.utils.chapterValue
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Document
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class MangaFireProvider(
-    context: Context? = null,
+    @Suppress("UNUSED_PARAMETER") context: Context? = null,
     private val client: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     override val id: String = "mangafire-en"
     override val displayName: String = "MangaFire"
     override val language: AppLanguage = AppLanguage.EN
-    override val websiteUrl: String = "https://mangafire.to"
-    override val logoUrl: String = "https://s.mfcdn.nl/assets/sites/mangafire/favicon.png?v4"
-
-    private val baseUrl = "https://mangafire.to"
-    private val readerResolver = context?.let { MangaFireWebViewResolver(it.applicationContext, client) }
+    override val websiteUrl: String = BASE_URL
+    override val logoUrl: String = "https://mangafire.to/assets/mangafire/favicon.svg"
 
     override fun fetchHomeFeed(): HomeFeed {
-        val homeDocument = getDocument("/home")
-        val latestUpdates = parseCatalogCards(getDocument("/updated")).mapNotNull { card ->
-            card.toChapterSummary(id, languageCode)
-        }
-        val mostViewedCards = parseCatalogCards(getDocument("/filter?language=$languageCode&sort=most_viewed"))
-        val newReleaseCards = parseHomeSectionCards(homeDocument, "New Release")
-        val featuredCards = parseFeaturedCards(homeDocument)
+        val latestTitles = fetchTitleList(
+            path = "/api/titles",
+            query = mapOf(
+                "order[chapter_updated_at]" to "desc",
+                "hot" to "1",
+                "page" to "1",
+                "limit" to HOME_PAGE_SIZE.toString(),
+            ),
+        ).items
+        val trendingTitles = fetchTitleList(
+            path = "/api/top-titles",
+            query = mapOf(
+                "type" to "trending",
+                "days" to "1",
+                "limit" to HOME_PAGE_SIZE.toString(),
+            ),
+        ).items
+        val latestUpdates = latestTitles
+            .take(HOME_CHAPTER_LOOKUP_LIMIT)
+            .mapNotNull { summary -> fetchLatestChapterSummary(summary) }
+
         val sections = listOf(
             HomeFeedSection(
-                id = "featured-carousel",
-                title = "Featured",
+                id = "trending",
+                title = "Trending",
                 type = HomeSectionType.MANGAS,
-                mangas = featuredCards,
+                mangas = trendingTitles,
             ),
             HomeFeedSection(
-                id = "most-viewed",
-                title = "Most Viewed",
+                id = "latest-titles",
+                title = "Latest Updates",
                 type = HomeSectionType.MANGAS,
-                mangas = mostViewedCards.map { it.toMangaSummary(id) },
+                mangas = latestTitles,
             ),
             HomeFeedSection(
-                id = "recently-updated",
-                title = "Recently Updated",
+                id = "latest-chapters",
+                title = "Latest Chapters",
                 type = HomeSectionType.CHAPTERS,
                 chapters = latestUpdates,
             ),
-            HomeFeedSection(
-                id = "new-release",
-                title = "New Release",
-                type = HomeSectionType.MANGAS,
-                mangas = newReleaseCards,
-            ),
-        ).filter { it.chapters.isNotEmpty() || it.mangas.isNotEmpty() }
+        ).filter { it.mangas.isNotEmpty() || it.chapters.isNotEmpty() }
+
         return HomeFeed(
             latestUpdates = latestUpdates,
             popularChapters = latestUpdates,
-            popularMangas = mostViewedCards.map { it.toMangaSummary(id) },
+            popularMangas = trendingTitles,
             sections = sections,
         )
     }
 
+    override fun fetchHomeSectionPage(sectionId: String, page: Int): HomeSectionPageResult? =
+        when (sectionId) {
+            "latest-titles" -> fetchTitleList(
+                path = "/api/titles",
+                query = mapOf(
+                    "order[chapter_updated_at]" to "desc",
+                    "hot" to "1",
+                    "page" to page.coerceAtLeast(1).toString(),
+                    "limit" to HOME_PAGE_SIZE.toString(),
+                ),
+            ).let { result ->
+                HomeSectionPageResult(
+                    type = HomeSectionType.MANGAS,
+                    mangas = result.items,
+                    hasMore = result.hasMore,
+                )
+            }
+            else -> null
+        }
+
     override fun fetchCatalogFilterOptions(): CatalogFilterOptions {
-        val document = getDocument("/filter?language=$languageCode")
+        val data = getJson("/api/filter-options").optJSONObject("data") ?: JSONObject()
         return CatalogFilterOptions(
-            categories = document.select("input[name='genre[]'][value]").mapNotNull { input ->
-                val value = input.attr("value").trim()
-                val label = document.selectFirst("label[for='${input.id()}']")?.text()?.trim().orEmpty()
-                if (value.isBlank() || label.isBlank()) null else CategoryOption(value, label)
-            },
-            sortOptions = document.select("input[name='sort'][value]").mapNotNull { input ->
-                val value = input.attr("value").trim()
-                val label = document.selectFirst("label[for='${input.id()}']")?.text()?.trim().orEmpty()
-                if (value.isBlank() || label.isBlank()) null else FilterOption(value, label)
-            },
-            statusOptions = document.select("input[name='status[]'][value]").mapNotNull { input ->
-                val value = input.attr("value").trim()
-                val label = document.selectFirst("label[for='${input.id()}']")?.text()?.trim().orEmpty()
-                if (value.isBlank() || label.isBlank()) null else FilterOption(value, label)
-            },
+            categories = data.optJSONArray("genres").toCategoryOptions("genres") +
+                data.optJSONArray("themes").toCategoryOptions("themes") +
+                data.optJSONArray("demographics").toCategoryOptions("demographics") +
+                data.optJSONArray("formats").toCategoryOptions("formats"),
+            sortOptions = data.optJSONArray("sorts").toFilterOptions(),
+            statusOptions = data.optJSONArray("statuses").toFilterOptions(),
         )
     }
 
@@ -100,302 +118,350 @@ class MangaFireProvider(
         skip: Int,
         take: Int
     ): CatalogSearchResult {
-        val page = (skip / BROWSE_PAGE_SIZE) + 1
-        val localSkip = skip % BROWSE_PAGE_SIZE
-        if (query.isNotBlank()) {
-            val items = readerResolver?.searchCatalog(providerId = id, query = query, skip = skip, take = take)
-                ?: searchByQuery(query).drop(skip).take(take)
-            return CatalogSearchResult(
-                items = items,
-                hasMore = false,
-            )
-        }
-        val document = getDocument(
-            buildFilterPath(
-                categoryIds = categoryIds,
-                sortBy = sortBy,
-                status = broadcastStatus,
-                page = page,
-                keyword = "",
-            )
-        )
-        val pageItems = parseCatalogCards(document)
-            .map { it.toMangaSummary(id) }
-        val items = pageItems
-            .drop(localSkip)
-            .take(take)
-        return CatalogSearchResult(
-            items = items,
-            hasMore = document.selectFirst(".pagination .page-item a[rel='next']") != null || localSkip + take < pageItems.size,
-        )
-    }
-
-    private fun searchByQuery(query: String): List<MangaSummary> {
-        val response = getJson("/ajax/manga/search?query=${query.urlEncode()}")
-        val result = response.optJSONObject("result")
-        val count = result?.optInt("count", -1) ?: -1
-        val linkMore = result?.optString("linkMore").orEmpty()
-        val html = result?.optString("html").orEmpty()
-        if (html.isBlank()) {
-            return emptyList()
-        }
-        val document = Jsoup.parseBodyFragment(html, baseUrl)
-        val items = document.select(".unit[href], a.unit[href]").mapNotNull { item ->
-            val link = item.attr("href").trim()
-            val title = item.selectFirst("h6")?.text()?.trim().orEmpty()
-            val coverUrl = item.selectFirst("img")?.absUrl("src").orEmpty()
-            if (link.isBlank() || title.isBlank()) null else {
-                MangaSummary(
-                    providerId = id,
-                    title = title,
-                    detailPath = normalizePath(link),
-                    coverUrl = coverUrl,
-                )
+        val limit = take.coerceAtLeast(BROWSE_PAGE_SIZE)
+        val page = (skip / limit) + 1
+        val localSkip = skip % limit
+        val url = "$BASE_URL/api/titles".toHttpUrl().newBuilder()
+            .addQueryParameter("page", page.toString())
+            .addQueryParameter("limit", limit.toString())
+            .apply {
+                if (query.isNotBlank()) addQueryParameter("keyword", query)
+                addSortQuery(sortBy.ifBlank { DEFAULT_SORT })
+                categoryIds.forEach { addCategoryQuery(it) }
+                if (broadcastStatus.isNotBlank()) addQueryParameter("statuses[]", broadcastStatus)
             }
-        }
-        return items
+            .build()
+            .toString()
+        val response = getJsonAbsolute(url, referer = "$BASE_URL/browse")
+        val pageItems = response.optJSONArray("items").toMangaSummaries()
+        val meta = response.optJSONObject("meta")
+        return CatalogSearchResult(
+            items = pageItems.drop(localSkip).take(take),
+            hasMore = meta?.optBoolean("hasNext", false) == true || localSkip + take < pageItems.size,
+        )
     }
 
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
         val normalizedPath = normalizePath(detailPath)
-        val document = getDocument(normalizedPath)
-        val title = document.selectFirst("h1")?.text()?.trim().orEmpty()
-        val coverUrl = document.selectFirst(".main-inner .poster img")?.absUrl("src").orEmpty()
-        val synopsis = document.selectFirst("#synopsis .modal-content")
-            ?.text()
-            ?.trim()
-            .orEmpty()
-        val alternateTitle = document.selectFirst(".main-inner h6")
-            ?.text()
-            ?.trim()
-            .orEmpty()
-        val description = listOf(synopsis, alternateTitle)
-            .filter { it.isNotBlank() }
-            .joinToString("\n\n")
-            .ifBlank { "No description" }
-
-        val metaText = document.select(".main-inner .meta span")
-            .map { it.text().trim() }
-        val publicationDate = metaValue(metaText, "Published:")
-        val status = document.selectFirst(".main-inner .info > p")?.text()?.trim().orEmpty()
-        val periodicity = metaValue(metaText, "Type:")
-
-        val mangaId = normalizedPath.substringAfterLast('.')
-        val chaptersHtml = getJson("/ajax/manga/$mangaId/chapter/$languageCode")
-        val chaptersHtmlResult = chaptersHtml.optString("result")
-        val chapters = parseChapterList(document, chaptersHtmlResult)
+        val titleId = extractTitleId(normalizedPath)
+        val title = getJson("/api/titles/$titleId", referer = toAbsoluteUrl(normalizedPath))
+            .optJSONObject("data")
+            ?: JSONObject()
+        val chapters = fetchAllChapters(titleId, title.optString("url").ifBlank { normalizedPath })
+        val titlePath = normalizePath(title.optString("url").ifBlank { normalizedPath })
+        val coverUrl = title.optJSONObject("poster")?.optString("large").orEmpty()
+            .ifBlank { title.optJSONObject("poster")?.optString("medium").orEmpty() }
+        val synopsis = Jsoup.parseBodyFragment(title.optString("synopsisHtml")).text().trim()
+        val alternateTitles = title.optJSONArray("altTitles").toStringList().take(5)
+        val genres = title.optJSONArray("genres").toNameList()
+        val description = listOf(
+            synopsis,
+            alternateTitles.takeIf { it.isNotEmpty() }?.joinToString(prefix = "Also known as: "),
+            genres.takeIf { it.isNotEmpty() }?.joinToString(prefix = "Genres: "),
+        ).filterNotNull().filter { it.isNotBlank() }.joinToString("\n\n").ifBlank { "No description" }
 
         return MangaDetail(
             providerId = id,
-            identification = mangaId,
-            title = title,
-            detailPath = normalizedPath,
+            identification = title.optString("hid").ifBlank { titleId },
+            title = title.optString("title").ifBlank { normalizedPath.substringAfterLast('/').substringAfter('-') },
+            detailPath = titlePath,
             coverUrl = coverUrl,
             bannerUrl = coverUrl,
             description = description,
-            status = status,
-            publicationDate = publicationDate,
-            periodicity = periodicity,
+            status = title.optString("status").toDisplayLabel(),
+            publicationDate = title.opt("year")?.toString().orEmpty().takeIf { it != "null" }.orEmpty(),
+            periodicity = title.optString("type").toDisplayLabel(),
             chapters = chapters,
         )
     }
 
     override fun fetchReaderData(chapterPath: String): ReaderData {
-        val resolver = requireNotNull(readerResolver) { "MangaFire reader requires Android context" }
-        return resolver.fetchReaderData(providerId = id, chapterPath = normalizePath(chapterPath))
+        val normalizedPath = normalizePath(chapterPath)
+        val chapterId = extractChapterId(normalizedPath)
+        val data = getJson("/api/chapters/$chapterId", referer = toAbsoluteUrl(normalizedPath))
+            .optJSONObject("data")
+            ?: JSONObject()
+        val title = data.optJSONObject("title") ?: JSONObject()
+        val titlePath = normalizePath(title.optString("url"))
+        val chapterNumber = data.opt("number")?.toString().orEmpty()
+        val chapterName = data.optString("name")
+        val chapterLabel = buildChapterLabel(chapterNumber, chapterName)
+
+        return ReaderData(
+            providerId = id,
+            mangaTitle = title.optString("name").ifBlank { title.optString("title") },
+            mangaDetailPath = titlePath,
+            chapterTitle = chapterLabel,
+            chapterPath = normalizedPath,
+            previousChapterPath = data.optJSONObject("prev")?.optString("url")?.let(::normalizePath),
+            nextChapterPath = data.optJSONObject("next")?.optString("url")?.let(::normalizePath),
+            pages = data.optJSONArray("pages").toReaderPages(),
+        )
     }
 
     override fun downloadBytes(url: String, referer: String?): ByteArray {
-        readerResolver?.takeIf { url.startsWith("file://") }?.let { resolver ->
-            return resolver.downloadBytes(url, referer)
-        }
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .apply { if (referer != null) header("Referer", toAbsoluteUrl(referer)) }
+            .header("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*,*/*;q=0.8")
+            .apply { header("Referer", referer?.let(::toAbsoluteUrl) ?: BASE_URL) }
             .build()
         client.newCall(request).execute().use { response ->
             return response.body?.bytes() ?: ByteArray(0)
         }
     }
 
-    private fun parseCatalogCards(document: Document): List<MangaFireCard> =
-        document.select(".original.card-lg .unit .inner").mapNotNull { item ->
-            val detailLink = item.selectFirst(".info > a[href]") ?: return@mapNotNull null
-            val detailPath = normalizePath(detailLink.attr("href"))
-            val title = detailLink.text().trim()
-            val coverUrl = item.selectFirst(".poster img")?.absUrl("src").orEmpty()
-            val type = item.selectFirst(".type")?.text()?.trim().orEmpty()
-            
-            // Extract metadata from info list
-            var status = ""
-            var periodicity = ""
-            var chaptersCount = ""
-            item.select(".info-list .item").forEach { infoItem ->
-                val label = infoItem.selectFirst("b")?.text()?.trim().orEmpty().lowercase()
-                val value = infoItem.ownText().trim()
-                when {
-                    "status" in label -> status = value
-                    "period" in label -> periodicity = value
-                    "chap" in label -> chaptersCount = value
-                }
-            }
-
-            val chapterLink = item.select("ul.content[data-name='chap'] a[href]")
-                .firstOrNull { link ->
-                    link.selectFirst("b")?.text()?.trim()?.equals(languageCode.uppercase(), ignoreCase = true) == true
-                }
-                ?: item.selectFirst("ul.content[data-name='chap'] a[href]")
-            val chapterPath = chapterLink?.attr("href").orEmpty()
-            val chapterLabel = chapterLink?.selectFirst("span")?.ownText()?.trim().orEmpty()
-            val chapterDate = chapterLink?.select("span")?.getOrNull(1)?.text()?.trim().orEmpty()
-            MangaFireCard(
-                title = title,
-                detailPath = detailPath,
-                coverUrl = coverUrl,
-                type = type,
-                chapterPath = normalizePath(chapterPath),
-                chapterLabel = chapterLabel,
-                chapterDate = chapterDate,
-                status = status,
-                periodicity = periodicity,
-                chaptersCount = chaptersCount,
+    private fun fetchLatestChapterSummary(summary: MangaSummary): ChapterSummary? =
+        runCatching {
+            val titleId = extractTitleId(summary.detailPath)
+            val response = getJson(
+                path = "/api/titles/$titleId/chapters?language=$LANGUAGE_CODE&sort=number&order=desc&page=1&limit=1",
+                referer = toAbsoluteUrl(summary.detailPath),
             )
-        }
+            val chapter = response.optJSONArray("items")?.optJSONObject(0) ?: return null
+            chapter.toChapterSummary(summary)
+        }.getOrNull()
 
-    private fun parseHomeSectionCards(document: Document, heading: String): List<MangaSummary> =
-        document.select("section.home-swiper")
-            .firstOrNull { section ->
-                section.selectFirst("h2")?.text()?.trim()?.equals(heading, ignoreCase = true) == true
+    private fun fetchAllChapters(titleId: String, detailPath: String): List<MangaChapter> {
+        val chapters = mutableListOf<MangaChapter>()
+        var page = 1
+        var hasNext: Boolean
+        do {
+            val response = getJson(
+                path = "/api/titles/$titleId/chapters?language=$LANGUAGE_CODE&sort=number&order=desc&page=$page&limit=$CHAPTER_PAGE_SIZE",
+                referer = toAbsoluteUrl(detailPath),
+            )
+            val items = response.optJSONArray("items") ?: JSONArray()
+            for (index in 0 until items.length()) {
+                val chapter = items.optJSONObject(index) ?: continue
+                chapters += chapter.toMangaChapter(detailPath)
             }
-            ?.select(".swiper-slide.unit a[href]")
-            .orEmpty()
-            .mapNotNull { item ->
-            val link = item.attr("href").trim()
-            val title = item.selectFirst("span")?.text()?.trim().orEmpty()
-            val coverUrl = item.selectFirst("img")?.absUrl("src").orEmpty()
-            if (link.isBlank() || title.isBlank()) null else {
-                MangaSummary(
-                    providerId = id,
-                    title = title,
-                    detailPath = normalizePath(link),
-                    coverUrl = coverUrl,
-                )
-            }
-        }
+            val meta = response.optJSONObject("meta")
+            hasNext = meta?.optBoolean("hasNext", false) == true
+            page += 1
+        } while (hasNext && page <= MAX_CHAPTER_PAGES)
+        return chapters.distinctBy { it.id }.sortedByDescending { it.chapterNumberUrl.toDoubleOrNull() ?: 0.0 }
+    }
 
-    private fun parseFeaturedCards(document: Document): List<MangaSummary> =
-        document.select("#top-trending .swiper-slide .swiper-inner").mapNotNull { item ->
-            val link = item.selectFirst("a.unit[href]")?.attr("href")?.trim().orEmpty()
-            val title = item.selectFirst(".info .above a.unit")?.text()?.trim().orEmpty()
-            val coverUrl = item.selectFirst("a.poster img")?.absUrl("src").orEmpty()
-            val status = item.selectFirst(".info .above span")?.text()?.trim().orEmpty()
-            val latest = item.selectFirst(".info .below p")?.text()?.trim().orEmpty()
-            val genres = item.select(".info .below div a")
-                .map { it.text().trim() }
-                .filter { it.isNotBlank() }
-                .take(3)
-                .joinToString(" · ")
-            if (link.isBlank() || title.isBlank()) null else {
-                MangaSummary(
-                    providerId = id,
-                    title = title,
-                    detailPath = normalizePath(link),
-                    coverUrl = coverUrl,
-                    status = status,
-                    periodicity = genres,
-                    latestPublication = latest,
-                )
-            }
-        }
-
-    private fun parseChapterList(document: Document, html: String): List<MangaChapter> {
-        val fromDocument = parseChapterItems(
-            document.select("ul.content[data-name='chap'] li.item, li.item")
+    private fun fetchTitleList(path: String, query: Map<String, String>): TitleListResult {
+        val url = "$BASE_URL$path".toHttpUrl().newBuilder().apply {
+            query.forEach { (name, value) -> addQueryParameter(name, value) }
+        }.build().toString()
+        val response = getJsonAbsolute(url, referer = BASE_URL)
+        val meta = response.optJSONObject("meta")
+        return TitleListResult(
+            items = response.optJSONArray("items").toMangaSummaries(),
+            hasMore = meta?.optBoolean("hasNext", false) == true,
         )
-        val fromAjax = html.takeIf { it.isNotBlank() }
-            ?.let { Jsoup.parseBodyFragment(it, baseUrl) }
-            ?.let { parseChapterItems(it.select("li.item")) }
-            .orEmpty()
-
-        return (fromDocument + fromAjax)
-            .distinctBy { it.path.ifBlank { "${it.chapterNumberUrl}:${it.chapterLabel}" } }
-            .sortedByDescending { chapterValue(it) }
     }
 
-    private fun parseChapterItems(items: Iterable<Element>): List<MangaChapter> =
-        items.mapNotNull { item ->
-            val link = item.selectFirst("a[href]") ?: return@mapNotNull null
-            val path = normalizePath(link.attr("href"))
-            val label = item.selectFirst("span")?.text()?.trim().orEmpty()
-            if (path.isBlank() || label.isBlank()) return@mapNotNull null
-            MangaChapter(
-                id = path.substringAfterLast('/'),
-                chapterLabel = label,
-                chapterNumberUrl = path.substringAfterLast('/'),
-                path = path,
-                pagesCount = 0,
-                registrationDate = item.select("span").getOrNull(1)?.text()?.trim().orEmpty(),
-            )
-        }
+    private fun getJson(path: String, referer: String = BASE_URL): JSONObject =
+        getJsonAbsolute(toAbsoluteUrl(path), referer)
 
-    private fun buildFilterPath(
-        categoryIds: List<String>,
-        sortBy: String,
-        status: String,
-        page: Int,
-        keyword: String,
-    ): String {
-        val url = "$baseUrl/filter".toHttpUrl().newBuilder()
-            .addQueryParameter("language", languageCode)
-            .addQueryParameter("page", page.toString())
-        if (keyword.isNotBlank()) {
-            url.addQueryParameter("keyword", keyword)
-        }
-        if (sortBy.isNotBlank()) {
-            url.addQueryParameter("sort", sortBy)
-        }
-        categoryIds.forEach { url.addQueryParameter("genre[]", it) }
-        if (status.isNotBlank()) {
-            url.addQueryParameter("status[]", status)
-        }
-        return url.build().toString()
-    }
-
-    private fun metaValue(items: List<String>, prefix: String): String =
-        items.firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-            ?.substringAfter(prefix)
-            ?.trim()
-            .orEmpty()
-
-    private fun getDocument(path: String): Document {
+    private fun getJsonAbsolute(absoluteUrl: String, referer: String): JSONObject {
         val request = Request.Builder()
-            .url(toAbsoluteUrl(path))
+            .url(absoluteUrl)
             .header("User-Agent", USER_AGENT)
-            .build()
-        client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-            }
-            return Jsoup.parse(body, baseUrl)
-        }
-    }
-
-    private fun getJson(path: String): JSONObject {
-        val request = Request.Builder()
-            .url(toAbsoluteUrl(path))
-            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .header("Referer", referer)
             .header("X-Requested-With", "XMLHttpRequest")
             .build()
         client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-            }
-            return JSONObject(body)
+            return JSONObject(response.body?.string().orEmpty())
         }
     }
+
+    private fun okhttp3.HttpUrl.Builder.addSortQuery(sortBy: String) {
+        val field = sortBy.substringBefore(':').ifBlank { "chapter_updated_at" }
+        val direction = sortBy.substringAfter(':', "desc").ifBlank { "desc" }
+        addQueryParameter("order[$field]", direction)
+    }
+
+    private fun okhttp3.HttpUrl.Builder.addCategoryQuery(categoryId: String) {
+        val group = categoryId.substringBefore(':', "genres")
+        val value = categoryId.substringAfter(':', categoryId)
+        val parameter = when (group) {
+            "themes" -> "themes[]"
+            "demographics" -> "demographics[]"
+            "formats" -> "formats[]"
+            else -> "genres[]"
+        }
+        addQueryParameter(parameter, value)
+    }
+
+    private fun JSONArray?.toMangaSummaries(): List<MangaSummary> =
+        buildList {
+            val source = this@toMangaSummaries ?: return@buildList
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                item.toMangaSummary()?.let(::add)
+            }
+        }
+
+    private fun JSONObject.toMangaSummary(): MangaSummary? {
+        val title = optString("title").trim()
+        val detailPath = normalizePath(optString("url"))
+        if (title.isBlank() || detailPath.isBlank()) return null
+        val poster = optJSONObject("poster")
+        return MangaSummary(
+            providerId = id,
+            title = title,
+            detailPath = detailPath,
+            coverUrl = poster?.optString("medium").orEmpty().ifBlank { poster?.optString("large").orEmpty() },
+            contentType = optString("type").toDisplayLabel(),
+            status = optString("status").toDisplayLabel(),
+            periodicity = opt("year")?.toString().orEmpty().takeIf { it != "null" }.orEmpty(),
+            latestPublication = optString("chapterUpdatedAt"),
+            chaptersCount = opt("latestChapter")?.toString().orEmpty().takeIf { it != "null" }.orEmpty(),
+            rating = opt("rating")?.toString().orEmpty().takeIf { it != "null" }.orEmpty(),
+            views = opt("viewsTotal")?.toString().orEmpty().takeIf { it != "null" }.orEmpty(),
+        )
+    }
+
+    private fun JSONObject.toMangaChapter(detailPath: String): MangaChapter {
+        val number = opt("number")?.toString().orEmpty()
+        val name = optString("name")
+        val chapterId = optLong("id").toString()
+        return MangaChapter(
+            id = chapterId,
+            chapterLabel = buildChapterLabel(number, name),
+            chapterNumberUrl = number,
+            path = chapterPath(detailPath = detailPath, chapterId = chapterId, number = number),
+            pagesCount = 0,
+            registrationDate = formatTimestamp(optLong("createdAt", 0L)),
+            languageCode = optString("language"),
+            languageLabel = optString("language").uppercase(Locale.ROOT),
+            uploaderLabel = optString("type").toDisplayLabel(),
+        )
+    }
+
+    private fun JSONObject.toChapterSummary(summary: MangaSummary): ChapterSummary {
+        val number = opt("number")?.toString().orEmpty()
+        val name = optString("name")
+        val chapterId = optLong("id").toString()
+        val path = chapterPath(detailPath = summary.detailPath, chapterId = chapterId, number = number)
+        return ChapterSummary(
+            providerId = id,
+            mangaTitle = summary.title,
+            chapterLabel = buildChapterLabel(number, name),
+            chapterNumberUrl = number,
+            chapterId = chapterId,
+            mangaPath = summary.detailPath,
+            chapterPath = path,
+            coverUrl = summary.coverUrl,
+            registrationLabel = formatTimestamp(optLong("createdAt", 0L)),
+        )
+    }
+
+    private fun JSONArray?.toReaderPages(): List<ReaderPage> =
+        buildList {
+            val source = this@toReaderPages ?: return@buildList
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                val imageUrl = item.optString("url")
+                if (imageUrl.isBlank()) continue
+                add(
+                    ReaderPage(
+                        id = (index + 1).toString(),
+                        numberLabel = (index + 1).toString(),
+                        imageUrl = imageUrl,
+                    )
+                )
+            }
+        }
+
+    private fun JSONArray?.toCategoryOptions(group: String): List<CategoryOption> =
+        buildList {
+            val source = this@toCategoryOptions ?: return@buildList
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                val value = item.opt("id")?.toString().orEmpty()
+                val label = item.optString("name")
+                if (value.isNotBlank() && label.isNotBlank()) add(CategoryOption("$group:$value", label))
+            }
+        }
+
+    private fun JSONArray?.toFilterOptions(): List<FilterOption> =
+        buildList {
+            val source = this@toFilterOptions ?: return@buildList
+            for (index in 0 until source.length()) {
+                val item = source.optJSONObject(index) ?: continue
+                val value = item.optString("value")
+                val label = item.optString("label")
+                if (value.isNotBlank() && label.isNotBlank()) add(FilterOption(value, label))
+            }
+        }
+
+    private fun JSONArray?.toStringList(): List<String> =
+        buildList {
+            val source = this@toStringList ?: return@buildList
+            for (index in 0 until source.length()) {
+                val value = source.optString(index).trim()
+                if (value.isNotBlank()) add(value)
+            }
+        }
+
+    private fun JSONArray?.toNameList(): List<String> =
+        buildList {
+            val source = this@toNameList ?: return@buildList
+            for (index in 0 until source.length()) {
+                val value = source.optJSONObject(index)?.optString("title")
+                    ?: source.optJSONObject(index)?.optString("name")
+                    ?: ""
+                if (value.isNotBlank()) add(value)
+            }
+        }
+
+    private fun chapterPath(detailPath: String, chapterId: String, number: String): String {
+        val suffix = buildString {
+            append(chapterId)
+            append("-chapter-")
+            append(number.ifBlank { "0" }.replace(".", "-"))
+            append("-")
+            append(LANGUAGE_CODE)
+        }
+        return "${normalizePath(detailPath).trimEnd('/')}/$suffix"
+    }
+
+    private fun buildChapterLabel(number: String, name: String): String =
+        listOf(
+            number.takeIf { it.isNotBlank() }?.let { "Chapter $it" },
+            name.takeIf { it.isNotBlank() },
+        ).filterNotNull().joinToString(" - ").ifBlank { "Chapter" }
+
+    private fun extractTitleId(path: String): String =
+        normalizePath(path)
+            .substringAfter("/title/", "")
+            .substringBefore('/')
+            .substringBefore('-')
+            .ifBlank { path.substringAfterLast('.').substringBefore('/') }
+
+    private fun extractChapterId(path: String): String =
+        normalizePath(path)
+            .substringAfterLast('/')
+            .substringBefore('-')
+            .takeIf { it.all(Char::isDigit) }
+            ?: path.substringAfterLast('/').substringBefore('.')
+
+    private fun formatTimestamp(timestamp: Long): String =
+        if (timestamp <= 0L) {
+            ""
+        } else {
+            DATE_FORMATTER.format(Instant.ofEpochSecond(timestamp))
+        }
+
+    private fun String.toDisplayLabel(): String =
+        replace('_', ' ')
+            .split(' ')
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { part ->
+                part.replaceFirstChar { char ->
+                    if (char.isLowerCase()) char.titlecase(Locale.ROOT) else char.toString()
+                }
+            }
+
     private fun toAbsoluteUrl(path: String): String =
-        if (path.startsWith("http://") || path.startsWith("https://")) path else "$baseUrl${normalizePath(path)}"
+        if (path.startsWith("http://") || path.startsWith("https://")) path else "$BASE_URL${normalizePath(path)}"
 
     private fun normalizePath(path: String): String {
         if (path.isBlank()) return ""
@@ -407,55 +473,23 @@ class MangaFireProvider(
         }
     }
 
-    private fun String.urlEncode(): String =
-        java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
-
-    private data class MangaFireCard(
-        val title: String,
-        val detailPath: String,
-        val coverUrl: String,
-        val type: String,
-        val chapterPath: String,
-        val chapterLabel: String,
-        val chapterDate: String,
-        val status: String = "",
-        val periodicity: String = "",
-        val chaptersCount: String = "",
-    ) {
-        fun toMangaSummary(providerId: String): MangaSummary =
-            MangaSummary(
-                providerId = providerId,
-                title = title,
-                detailPath = detailPath,
-                coverUrl = coverUrl,
-                status = status.ifBlank { type },
-                periodicity = periodicity,
-                latestPublication = chapterDate,
-                chaptersCount = chaptersCount,
-            )
-
-        fun toChapterSummary(providerId: String, languageCode: String): ChapterSummary? {
-            if (chapterPath.isBlank() || chapterLabel.isBlank()) return null
-            if ("/$languageCode/" !in chapterPath) return null
-            return ChapterSummary(
-                providerId = providerId,
-                mangaTitle = title,
-                chapterLabel = chapterLabel,
-                chapterNumberUrl = chapterPath.substringAfterLast('/'),
-                chapterId = chapterPath.substringAfterLast('/'),
-                mangaPath = detailPath,
-                chapterPath = chapterPath,
-                coverUrl = coverUrl,
-                registrationLabel = chapterDate,
-            )
-        }
-    }
+    private data class TitleListResult(
+        val items: List<MangaSummary>,
+        val hasMore: Boolean,
+    )
 
     private companion object {
-        private const val BROWSE_PAGE_SIZE = 30
-        private const val LOG_BODY_PREVIEW_LENGTH = 300
+        private const val BASE_URL = "https://mangafire.to"
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        private const val languageCode = "en"
+        private const val LANGUAGE_CODE = "en"
+        private const val HOME_PAGE_SIZE = 30
+        private const val BROWSE_PAGE_SIZE = 30
+        private const val CHAPTER_PAGE_SIZE = 100
+        private const val MAX_CHAPTER_PAGES = 20
+        private const val HOME_CHAPTER_LOOKUP_LIMIT = 10
+        private const val DEFAULT_SORT = "chapter_updated_at:desc"
+        private val DATE_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
     }
 }
