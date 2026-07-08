@@ -78,7 +78,7 @@ class AkaiComicProvider(
         return try {
             val detailJson = webViewResolver.fetchMangaDetail(mid)
             val detail = JSONObject(detailJson).optJSONObject("manga")
-            if (detail == null) return MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", emptyList())
+            if (detail == null) return MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", chapters = emptyList())
             
             val seriesName = detail.optString("series_name", "")
             val altName = detail.optString("alternative_name", "")
@@ -104,8 +104,22 @@ class AkaiComicProvider(
                 MangaChapter("$mid/$chNum", "Chapter $chNum", chNum, normalizeStoredPath("/manga/$mid/chapter/$chNum"), 0, ch.optString("created_at") ?: "")
             }.sortedByDescending { it.chapterNumberUrl.toFloatOrNull() }
             
-            MangaDetail(id, title, title, normalizedPath, cover, banner, desc, "$genres\n$status - $mangaType ($year)", author, artist, chapters)
-        } catch (e: Exception) { MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", emptyList()) }
+            MangaDetail(
+                providerId = id,
+                identification = title,
+                title = title,
+                detailPath = normalizedPath,
+                coverUrl = cover,
+                bannerUrl = banner,
+                description = desc,
+                status = "$genres\n$status - $mangaType ($year)",
+                publicationDate = year,
+                periodicity = "",
+                authors = listOf(author),
+                artists = listOf(artist),
+                chapters = chapters,
+            )
+        } catch (e: Exception) { MangaDetail(id, mid, "?", normalizedPath, "", "", "", "", "", "", chapters = emptyList()) }
     }
 
     override fun fetchReaderData(chapterPath: String): ReaderData {

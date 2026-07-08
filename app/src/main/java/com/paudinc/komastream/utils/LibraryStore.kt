@@ -157,6 +157,7 @@ class LibraryStore(
                 lastChapterPath = manga.lastChapterPath.ifBlank { existingFavorite?.lastChapterPath ?: existingReading?.lastChapterPath.orEmpty() },
                 lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber,
                 malMangaId = manga.malMangaId ?: existingFavorite?.malMangaId ?: existingReading?.malMangaId,
+                mangaBakaId = manga.mangaBakaId ?: existingFavorite?.mangaBakaId ?: existingReading?.mangaBakaId,
                 lastReadChapterNumber = manga.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber,
                 lastReadAt = manga.lastReadAt ?: existingFavorite?.lastReadAt ?: existingReading?.lastReadAt,
             )
@@ -175,6 +176,7 @@ class LibraryStore(
                     lastChapterPath = mergedFavorite.lastChapterPath.ifBlank { saved.lastChapterPath },
                     lastProgressChapterNumber = mergedFavorite.lastProgressChapterNumber ?: saved.lastProgressChapterNumber,
                     malMangaId = mergedFavorite.malMangaId ?: saved.malMangaId,
+                    mangaBakaId = mergedFavorite.mangaBakaId ?: saved.mangaBakaId,
                     lastReadChapterNumber = mergedFavorite.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                     lastReadAt = mergedFavorite.lastReadAt ?: saved.lastReadAt,
                 ).toReadingEntity(orderIndex = saved.orderIndex)
@@ -204,6 +206,7 @@ class LibraryStore(
                 lastChapterPath = manga.lastChapterPath.ifBlank { existingReading?.lastChapterPath ?: existingFavorite?.lastChapterPath.orEmpty() },
                 lastProgressChapterNumber = manga.lastProgressChapterNumber ?: existingReading?.lastProgressChapterNumber ?: existingFavorite?.lastProgressChapterNumber,
                 malMangaId = manga.malMangaId ?: existingReading?.malMangaId ?: existingFavorite?.malMangaId,
+                mangaBakaId = manga.mangaBakaId ?: existingReading?.mangaBakaId ?: existingFavorite?.mangaBakaId,
                 lastReadChapterNumber = manga.lastReadChapterNumber ?: existingReading?.lastReadChapterNumber ?: existingFavorite?.lastReadChapterNumber,
                 lastReadAt = manga.lastReadAt ?: existingReading?.lastReadAt ?: existingFavorite?.lastReadAt,
             )
@@ -222,6 +225,7 @@ class LibraryStore(
                     lastChapterPath = mergedReading.lastChapterPath.ifBlank { saved.lastChapterPath },
                     lastProgressChapterNumber = mergedReading.lastProgressChapterNumber ?: saved.lastProgressChapterNumber,
                     malMangaId = mergedReading.malMangaId ?: saved.malMangaId,
+                    mangaBakaId = mergedReading.mangaBakaId ?: saved.mangaBakaId,
                     lastReadChapterNumber = mergedReading.lastReadChapterNumber ?: saved.lastReadChapterNumber,
                     lastReadAt = mergedReading.lastReadAt ?: saved.lastReadAt,
                 ).toFavoriteEntity(orderIndex = saved.orderIndex)
@@ -269,6 +273,32 @@ class LibraryStore(
         ensureInitialized()
         findMatchingFavoriteEntity(providerId, detailPath)?.malMangaId?.let { return it }
         return findMatchingReadingEntity(providerId, detailPath)?.malMangaId
+    }
+
+    suspend fun getMangaBakaId(providerId: String, detailPath: String): Long? {
+        ensureInitialized()
+        findMatchingFavoriteEntity(providerId, detailPath)?.mangaBakaId?.let { return it }
+        return findMatchingReadingEntity(providerId, detailPath)?.mangaBakaId
+    }
+
+    suspend fun setMangaBakaId(providerId: String, detailPath: String, mangaBakaId: Long?): Boolean {
+        ensureInitialized()
+        return database.withTransaction {
+            var changed = false
+            findMatchingFavoriteEntities(providerId, detailPath).forEach { entity ->
+                if (entity.mangaBakaId != mangaBakaId) {
+                    dao.upsertFavorite(entity.copy(mangaBakaId = mangaBakaId))
+                    changed = true
+                }
+            }
+            findMatchingReadingEntities(providerId, detailPath).forEach { entity ->
+                if (entity.mangaBakaId != mangaBakaId) {
+                    dao.upsertReading(entity.copy(mangaBakaId = mangaBakaId))
+                    changed = true
+                }
+            }
+            changed
+        }
     }
 
     suspend fun setMangaMalId(providerId: String, detailPath: String, malMangaId: Long?): Boolean {
@@ -1354,6 +1384,7 @@ class LibraryStore(
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
             lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
+            mangaBakaId = mangaBakaId,
             lastReadChapterNumber = lastReadChapterNumber,
             lastReadAt = lastReadAt,
             orderIndex = orderIndex,
@@ -1370,6 +1401,7 @@ class LibraryStore(
             lastChapterPath = canonicalChapterKey(providerId, lastChapterPath),
             lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
+            mangaBakaId = mangaBakaId,
             lastReadChapterNumber = lastReadChapterNumber,
             lastReadAt = lastReadAt,
             orderIndex = orderIndex,
@@ -1387,6 +1419,7 @@ class LibraryStore(
             lastChapterPath = lastChapterPath,
             lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
+            mangaBakaId = mangaBakaId,
             lastReadChapterNumber = lastReadChapterNumber,
             lastReadAt = lastReadAt,
         )
@@ -1402,6 +1435,7 @@ class LibraryStore(
             lastChapterPath = lastChapterPath,
             lastProgressChapterNumber = lastProgressChapterNumber,
             malMangaId = malMangaId,
+            mangaBakaId = mangaBakaId,
             lastReadChapterNumber = lastReadChapterNumber,
             lastReadAt = lastReadAt,
         )
@@ -1503,6 +1537,7 @@ class LibraryStore(
                 last_chapter_path TEXT NOT NULL,
                 last_progress_chapter_number REAL,
                 mal_manga_id INTEGER,
+                manga_baka_id INTEGER,
                 last_read_chapter_number INTEGER,
                 last_read_at INTEGER,
                 order_index INTEGER NOT NULL,
@@ -1521,6 +1556,7 @@ class LibraryStore(
                 last_chapter_path TEXT NOT NULL,
                 last_progress_chapter_number REAL,
                 mal_manga_id INTEGER,
+                manga_baka_id INTEGER,
                 last_read_chapter_number INTEGER,
                 last_read_at INTEGER,
                 order_index INTEGER NOT NULL,
@@ -1637,6 +1673,7 @@ private fun FavoriteMangaEntity.toContentValues(): ContentValues = ContentValues
     put("last_chapter_path", lastChapterPath)
     put("last_progress_chapter_number", lastProgressChapterNumber)
     put("mal_manga_id", malMangaId)
+    put("manga_baka_id", mangaBakaId)
     put("last_read_chapter_number", lastReadChapterNumber)
     put("last_read_at", lastReadAt)
     put("order_index", orderIndex)
@@ -1651,6 +1688,7 @@ private fun ReadingMangaEntity.toContentValues(): ContentValues = ContentValues(
     put("last_chapter_path", lastChapterPath)
     put("last_progress_chapter_number", lastProgressChapterNumber)
     put("mal_manga_id", malMangaId)
+    put("manga_baka_id", mangaBakaId)
     put("last_read_chapter_number", lastReadChapterNumber)
     put("last_read_at", lastReadAt)
     put("order_index", orderIndex)
@@ -1716,6 +1754,7 @@ private fun SQLiteDatabase.readFavoritesBackup(): List<FavoriteMangaEntity> =
                         lastChapterPath = cursor.getString(cursor.getColumnIndexOrThrow("last_chapter_path")),
                         lastProgressChapterNumber = cursor.getDoubleOrNull("last_progress_chapter_number"),
                         malMangaId = cursor.getLongOrNull("mal_manga_id"),
+                        mangaBakaId = cursor.getLongOrNull("manga_baka_id"),
                         lastReadChapterNumber = cursor.getIntOrNull("last_read_chapter_number"),
                         lastReadAt = cursor.getLongOrNull("last_read_at"),
                         orderIndex = cursor.getLong(cursor.getColumnIndexOrThrow("order_index")),
@@ -1739,6 +1778,7 @@ private fun SQLiteDatabase.readReadingBackup(): List<ReadingMangaEntity> =
                         lastChapterPath = cursor.getString(cursor.getColumnIndexOrThrow("last_chapter_path")),
                         lastProgressChapterNumber = cursor.getDoubleOrNull("last_progress_chapter_number"),
                         malMangaId = cursor.getLongOrNull("mal_manga_id"),
+                        mangaBakaId = cursor.getLongOrNull("manga_baka_id"),
                         lastReadChapterNumber = cursor.getIntOrNull("last_read_chapter_number"),
                         lastReadAt = cursor.getLongOrNull("last_read_at"),
                         orderIndex = cursor.getLong(cursor.getColumnIndexOrThrow("order_index")),

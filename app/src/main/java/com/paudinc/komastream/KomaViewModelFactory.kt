@@ -9,6 +9,7 @@ import com.paudinc.komastream.ui.viewmodel.KomaViewModel
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
+import com.paudinc.komastream.utils.MangaBakaMetadataResolver
 import com.paudinc.komastream.utils.MyAnimeListApi
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
@@ -21,6 +22,7 @@ class KomaViewModelFactory(
     private val workManager: WorkManager,
     private val updater: GitHubReleaseUpdater,
     private val myAnimeListApi: MyAnimeListApi,
+    private val mangaBakaMetadataResolver: MangaBakaMetadataResolver,
     private val strings: AppStrings,
     private val initialNavigationStack: List<Screen>?,
 ) : ViewModelProvider.Factory {
@@ -37,6 +39,7 @@ class KomaViewModelFactory(
             workManager = workManager,
             updater = updater,
             myAnimeListApi = myAnimeListApi,
+            mangaBakaMetadataResolver = mangaBakaMetadataResolver,
             strings = strings,
             initialNavigationStack = initialNavigationStack,
         ) as T

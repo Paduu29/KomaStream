@@ -100,6 +100,7 @@ fun KomaStream() {
             workManager = appGraph.workManager,
             updater = appGraph.updater,
             myAnimeListApi = appGraph.myAnimeListApi,
+            mangaBakaMetadataResolver = appGraph.mangaBakaMetadataResolver,
             strings = strings,
             initialNavigationStack = savedNavigationStack,
         )

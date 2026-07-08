@@ -269,6 +269,24 @@ fun DetailScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (detail.authors.isNotEmpty()) {
+                                MetadataChipGroup(
+                                    label = "Author",
+                                    items = detail.authors,
+                                )
+                            }
+                            if (detail.artists.isNotEmpty()) {
+                                MetadataChipGroup(
+                                    label = "Artist",
+                                    items = detail.artists,
+                                )
+                            }
+                            if (detail.genres.isNotEmpty()) {
+                                MetadataChipGroup(
+                                    label = "Genre",
+                                    items = detail.genres,
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 DetailStatCard(
                                     modifier = Modifier.weight(1f),
@@ -288,6 +306,14 @@ fun DetailScreen(
                                     label = strings.latest,
                                     leadingIcon = Icons.Default.History,
                                 )
+                                if (detail.mangaBakaRating != null) {
+                                    DetailStatCard(
+                                        modifier = Modifier.weight(1f),
+                                        value = String.format("%.1f", detail.mangaBakaRating),
+                                        label = "Rating",
+                                        leadingIcon = Icons.Default.Star,
+                                    )
+                                }
                             }
                             MalIdStatCard(
                                 value = malMangaId?.toString().orEmpty().ifBlank { strings.malIdNotSet },
@@ -979,6 +1005,42 @@ private fun computeDetailChapterUiData(
         unreadCount = unreadCount,
         ready = true,
     )
+}
+
+@Composable
+private fun MetadataChipGroup(
+    label: String,
+    items: List<String>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items.forEach { item ->
+                AssistChip(
+                    onClick = {},
+                    enabled = false,
+                    label = {
+                        Text(
+                            item,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+        }
+    }
 }
 
 @Composable

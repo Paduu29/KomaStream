@@ -14,6 +14,7 @@ import com.paudinc.komastream.ui.navigation.Screen
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.CachedMangaDetailSnapshot
 import com.paudinc.komastream.utils.LibraryStore
+import com.paudinc.komastream.utils.MangaBakaMetadataResolver
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ReaderPagePrefetchWorker
 import com.paudinc.komastream.utils.ProviderRegistry
@@ -45,6 +46,7 @@ class ReaderController(
     private val offlineStore: OfflineChapterStore,
     private val workManager: WorkManager,
     private val readerActionInteractor: ReaderActionInteractor,
+    private val mangaBakaMetadataResolver: MangaBakaMetadataResolver,
     private val strings: AppStrings,
 ) {
     private val tag = "ReaderController"
@@ -419,7 +421,11 @@ class ReaderController(
         Log.d(tag, "loadDetail provider=${provider.id} detailPath=$detailPath")
         runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(detailPath) } }
             .onSuccess { detail ->
-                val resolvedDetail = detail.withSelectedChapterSource(
+                val enrichedDetail = withContext(Dispatchers.IO) {
+                    val malId = libraryStore.getMangaMalId(providerId, detailPath)
+                    mangaBakaMetadataResolver.enrichDetail(detail, malId)
+                }
+                val resolvedDetail = enrichedDetail.withSelectedChapterSource(
                     preferredSourceId = preferredSourceId,
                     currentSourceId = currentSourceId,
                 )

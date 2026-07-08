@@ -19,6 +19,9 @@ interface LibraryDao {
     @Query("SELECT * FROM favorite_manga WHERE mal_manga_id = :malMangaId")
     suspend fun readFavoritesByMalId(malMangaId: Long): List<FavoriteMangaEntity>
 
+    @Query("SELECT * FROM favorite_manga WHERE manga_baka_id = :mangaBakaId")
+    suspend fun readFavoritesByMangaBakaId(mangaBakaId: Long): List<FavoriteMangaEntity>
+
     @Query("SELECT EXISTS(SELECT 1 FROM favorite_manga WHERE provider_id = :providerId AND detail_path = :detailPath LIMIT 1)")
     suspend fun hasFavorite(providerId: String, detailPath: String): Boolean
 
@@ -48,6 +51,9 @@ interface LibraryDao {
 
     @Query("SELECT * FROM reading_manga WHERE mal_manga_id = :malMangaId")
     suspend fun readReadingByMalId(malMangaId: Long): List<ReadingMangaEntity>
+
+    @Query("SELECT * FROM reading_manga WHERE manga_baka_id = :mangaBakaId")
+    suspend fun readReadingByMangaBakaId(mangaBakaId: Long): List<ReadingMangaEntity>
 
     @Query("SELECT MAX(order_index) FROM reading_manga")
     suspend fun readMaxReadingOrder(): Long?

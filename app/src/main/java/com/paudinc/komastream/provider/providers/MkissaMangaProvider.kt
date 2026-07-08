@@ -284,7 +284,7 @@ class MkissaMangaProvider(
         val normalizedPath = mkissaStoredPath(detailPath)
         val mangaId = normalizedPath.removePrefix("/manga/").substringBefore("/")
         Log.d(tag, "fetchMangaDetail detailPath=$detailPath normalizedPath=$normalizedPath mangaId=$mangaId")
-        if (mangaId.isBlank()) return MangaDetail(id, "", "?", normalizedPath, "", "", "", "", "", "", emptyList())
+        if (mangaId.isBlank()) return MangaDetail(id, "", "?", normalizedPath, "", "", "", "", "", "", chapters = emptyList())
 
         val variables = JSONObject().apply {
             put("_id", mangaId)
@@ -297,7 +297,7 @@ class MkissaMangaProvider(
         val manga = resp.optJSONObject("data")?.optJSONObject("manga")
             ?: resp.optJSONObject("data")?.optJSONObject("show")
         Log.d(tag, "fetchMangaDetail responseDataKeys=${resp.optJSONObject("data")?.keys()?.asSequence()?.toList().orEmpty()} mangaFound=${manga != null}")
-        if (manga == null) return MangaDetail(id, mangaId, "?", normalizedPath, "", "", "", "", "", "", emptyList())
+        if (manga == null) return MangaDetail(id, mangaId, "?", normalizedPath, "", "", "", "", "", "", chapters = emptyList())
 
         val title = extractTitle(manga).ifBlank { mangaId }
         val cover = jsonString(manga, "thumbnail")
