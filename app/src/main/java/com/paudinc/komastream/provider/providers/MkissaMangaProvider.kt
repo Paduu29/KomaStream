@@ -8,8 +8,11 @@ import com.paudinc.komastream.utils.LibrarySettingsState
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -28,8 +31,9 @@ class MkissaMangaProvider(
     override val websiteUrl = "https://mkissa.to/manga"
     override val logoUrl = "https://mkissa.to/favicon-32x32.png"
 
-    private val apiBase = "https://api.allanime.day/api"
     private val pageUrl = "https://mkissa.to/manga"
+
+    @Volatile private var cryptoBootstrap: CryptoBootstrap? = null
 
     private val hardcodedHashes = mapOf(
         "recent" to "c9d17db5fa0b87db21b90bc34db800dddf4e0be683a6cbd3b88d3f9d54968db9",
@@ -55,6 +59,73 @@ class MkissaMangaProvider(
         private const val AES_PASSPHRASE = "Xot36i3lK3:v1"
         private const val USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0"
         private const val DEFAULT_IMAGE_HOST = "aln.youtube-anime.com"
+        private const val CRYPTO_BUCKET_MS = 5 * 60 * 1000L
+        private const val CRYPTO_CONFIG_MAX_AGE_MS = 6 * 60 * 60 * 1000L
+
+        private val MANGA_DETAIL_QUERY = """
+            query(${ '$' }_id: String!, ${ '$' }search: SearchInput) {
+              manga(_id: ${ '$' }_id, search: ${ '$' }search) {
+                _id
+                type
+                englishName
+                name
+                nativeName
+                nameOnlyString
+                altNames
+                description
+                thumbnail
+                banner
+                genres
+                status
+                airedStart
+                authors
+                availableChaptersDetail
+                availableChapters
+                isAdult
+              }
+            }
+        """.trimIndent()
+
+        private val CHAPTER_PAGES_QUERY = """
+            query(
+              ${ '$' }mangaId: String!
+              ${ '$' }translationType: VaildTranslationTypeMangaEnumType!
+              ${ '$' }chapterString: String!
+              ${ '$' }page: Int
+              ${ '$' }limit: Int!
+              ${ '$' }offset: Int
+            ) {
+              chapterPages(
+                mangaId: ${ '$' }mangaId
+                translationType: ${ '$' }translationType
+                chapterString: ${ '$' }chapterString
+                page: ${ '$' }page
+                limit: ${ '$' }limit
+                offset: ${ '$' }offset
+              ) {
+                edges {
+                  streamerId
+                  sourceName
+                  chapterString
+                  pictureUrls
+                  pictureUrlsProcessed
+                  pictureUrlHead
+                  sourceUrl
+                  priority
+                  versionFix
+                }
+                pageInfo { total }
+                manga {
+                  _id
+                  englishName
+                  name
+                  nativeName
+                  thumbnail
+                  countryOfOrigin
+                }
+              }
+            }
+        """.trimIndent()
 
         private val ALLOWED_IMAGE_HOSTS = setOf(
             "wp.youtube-anime.com",
@@ -402,6 +473,7 @@ class MkissaMangaProvider(
                 put("mangaId", mangaId)
                 put("translationType", "sub")
                 put("chapterString", cn)
+                put("page", 1)
                 put("limit", 100)
                 put("offset", 0)
             }
@@ -411,7 +483,7 @@ class MkissaMangaProvider(
             val m = data.optString("_m", "")
             Log.d(tag, "fetchReaderData chapterString=$cn dataKeys=${data.keys().asSequence().toList()} hasBlob=${tobeparsed.isNotBlank()} mode=$m")
 
-            if (tobeparsed.isNotBlank() && m == "b7") {
+            if (tobeparsed.isNotBlank()) {
                 val decrypted = decryptAllAnime(tobeparsed)
                 Log.d(tag, "fetchReaderData decryptedPrefix=${decrypted.take(120)}")
                 val pages = parsePagesFromDecrypted(decrypted)
@@ -597,12 +669,14 @@ class MkissaMangaProvider(
             }
             val resp = apiRequest(variables, "recommendations")
             val edges = resp.optJSONObject("data")?.optJSONObject("queryTags")?.optJSONArray("edges") ?: JSONArray()
+            val seenMangaIds = mutableSetOf<String>()
             (0 until edges.length()).mapNotNull { i ->
                 val tag = edges.optJSONObject(i) ?: return@mapNotNull null
                 val sample = tag.optJSONObject("sampleManga") ?: return@mapNotNull null
                 val id_ = jsonString(sample, "_id")
+                if (id_.isBlank() || !seenMangaIds.add(id_)) return@mapNotNull null
                 val title = extractTitle(sample).ifBlank { fetchMangaTitle(id_) }
-                if (id_.isBlank() || title.isBlank()) return@mapNotNull null
+                if (title.isBlank()) return@mapNotNull null
                 MangaSummary(
                     providerId = id,
                     title = title,
@@ -834,12 +908,30 @@ class MkissaMangaProvider(
                     val pages = mutableListOf<ReaderPage>()
                     for (edgeIndex in 0 until edges.length()) {
                         val edge = edges.optJSONObject(edgeIndex) ?: continue
-                        val pictureUrls = edge.optJSONArray("pictureUrls") ?: continue
+                        val pictureUrls = edge.optJSONArray("pictureUrlsProcessed")
+                            ?.takeIf { it.length() > 0 }
+                            ?: edge.optJSONArray("pictureUrls")
+                            ?: continue
+                        val pictureUrlHead = jsonString(edge, "pictureUrlHead")
                         for (i in 0 until pictureUrls.length()) {
-                            val pic = pictureUrls.optJSONObject(i) ?: continue
-                            val url = jsonString(pic, "url")
+                            val raw = pictureUrls.opt(i)
+                            val url = when (raw) {
+                                is JSONObject -> jsonString(raw, "url")
+                                    .ifBlank { jsonString(raw, "img") }
+                                    .ifBlank { jsonString(raw, "src") }
+                                is String -> raw
+                                else -> ""
+                            }.let { value ->
+                                if (value.isNotBlank() && !value.startsWith("http") && !value.startsWith("//") && pictureUrlHead.isNotBlank()) {
+                                    "${pictureUrlHead.trimEnd('/')}/${value.trimStart('/')}"
+                                } else {
+                                    value
+                                }
+                            }
                             if (url.isBlank()) continue
-                            val pageNumber = jsonString(pic, "num").ifBlank { (pages.size + 1).toString() }
+                            val pageNumber = (raw as? JSONObject)?.let { jsonString(it, "num") }
+                                .orEmpty()
+                                .ifBlank { (pages.size + 1).toString() }
                             pages.add(ReaderPage(pages.size.toString(), pageNumber, normalizeImageUrl(url)))
                         }
                     }
@@ -885,7 +977,14 @@ class MkissaMangaProvider(
         val hash = hashForKey(hashKey)
         if (hash.isBlank()) return JSONObject()
 
-        var result = executeApiRequest(variables, hash)
+        val fallbackQuery = when (hashKey) {
+            "mangaDetail" -> MANGA_DETAIL_QUERY
+            "chapterSources" -> CHAPTER_PAGES_QUERY
+            else -> null
+        }
+        val protectedQuery = hashKey == "chapterSources"
+
+        var result = executeApiRequest(variables, hash, fallbackQuery, protectedQuery)
         if (hasValidData(result)) return result
 
         if (!hashDiscoveryAttempted) {
@@ -893,7 +992,7 @@ class MkissaMangaProvider(
             if (discoveredHashes.isNotEmpty()) {
                 for (discovered in discoveredHashes) {
                     if (discovered == hash || discovered in workingHashCache.values) continue
-                    result = executeApiRequest(variables, discovered)
+                    result = executeApiRequest(variables, discovered, fallbackQuery, protectedQuery)
                     if (hasValidData(result)) {
                         workingHashCache[hashKey] = discovered
                         return result
@@ -907,33 +1006,117 @@ class MkissaMangaProvider(
 
     private fun hasValidData(json: JSONObject): Boolean {
         val data = json.optJSONObject("data")
-        return data != null && data.length() > 0
+        val errors = json.optJSONArray("errors")
+        return data != null && data.length() > 0 && (errors == null || errors.length() == 0)
     }
 
-    private fun executeApiRequest(variables: JSONObject, sha256Hash: String): JSONObject {
+    private fun executeApiRequest(
+        variables: JSONObject,
+        sha256Hash: String,
+        fallbackQuery: String?,
+        protectedQuery: Boolean,
+    ): JSONObject {
+        var lastResponse = JSONObject()
+        repeat(2) { attempt ->
+            try {
+                val bootstrap = getCryptoBootstrap(forceRefresh = attempt > 0)
+                val response = performApiRequest(variables, sha256Hash, bootstrap, protectedQuery)
+                lastResponse = response
+                if (hasValidData(response)) return response
+
+                if (fallbackQuery != null) {
+                    val queryHash = sha256(fallbackQuery)
+                    val postResponse = performApiPost(
+                        variables = variables,
+                        query = fallbackQuery,
+                        sha256Hash = queryHash,
+                        bootstrap = bootstrap,
+                        protectedQuery = protectedQuery,
+                    )
+                    lastResponse = postResponse
+                    if (hasValidData(postResponse)) return postResponse
+                }
+
+                if (attempt == 0 && (response.hasCryptoError() || response.hasNoGraphQlData())) {
+                    invalidateCryptoBootstrap()
+                    return@repeat
+                }
+                return lastResponse
+            } catch (error: Exception) {
+                Log.w(tag, "MKissa API request attempt ${attempt + 1} failed", error)
+                if (attempt == 0 && error.shouldRefreshCryptoConfig()) {
+                    invalidateCryptoBootstrap()
+                    return@repeat
+                }
+                return lastResponse
+            }
+        }
+        return lastResponse
+    }
+
+    private fun performApiRequest(
+        variables: JSONObject,
+        sha256Hash: String,
+        bootstrap: CryptoBootstrap,
+        protectedQuery: Boolean,
+    ): JSONObject {
         val varsEncoded = URLEncoder.encode(variables.toString(), "UTF-8")
         val extensions = JSONObject().apply {
             put("persistedQuery", JSONObject().apply {
                 put("version", 1)
                 put("sha256Hash", sha256Hash)
             })
+            if (protectedQuery) put("aaReq", createCryptoRequest(sha256Hash, bootstrap))
         }
         val extEncoded = URLEncoder.encode(extensions.toString(), "UTF-8")
-        val url = "$apiBase?variables=$varsEncoded&extensions=$extEncoded"
-        Log.d(tag, "apiRequest hashKeyUrl=$url")
+        val url = "${bootstrap.apiUrl}?variables=$varsEncoded&extensions=$extEncoded"
 
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .header("Origin", "https://mkissa.to")
             .header("Referer", "https://mkissa.to/manga")
+            .header("x-build-id", bootstrap.buildId)
             .build()
-        return try {
-            http.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful || body.isBlank()) JSONObject()
-                else JSONObject(body)
-            }
-        } catch (_: Exception) { JSONObject() }
+        return executeJsonRequest(request)
+    }
+
+    private fun performApiPost(
+        variables: JSONObject,
+        query: String,
+        sha256Hash: String,
+        bootstrap: CryptoBootstrap,
+        protectedQuery: Boolean,
+    ): JSONObject {
+        val extensions = JSONObject()
+            .put("persistedQuery", JSONObject().put("version", 1).put("sha256Hash", sha256Hash))
+        if (protectedQuery) extensions.put("aaReq", createCryptoRequest(sha256Hash, bootstrap))
+        val body = JSONObject()
+            .put("query", query)
+            .put("variables", variables)
+            .put("extensions", extensions)
+            .toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder()
+            .url(bootstrap.apiUrl)
+            .post(body)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .header("Origin", "https://mkissa.to")
+            .header("Referer", "https://mkissa.to/manga")
+            .header("x-build-id", bootstrap.buildId)
+            .build()
+        return executeJsonRequest(request)
+    }
+
+    private fun executeJsonRequest(request: Request): JSONObject {
+        http.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IOException("MKissa API returned HTTP ${response.code}")
+            if (body.isBlank()) throw IOException("MKissa API returned an empty response")
+            return JSONObject(body)
+        }
     }
 
     private fun decryptAllAnime(blobBase64: String): String {
@@ -945,41 +1128,176 @@ class MkissaMangaProvider(
 
         val iv = bytes.copyOfRange(1, 13)
         val cipherText = bytes.copyOfRange(13, bytes.size)
-        val key = MessageDigest.getInstance("SHA-256")
+        val rotatingKey = cryptoBootstrap?.key ?: getCryptoBootstrap(forceRefresh = false).key
+        val legacyKey = MessageDigest.getInstance("SHA-256")
             .digest("Xot36i3lK3:v$version".toByteArray(Charsets.UTF_8))
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
-        return String(cipher.doFinal(cipherText), Charsets.UTF_8)
+        val decrypted = sequenceOf(rotatingKey, legacyKey).mapNotNull { key ->
+            runCatching {
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+                cipher.doFinal(cipherText)
+            }.getOrNull()
+        }.firstOrNull() ?: return ""
+        return String(decrypted, Charsets.UTF_8)
     }
+
+    private fun JSONObject.hasCryptoError(): Boolean {
+        val errors = optJSONArray("errors") ?: return false
+        return (0 until errors.length()).mapNotNull { errors.optJSONObject(it) }.any { error ->
+            val message = error.optString("message")
+            val code = error.optJSONObject("extensions")?.optString("code").orEmpty()
+            sequenceOf(message, code).any { value ->
+                value.contains("AA_CRYPTO_", ignoreCase = true) ||
+                    value.contains("BUILD_MISMATCH", ignoreCase = true) ||
+                    value.contains("INVALID_BUILD", ignoreCase = true) ||
+                    value.contains("STALE_BUILD", ignoreCase = true) ||
+                    value.contains("x-build-id", ignoreCase = true)
+            }
+        }
+    }
+
+    private fun JSONObject.hasNoGraphQlData(): Boolean = !has("data") || isNull("data")
+
+    private fun Exception.shouldRefreshCryptoConfig(): Boolean =
+        this is IOException || this is org.json.JSONException
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun createCryptoRequest(queryHash: String, bootstrap: CryptoBootstrap): String {
+        val timestamp = System.currentTimeMillis() / CRYPTO_BUCKET_MS * CRYPTO_BUCKET_MS
+        val iv = MessageDigest.getInstance("SHA-256")
+            .digest("${bootstrap.epoch}:${bootstrap.buildId}:$queryHash:$timestamp".toByteArray(Charsets.UTF_8))
+            .copyOfRange(0, 12)
+        val payload = """{"v":1,"ts":$timestamp,"epoch":${bootstrap.epoch},"buildId":"${bootstrap.buildId}","qh":"$queryHash"}"""
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(bootstrap.key, "AES"), GCMParameterSpec(128, iv))
+        val encrypted = cipher.doFinal(payload.toByteArray(Charsets.UTF_8))
+        return android.util.Base64.encodeToString(byteArrayOf(1) + iv + encrypted, android.util.Base64.NO_WRAP)
+    }
+
+    @Synchronized
+    private fun getCryptoBootstrap(forceRefresh: Boolean): CryptoBootstrap {
+        val now = System.currentTimeMillis()
+        cryptoBootstrap?.takeIf { !forceRefresh && it.isFresh(now) }?.let { return it }
+        return fetchCryptoBootstrap().also { cryptoBootstrap = it }
+    }
+
+    private fun invalidateCryptoBootstrap() {
+        cryptoBootstrap = null
+    }
+
+    private fun fetchCryptoBootstrap(): CryptoBootstrap {
+        val html = fetchPage(pageUrl)
+        val markerIndex = html.indexOf("window.__aaCrypto")
+        val valueStart = if (markerIndex >= 0) html.indexOf('=', markerIndex) else -1
+        val valueEnd = if (valueStart >= 0) html.indexOf(';', valueStart + 1) else -1
+        if (valueStart < 0 || valueEnd < 0) throw IOException("MKissa crypto bootstrap was not found")
+        val json = JSONObject(html.substring(valueStart + 1, valueEnd).trim())
+        val epoch = json.optLong("epoch", -1L)
+        val switchAt = json.optLong("switchAt", 0L)
+        val partB = json.optString("partB")
+        if (epoch < 0 || switchAt <= 0 || partB.isBlank()) throw IOException("MKissa crypto bootstrap is invalid")
+        val bundle = fetchBundleCryptoConfig(html)
+            ?: throw IOException("MKissa crypto bundle config was not found")
+        val encodedKey = android.util.Base64.decode(partB, android.util.Base64.DEFAULT)
+        if (encodedKey.size < 32 || bundle.mask.isEmpty()) throw IOException("MKissa crypto key is invalid")
+        val key = ByteArray(32) { index ->
+            (encodedKey[index].toInt() xor bundle.mask[index % bundle.mask.size].toInt()).toByte()
+        }
+        return CryptoBootstrap(epoch, switchAt, System.currentTimeMillis(), bundle.buildId, key, bundle.apiUrl)
+    }
+
+    private fun fetchBundleCryptoConfig(html: String): BundleCryptoConfig? {
+        val entryUrl = Regex("""https://[^\"']+/entry/app\.[^\"']+\.js""").find(html)?.value ?: return null
+        val app = runCatching { fetchPage(entryUrl) }.getOrNull() ?: return null
+        val assetBase = entryUrl.substringBeforeLast("/entry/")
+        val chunkUrls = Regex("""\.\./chunks/[^\"']+\.js""")
+            .findAll(app)
+            .map { "$assetBase/${it.value.removePrefix("../")}" }
+            .distinct()
+            .toList()
+        return (sequenceOf(app) + chunkUrls.asSequence().mapNotNull { runCatching { fetchPage(it) }.getOrNull() })
+            .filter { it.contains("aaReq") }
+            .mapNotNull(::parseBundleCryptoConfig)
+            .firstOrNull()
+    }
+
+    private fun parseBundleCryptoConfig(script: String): BundleCryptoConfig? {
+        val apiUrl = Regex("""https://[A-Za-z0-9.-]+(?::\d+)?/api/?""")
+            .find(script)?.value?.normalizedApiUrl() ?: return null
+        val legacyMask = Regex("""const\s+bd\s*=\s*[\"']([0-9a-fA-F]{64})[\"']""")
+            .find(script)?.groupValues?.getOrNull(1)
+        val legacyBuildId = Regex("""\bfr\s*=.{0,160}?[\"'](\d+)[\"']""")
+            .find(script)?.groupValues?.getOrNull(1)
+        if (legacyMask != null && legacyBuildId != null) {
+            return BundleCryptoConfig(legacyBuildId, legacyMask.hexBytes() ?: return null, apiUrl)
+        }
+        val guarded = Regex(
+            """[\"']([0-9a-fA-F]{64})[\"']\s*:\s*[\"']{2}\s*,\s*[A-Za-z_$][\w$]*\s*=.{0,160}?[\"'](\d+)[\"']\s*:\s*[\"']{2}"""
+        ).find(script) ?: return null
+        return BundleCryptoConfig(guarded.groupValues[2], guarded.groupValues[1].hexBytes() ?: return null, apiUrl)
+    }
+
+    private fun String.hexBytes(): ByteArray? {
+        if (isBlank() || length % 2 != 0) return null
+        return runCatching { chunked(2).map { it.toInt(16).toByte() }.toByteArray() }.getOrNull()
+    }
+
+    private fun String.normalizedApiUrl(): String? {
+        val uri = Uri.parse(this)
+        if (!uri.scheme.equals("https", ignoreCase = true) || uri.host.isNullOrBlank()) return null
+        if (uri.path.orEmpty().trimEnd('/') != "/api") return null
+        return "https://${uri.authority}/api"
+    }
+
+    private data class CryptoBootstrap(
+        val epoch: Long,
+        val switchAt: Long,
+        val fetchedAt: Long,
+        val buildId: String,
+        val key: ByteArray,
+        val apiUrl: String,
+    ) {
+        fun isFresh(now: Long): Boolean = now < switchAt && now - fetchedAt in 0 until CRYPTO_CONFIG_MAX_AGE_MS
+    }
+
+    private data class BundleCryptoConfig(val buildId: String, val mask: ByteArray, val apiUrl: String)
 
     private fun normalizeImageUrl(url: String): String {
         val cleanUrl = cleanString(url)
         if (cleanUrl.isBlank()) return ""
-        if (cleanUrl.startsWith("https://wp.youtube-anime.com/")) return cleanUrl
-        if (cleanUrl.startsWith("//")) return wrapMkissaImagePath(cleanUrl.removePrefix("//"))
+        if (cleanUrl.startsWith("//")) return normalizeImageUrl("https:$cleanUrl")
         if (cleanUrl.startsWith("http")) {
             val uri = Uri.parse(cleanUrl)
-            val host = uri.host.orEmpty().trim()
-            val path = uri.encodedPath.orEmpty().trimStart('/')
+            val host = uri.host.orEmpty().trim().lowercase()
+            var path = uri.encodedPath.orEmpty().trimStart('/')
             val query = uri.encodedQuery?.let { "?$it" }.orEmpty()
             if (host.isBlank()) return cleanUrl
-            return if (host.contains("youtube-anime.com")) {
-                wrapMkissaImagePath(path + query)
+            return if (host == "wp.youtube-anime.com" || host.endsWith(".youtube-anime.com")) {
+                path = path
+                    .removePrefix("https://")
+                    .removePrefix("http://")
+                    .removePrefix("wp.youtube-anime.com/")
+                    .removePrefix("aln.youtube-anime.com/")
+                    .trimStart('/')
+                directMkissaImageUrl(path + query)
             } else {
                 cleanUrl
             }
         }
-        return wrapMkissaImagePath(cleanUrl.trimStart('/'))
+        return directMkissaImageUrl(cleanUrl.trimStart('/'))
     }
 
-    private fun wrapMkissaImagePath(path: String): String {
+    private fun directMkissaImageUrl(path: String): String {
         val cleanPath = path.trim()
             .removePrefix("https://")
             .removePrefix("http://")
             .removePrefix("wp.youtube-anime.com/")
             .removePrefix("aln.youtube-anime.com/")
             .trimStart('/')
-        return "https://wp.youtube-anime.com/aln.youtube-anime.com/${cleanPath}"
+        return "https://$DEFAULT_IMAGE_HOST/$cleanPath"
     }
 
     fun imageRequestHeaders(): okhttp3.Headers {

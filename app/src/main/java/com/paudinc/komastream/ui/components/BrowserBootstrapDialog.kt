@@ -57,23 +57,18 @@ fun BrowserBootstrapDialog(
         Log.d(tag, "open url=$url")
         var lastCookieHeader = ""
         var lastCookieChangeAt = 0L
-        var firstClearanceSeenAt = 0L
         while (true) {
             val cookieHeader = WebkitCookieManager.getInstance().getCookie(url).orEmpty()
             Log.d(tag, "poll cookies=${cookieHeader.ifBlank { "<empty>" }}")
             if (cookieHeader != lastCookieHeader) {
                 lastCookieHeader = cookieHeader
                 lastCookieChangeAt = System.currentTimeMillis()
-                if (cookieHeader.contains("cf_clearance=") && firstClearanceSeenAt == 0L) {
-                    firstClearanceSeenAt = System.currentTimeMillis()
-                    Log.d(tag, "cf_clearance first seen, waiting for page completion")
-                }
             }
             val hasClearance = cookieHeader.contains("cf_clearance=")
             val settledForMs = System.currentTimeMillis() - lastCookieChangeAt
-            val clearanceAgeMs = if (firstClearanceSeenAt == 0L) 0L else System.currentTimeMillis() - firstClearanceSeenAt
-            if (hasClearance && pageFinished && clearanceAgeMs >= 1500L && settledForMs >= 500L) {
-                Log.d(tag, "cf_clearance settled for ${settledForMs}ms after ${clearanceAgeMs}ms, closing dialog")
+            if (hasClearance && pageFinished && settledForMs >= 2_000L) {
+                WebkitCookieManager.getInstance().flush()
+                Log.d(tag, "cf_clearance settled for ${settledForMs}ms, closing dialog")
                 delay(200.milliseconds)
                 latestOnClose()
                 break

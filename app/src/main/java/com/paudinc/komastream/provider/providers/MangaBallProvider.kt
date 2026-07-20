@@ -25,6 +25,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.io.IOException
 import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.HttpCookie
@@ -298,7 +299,6 @@ class MangaBallProvider(
     }
 
     override fun downloadBytes(url: String, referer: String?): ByteArray {
-        ensureCloudflareReady()
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
@@ -309,7 +309,16 @@ class MangaBallProvider(
             }
             .build()
         client.newCall(request).execute().use { response ->
-            return response.body?.bytes() ?: ByteArray(0)
+            val bytes = response.body?.bytes() ?: ByteArray(0)
+            if (response.header("Content-Type").orEmpty().contains("text/html", ignoreCase = true) &&
+                looksLikeCloudflareChallenge(bytes.toString(Charsets.UTF_8))
+            ) {
+                onCloudflareChallenge("image ${request.url}")
+            }
+            if (!response.isSuccessful) {
+                throw IOException("MangaBall returned HTTP ${response.code} for ${request.url}")
+            }
+            return bytes
         }
     }
 
@@ -360,11 +369,6 @@ class MangaBallProvider(
         return true
     }
 
-    private fun ensureCloudflareReady() {
-        if (cloudflareReady) return
-        waitForCloudflareCookie()
-    }
-
     private fun snapshotWebkitCookies(): String {
         return runCatching {
             webkitCookieManager.setAcceptCookie(true)
@@ -400,7 +404,6 @@ class MangaBallProvider(
     private fun ensureSession() {
         synchronized(sessionLock) {
             ensureAdultCookie()
-            ensureCloudflareReady()
             if (csrfToken != null) return
             val document = getDocument("/")
             csrfToken = document.selectFirst("meta[name=csrf-token]")?.attr("content")?.trim()
@@ -559,16 +562,20 @@ class MangaBallProvider(
     }
 
     private fun getDocument(path: String): Document {
-        ensureCloudflareReady()
         val request = Request.Builder()
             .url(path.toAbsoluteUrl())
             .header("User-Agent", USER_AGENT)
             .build()
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
-            if (body.isBlank() || body.contains("Just a moment", ignoreCase = true)) {
-                invalidateCaches()
-                throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+            if (looksLikeCloudflareChallenge(body)) {
+                onCloudflareChallenge(path)
+            }
+            if (!response.isSuccessful) {
+                throw IOException("MangaBall returned HTTP ${response.code} for $path")
+            }
+            if (body.isBlank()) {
+                throw IllegalStateException("MangaBall returned an empty page for $path")
             }
             return Jsoup.parse(body, baseUrl)
         }
@@ -594,15 +601,22 @@ class MangaBallProvider(
             val trimmed = responseBody.trimStart()
             if (!trimmed.startsWith("{")) {
                 if (looksLikeCloudflareChallenge(trimmed)) {
-                    invalidateCaches()
-                    throw IllegalStateException("Cloudflare challenge still active for MangaBall")
+                    onCloudflareChallenge(path)
                 }
                 throw IllegalStateException(
                     "Expected JSON from $path but received ${trimmed.take(80)}"
                 )
             }
+            if (!response.isSuccessful) {
+                throw IOException("MangaBall returned HTTP ${response.code} for $path")
+            }
             return JSONObject(responseBody)
         }
+    }
+
+    private fun onCloudflareChallenge(path: String): Nothing {
+        invalidateCaches()
+        throw IllegalStateException("Cloudflare challenge still active for MangaBall: $path")
     }
 
     private fun JSONArray.toMangaSummaries(): List<MangaSummary> = buildList(length()) {
@@ -625,10 +639,13 @@ class MangaBallProvider(
 
     private fun looksLikeCloudflareChallenge(body: String): Boolean {
         val lower = body.lowercase()
-        return lower.contains("just a moment") ||
-            lower.contains("cf-browser-verification") ||
-            lower.contains("challenge-platform") ||
-            lower.contains("cloudflare")
+        return "just a moment" in lower ||
+            "cf-browser-verification" in lower ||
+            "cf-chl-" in lower ||
+            "_cf_chl_opt" in lower ||
+            ("attention required" in lower && "cloudflare" in lower) ||
+            ("verify you are human" in lower && "cloudflare" in lower) ||
+            ("error code: 1020" in lower && "cloudflare" in lower)
     }
 
     private fun String.toAbsoluteUrl(): String {

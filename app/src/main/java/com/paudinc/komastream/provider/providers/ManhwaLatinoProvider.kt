@@ -338,7 +338,15 @@ class ManhwaLatinoProvider(
         return runCatching {
             webkitCookieManager.setAcceptCookie(true)
             webkitCookieManager.flush()
-            webkitCookieManager.getCookie(baseUrl).orEmpty()
+            listOf(
+                webkitCookieManager.getCookie(baseUrl).orEmpty(),
+                webkitCookieManager.getCookie("https://www.manhwa-latino.com").orEmpty(),
+            )
+                .flatMap { it.split(';') }
+                .map { it.trim() }
+                .filter { it.isNotBlank() && it.contains('=') }
+                .distinctBy { it.substringBefore('=') }
+                .joinToString("; ")
         }.getOrElse { throwable ->
             ""
         }
@@ -360,7 +368,10 @@ class ManhwaLatinoProvider(
                     cookieManager.cookieStore.add(
                         uri,
                         HttpCookie(name, value).apply {
-                            domain = uri.host
+                            // Cloudflare may set the cookie on either the apex
+                            // host or www; use the parent domain so OkHttp sends
+                            // it to both variants.
+                            domain = ".manhwa-latino.com"
                             path = "/"
                         },
                     )
