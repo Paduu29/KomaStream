@@ -31,26 +31,21 @@ class LeerMangaEspProvider(
     private val client: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
     override val id: String = "leermangaesp-es"
-    override val displayName: String = "LeerMangaEsp"
+    override val displayName: String = "MangaLect"
     override val language: AppLanguage = AppLanguage.ES
-    override val websiteUrl: String = "https://leermangaesp.net"
-    override val logoUrl: String = "https://leermangaesp.net/static/mi_app_public/images/icon.282eadc55615.webp"
+    override val websiteUrl: String = "https://mangalect.org"
+    override val logoUrl: String = "https://mangalect.org/static/lect_assets/images/favicon.3c4a81cddcab.png"
 
-    private val baseUrl = "https://leermangaesp.net"
-    private val imageBaseUrl = "https://images.leermangaesp.net/file/leermangaesp"
+    private val baseUrl = "https://mangalect.org"
+    private val imageBaseUrl = "https://images.mangalect.org/file/leermangaesp"
     override fun fetchHomeFeed(): HomeFeed {
         val homeDocument = getDocument("/")
         val featuredMangas = parseFeaturedMangas(homeDocument)
-        val popularMangas = parseHomeMangaSection(homeDocument, "populares-grid")
-        val latestUpdates = parseHomeChapterSection(homeDocument, "capitulos-recientes-grid")
-        val latestAdded = parseHomeMangaSection(homeDocument, "ultimos-anadidos")
+        val popularMangas = parseHomeMangaSection(homeDocument, "trending-grid")
+        val latestUpdates = parseHomeChapterSection(homeDocument, "latest-releases-grid")
+        val latestAdded = parseHomeMangaSection(homeDocument, "recent-additions")
         val fallbackLatestUpdates = latestUpdates.ifEmpty {
-            val latestItems = JSONArray(getText("/api/latest_chapters_with_dates/"))
-            buildList(latestItems.length()) {
-                for (index in 0 until latestItems.length()) {
-                    add(latestItems.getJSONObject(index).toLatestChapterSummary())
-                }
-            }
+            fetchLatestChapterPage(page = 1, take = HOME_SECTION_PAGE_SIZE)
         }
         val fallbackPopularMangas = popularMangas.ifEmpty {
             fetchCatalogPage(page = 1, query = "", categoryIds = emptyList(), take = 20).items
@@ -145,7 +140,7 @@ class LeerMangaEspProvider(
         val infoBlocks = document.select(".manga-details-wrapper .info-block")
             .map { it.text().trim() }
             .filter { it.isNotBlank() }
-        val status = infoBlocks.getOrNull(1).orEmpty()
+        val status = document.selectFirst(".status-text")?.text()?.trim().orEmpty()
         val alternateTitle = infoBlocks.firstOrNull().orEmpty()
         val description = buildString {
             append(document.selectFirst(".synopsis")?.text()?.trim().orEmpty())
@@ -173,13 +168,14 @@ class LeerMangaEspProvider(
     override fun fetchReaderData(chapterPath: String): ReaderData {
         val normalizedPath = normalizePath(chapterPath)
         val document = getDocument(normalizedPath)
-        val chapterTitle = document.selectFirst("h1")?.text()?.trim().orEmpty()
-        val mangaLink = document.select("a[href^=/manga/]")
+        val chapterTitle = document.selectFirst(".sub-chapter-title")?.text()?.trim()
+            ?: document.selectFirst("h1")?.text()?.trim().orEmpty()
+        val mangaLink = document.select("a[href^=/info/]")
             .firstOrNull { it.text().isNotBlank() && !it.text().contains("volver", ignoreCase = true) }
         val mangaDetailPath = normalizePath(mangaLink?.attr("href").orEmpty())
         val mangaTitle = mangaLink?.text()?.trim().orEmpty()
             .ifBlank { chapterTitle.substringBefore(" Capitulo").substringBefore(" Capítulo").trim() }
-        val navigationLinks = document.select("a[href^=/leer-m/]")
+        val navigationLinks = document.select("a[href^=/lectura/]")
             .map { it.attr("href").trim() }
             .distinct()
         val currentValue = chapterValueFromPath(normalizedPath)
@@ -281,6 +277,7 @@ class LeerMangaEspProvider(
             .build()
         val raw = getText(url.toString()).trim()
         if (raw.isBlank()) return emptyList()
+        val isUnpaginatedArray = raw.startsWith("[")
         val items = when {
             raw.startsWith("[") -> JSONArray(raw)
             raw.startsWith("{") -> JSONObject(raw).optJSONArray("resultados")
@@ -289,8 +286,10 @@ class LeerMangaEspProvider(
                 ?: JSONArray()
             else -> JSONArray()
         }
-        return buildList(items.length()) {
-            for (index in 0 until items.length()) {
+        val startIndex = if (isUnpaginatedArray) ((page - 1) * take).coerceAtMost(items.length()) else 0
+        val endIndex = if (isUnpaginatedArray) (startIndex + take).coerceAtMost(items.length()) else items.length()
+        return buildList(endIndex - startIndex) {
+            for (index in startIndex until endIndex) {
                 add(items.getJSONObject(index).toLatestChapterSummary())
             }
         }
@@ -344,7 +343,7 @@ class LeerMangaEspProvider(
         return MangaSummary(
             providerId = id,
             title = optString("titulo"),
-            detailPath = "/manga/$slug/",
+            detailPath = "/info/$slug/",
             coverUrl = portadaUrl(coverPath),
             status = demography,
             contentType = type,
@@ -362,21 +361,21 @@ class LeerMangaEspProvider(
             chapterLabel = "Capitulo ${formatChapterNumber(latestChapter)}",
             chapterNumberUrl = chapterSegment,
             chapterId = chapterSegment,
-            mangaPath = "/manga/$slug/",
-            chapterPath = "/leer-m/$slug/$chapterSegment/",
+            mangaPath = "/info/$slug/",
+            chapterPath = "/lectura/$slug/$chapterSegment/",
             coverUrl = portadaUrl(optString("portada")),
             registrationLabel = optString("fecha_publicacion"),
         )
     }
 
     private fun parseFeaturedMangas(document: Document): List<MangaSummary> {
-        return document.select(".carousel-container-principal .carousel .slide a[href]")
+        return document.select(".bento-grid-promo .bento-block a[href^=/info/]")
             .mapNotNull { link ->
                 val detailPath = normalizePath(link.attr("href"))
-                val title = link.selectFirst(".slide-content h3")?.text()?.trim().orEmpty()
+                val title = link.selectFirst(".bento-caption h3")?.text()?.trim().orEmpty()
                 val coverUrl = link.selectFirst("img")?.let(::imageUrlFromElement).orEmpty()
-                val demography = link.selectFirst(".demografia-tag")?.text()?.trim().orEmpty()
-                val genres = link.select(".genre-tag")
+                val demography = link.selectFirst(".demographic-tag")?.text()?.trim().orEmpty()
+                val genres = link.select(".genre-pill")
                     .map { it.text().trim() }
                     .filter { it.isNotBlank() }
                     .take(4)
@@ -395,14 +394,14 @@ class LeerMangaEspProvider(
     }
 
     private fun parseHomeMangaSection(document: Document, sectionId: String): List<MangaSummary> {
-        return document.select("#$sectionId .manga-item").mapNotNull { item ->
-            val link = item.selectFirst("a[href^=/manga/]") ?: return@mapNotNull null
+        return document.select("#$sectionId .manga-card-v2").mapNotNull { item ->
+            val link = item.selectFirst("a[href^=/info/]") ?: return@mapNotNull null
             val detailPath = normalizePath(link.attr("href"))
-            val title = item.selectFirst(".manga-title")?.text()?.trim().orEmpty()
+            val title = item.selectFirst(".overlay-text-title")?.text()?.trim().orEmpty()
             val coverUrl = item.selectFirst("img")?.let(::imageUrlFromElement).orEmpty()
-            val demography = item.selectFirst(".manga-demografia")?.text()?.trim().orEmpty()
-            val type = item.selectFirst(".manga-type")?.text()?.trim()?.replaceFirstChar { it.uppercase(Locale.ROOT) }.orEmpty()
-            val latestPublication = item.selectFirst(".chapter-button")?.text()?.trim().orEmpty()
+            val demography = item.selectFirst(".demographic-badge")?.text()?.trim().orEmpty()
+            val type = item.selectFirst(".format-badge")?.text()?.trim()?.replaceFirstChar { it.uppercase(Locale.ROOT) }.orEmpty()
+            val latestPublication = item.selectFirst(".action-button")?.text()?.trim().orEmpty()
             if (detailPath.isBlank() || title.isBlank()) return@mapNotNull null
             MangaSummary(
                 providerId = id,
@@ -417,10 +416,10 @@ class LeerMangaEspProvider(
     }
 
     private fun parseHomeChapterSection(document: Document, sectionId: String): List<ChapterSummary> {
-        return document.select("#$sectionId .manga-item").mapNotNull { item ->
-            val mangaLink = item.selectFirst("a[href^=/manga/]") ?: return@mapNotNull null
-            val chapterLink = item.selectFirst(".chapter-button[href^=/leer-m/]") ?: return@mapNotNull null
-            val mangaTitle = item.selectFirst(".manga-title")?.text()?.trim().orEmpty()
+        return document.select("#$sectionId .manga-card-v2").mapNotNull { item ->
+            val mangaLink = item.selectFirst("a[href^=/info/]") ?: return@mapNotNull null
+            val chapterLink = item.selectFirst(".action-button[href^=/lectura/]") ?: return@mapNotNull null
+            val mangaTitle = item.selectFirst(".overlay-text-title")?.text()?.trim().orEmpty()
             val mangaPath = normalizePath(mangaLink.attr("href"))
             val chapterPath = normalizePath(chapterLink.attr("href"))
             val coverUrl = item.selectFirst("img")?.let(::imageUrlFromElement).orEmpty()
@@ -485,7 +484,7 @@ class LeerMangaEspProvider(
             path.startsWith("/") -> normalizeStoredPath(path)
             else -> normalizeStoredPath("/$path")
         }
-        return normalizeLeerMangaChapterPath(normalized)
+        return normalizeMangaLectPath(normalized)
     }
 
     private fun chapterValueFromPath(path: String): Double {
@@ -499,10 +498,15 @@ class LeerMangaEspProvider(
             ?: Double.MIN_VALUE
     }
 
-    private fun normalizeLeerMangaChapterPath(path: String): String {
-        val segments = path.substringBefore('?').trim('/').split('/').filter { it.isNotBlank() }
-        if (segments.size != 3 || segments[0] != "leer-m") return path
-        val chapter = Regex("^(\\d+)(?:\\.0+)?$").matchEntire(segments[2])?.groupValues?.get(1) ?: return path
+    private fun normalizeMangaLectPath(path: String): String {
+        val migratedPath = when {
+            path.startsWith("/manga/") -> path.replaceFirst("/manga/", "/info/")
+            path.startsWith("/leer-m/") -> path.replaceFirst("/leer-m/", "/lectura/")
+            else -> path
+        }
+        val segments = migratedPath.substringBefore('?').trim('/').split('/').filter { it.isNotBlank() }
+        if (segments.size != 3 || segments[0] != "lectura") return migratedPath
+        val chapter = Regex("^(\\d+)(?:\\.0+)?$").matchEntire(segments[2])?.groupValues?.get(1) ?: return migratedPath
         return "/${segments[0]}/${segments[1]}/$chapter/"
     }
 

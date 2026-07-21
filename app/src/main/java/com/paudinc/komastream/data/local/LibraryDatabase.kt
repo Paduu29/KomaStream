@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppSettingsEntity::class,
         MangaDetailCacheEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -36,7 +36,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .build()
                     .also { INSTANCE = it }
             }
@@ -296,6 +296,56 @@ abstract class LibraryDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE reading_manga ADD COLUMN last_read_at INTEGER")
             }
         }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val providerId = "leermangaesp-es"
+                val detailPathExpression = mangaLectPathExpression("detail_path")
+                val chapterPathExpression = mangaLectPathExpression("chapter_path")
+                val lastChapterPathExpression = mangaLectPathExpression("last_chapter_path")
+                val coverUrlExpression = mangaLectUrlExpression("cover_url")
+
+                db.execSQL(
+                    """
+                    UPDATE OR REPLACE favorite_manga
+                    SET detail_path = $detailPathExpression,
+                        cover_url = $coverUrlExpression,
+                        last_chapter_path = $lastChapterPathExpression
+                    WHERE provider_id = ?
+                    """.trimIndent(),
+                    arrayOf(providerId),
+                )
+                db.execSQL(
+                    """
+                    UPDATE OR REPLACE reading_manga
+                    SET detail_path = $detailPathExpression,
+                        cover_url = $coverUrlExpression,
+                        last_chapter_path = $lastChapterPathExpression
+                    WHERE provider_id = ?
+                    """.trimIndent(),
+                    arrayOf(providerId),
+                )
+                listOf("read_chapters", "chapter_progress", "chapter_page_counts").forEach { table ->
+                    db.execSQL(
+                        "UPDATE OR REPLACE $table SET chapter_path = $chapterPathExpression WHERE provider_id = ?",
+                        arrayOf(providerId),
+                    )
+                }
+
+                // Cached detail JSON may be gzip encoded, so force a clean fetch instead of leaving stale routes.
+                db.execSQL("DELETE FROM manga_detail_cache WHERE provider_id = ?", arrayOf(providerId))
+            }
+        }
+
+        private fun mangaLectPathExpression(column: String): String =
+            "REPLACE(REPLACE(${mangaLectUrlExpression(column)}, '/manga/', '/info/'), '/leer-m/', '/lectura/')"
+
+        private fun mangaLectUrlExpression(column: String): String =
+            "REPLACE(REPLACE(REPLACE(REPLACE($column, " +
+                "'https://images.leermangaesp.net', 'https://images.mangalect.org'), " +
+                "'http://images.leermangaesp.net', 'https://images.mangalect.org'), " +
+                "'https://leermangaesp.net', 'https://mangalect.org'), " +
+                "'http://leermangaesp.net', 'https://mangalect.org')"
 
     }
 }
