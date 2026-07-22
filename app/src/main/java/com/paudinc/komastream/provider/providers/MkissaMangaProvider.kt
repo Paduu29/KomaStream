@@ -56,6 +56,7 @@ class MkissaMangaProvider(
     @Volatile private var hashDiscoveryAttempted = false
 
     companion object {
+        private const val API_BASE = "https://api.mkissa.net/api"
         private const val AES_PASSPHRASE = "Xot36i3lK3:v1"
         private const val USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0"
         private const val DEFAULT_IMAGE_HOST = "aln.youtube-anime.com"
@@ -1019,7 +1020,11 @@ class MkissaMangaProvider(
         var lastResponse = JSONObject()
         repeat(2) { attempt ->
             try {
-                val bootstrap = getCryptoBootstrap(forceRefresh = attempt > 0)
+                val bootstrap = if (protectedQuery) {
+                    getCryptoBootstrap(forceRefresh = attempt > 0)
+                } else {
+                    null
+                }
                 val response = performApiRequest(variables, sha256Hash, bootstrap, protectedQuery)
                 lastResponse = response
                 if (hasValidData(response)) return response
@@ -1037,14 +1042,14 @@ class MkissaMangaProvider(
                     if (hasValidData(postResponse)) return postResponse
                 }
 
-                if (attempt == 0 && (response.hasCryptoError() || response.hasNoGraphQlData())) {
+                if (protectedQuery && attempt == 0 && (response.hasCryptoError() || response.hasNoGraphQlData())) {
                     invalidateCryptoBootstrap()
                     return@repeat
                 }
                 return lastResponse
             } catch (error: Exception) {
                 Log.w(tag, "MKissa API request attempt ${attempt + 1} failed", error)
-                if (attempt == 0 && error.shouldRefreshCryptoConfig()) {
+                if (protectedQuery && attempt == 0 && error.shouldRefreshCryptoConfig()) {
                     invalidateCryptoBootstrap()
                     return@repeat
                 }
@@ -1057,7 +1062,7 @@ class MkissaMangaProvider(
     private fun performApiRequest(
         variables: JSONObject,
         sha256Hash: String,
-        bootstrap: CryptoBootstrap,
+        bootstrap: CryptoBootstrap?,
         protectedQuery: Boolean,
     ): JSONObject {
         val varsEncoded = URLEncoder.encode(variables.toString(), "UTF-8")
@@ -1066,48 +1071,46 @@ class MkissaMangaProvider(
                 put("version", 1)
                 put("sha256Hash", sha256Hash)
             })
-            if (protectedQuery) put("aaReq", createCryptoRequest(sha256Hash, bootstrap))
+            if (protectedQuery) put("aaReq", createCryptoRequest(sha256Hash, requireNotNull(bootstrap)))
         }
         val extEncoded = URLEncoder.encode(extensions.toString(), "UTF-8")
-        val url = "${bootstrap.apiUrl}?variables=$varsEncoded&extensions=$extEncoded"
+        val url = "${bootstrap?.apiUrl ?: API_BASE}?variables=$varsEncoded&extensions=$extEncoded"
 
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "application/json")
             .header("Origin", "https://mkissa.to")
             .header("Referer", "https://mkissa.to/manga")
-            .header("x-build-id", bootstrap.buildId)
-            .build()
-        return executeJsonRequest(request)
+        bootstrap?.let { requestBuilder.header("x-build-id", it.buildId) }
+        return executeJsonRequest(requestBuilder.build())
     }
 
     private fun performApiPost(
         variables: JSONObject,
         query: String,
         sha256Hash: String,
-        bootstrap: CryptoBootstrap,
+        bootstrap: CryptoBootstrap?,
         protectedQuery: Boolean,
     ): JSONObject {
         val extensions = JSONObject()
             .put("persistedQuery", JSONObject().put("version", 1).put("sha256Hash", sha256Hash))
-        if (protectedQuery) extensions.put("aaReq", createCryptoRequest(sha256Hash, bootstrap))
+        if (protectedQuery) extensions.put("aaReq", createCryptoRequest(sha256Hash, requireNotNull(bootstrap)))
         val body = JSONObject()
             .put("query", query)
             .put("variables", variables)
             .put("extensions", extensions)
             .toString()
             .toRequestBody("application/json; charset=utf-8".toMediaType())
-        val request = Request.Builder()
-            .url(bootstrap.apiUrl)
+        val requestBuilder = Request.Builder()
+            .url(bootstrap?.apiUrl ?: API_BASE)
             .post(body)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "application/json")
             .header("Origin", "https://mkissa.to")
             .header("Referer", "https://mkissa.to/manga")
-            .header("x-build-id", bootstrap.buildId)
-            .build()
-        return executeJsonRequest(request)
+        bootstrap?.let { requestBuilder.header("x-build-id", it.buildId) }
+        return executeJsonRequest(requestBuilder.build())
     }
 
     private fun executeJsonRequest(request: Request): JSONObject {
@@ -1233,6 +1236,16 @@ class MkissaMangaProvider(
             .find(script)?.groupValues?.getOrNull(1)
         if (legacyMask != null && legacyBuildId != null) {
             return BundleCryptoConfig(legacyBuildId, legacyMask.hexBytes() ?: return null, apiUrl)
+        }
+        val inlineGuarded = Regex(
+            """const\s+[A-Za-z_$][\w$]*\s*=\s*[^,;]{0,160}\?\s*[\"']([0-9a-fA-F]{64})[\"']\s*:\s*[\"']{2}\s*,\s*[A-Za-z_$][\w$]*\s*=\s*[\"'](\d+)[\"']"""
+        ).find(script)
+        if (inlineGuarded != null) {
+            return BundleCryptoConfig(
+                inlineGuarded.groupValues[2],
+                inlineGuarded.groupValues[1].hexBytes() ?: return null,
+                apiUrl,
+            )
         }
         val guarded = Regex(
             """[\"']([0-9a-fA-F]{64})[\"']\s*:\s*[\"']{2}\s*,\s*[A-Za-z_$][\w$]*\s*=.{0,160}?[\"'](\d+)[\"']\s*:\s*[\"']{2}"""
