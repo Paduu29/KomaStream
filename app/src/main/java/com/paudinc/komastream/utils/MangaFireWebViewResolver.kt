@@ -29,8 +29,12 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -43,6 +47,168 @@ class MangaFireWebViewResolver(
 
     init {
         AppCacheMaintenance.trimMangaFirePageCache(context)
+    }
+
+    data class DetailPayload(
+        val titleResponse: JSONObject,
+        val chaptersResponse: JSONObject,
+    )
+
+    fun fetchDetailPayload(titleId: String, detailUrl: String): DetailPayload {
+        val latch = CountDownLatch(1)
+        val titleBody = AtomicReference<String>()
+        val chapterBodies = ConcurrentHashMap<Int, String>()
+        val lastChapterPage = AtomicInteger(0)
+        val error = AtomicReference<Throwable>()
+        val completed = AtomicBoolean(false)
+        val titlePath = "/api/titles/$titleId"
+        val chaptersPath = "$titlePath/chapters"
+        var webView: WebView? = null
+
+        fun finishIfComplete() {
+            val lastPage = lastChapterPage.get()
+            if (
+                titleBody.get() != null &&
+                lastPage > 0 &&
+                chapterBodies.size >= lastPage &&
+                completed.compareAndSet(false, true)
+            ) {
+                latch.countDown()
+            }
+        }
+
+        fun fail(throwable: Throwable) {
+            error.compareAndSet(null, throwable)
+            if (completed.compareAndSet(false, true)) latch.countDown()
+        }
+
+        fun scheduleNextPage(activeWebView: WebView, currentPage: Int, attempt: Int = 0) {
+            mainHandler.postDelayed(
+                {
+                    if (completed.get()) return@postDelayed
+                    activeWebView.evaluateJavascript(
+                        """
+                        (function() {
+                          const pager = document.querySelector(
+                            '.title-detail__chapters-pager .npager, .reader-chapters__pager .npager'
+                          );
+                          if (!pager) return 'wait';
+                          const active = pager.querySelector('.npager__num.is-active');
+                          if (!active || Number(active.textContent.trim()) !== $currentPage) return 'wait';
+                          const nextPage = String($currentPage + 1);
+                          const next = Array.from(pager.querySelectorAll('.npager__num'))
+                            .find(button => button.textContent.trim() === nextPage)
+                            || pager.querySelector('button[aria-label="Next page"]');
+                          if (!next || next.disabled) return 'missing';
+                          next.click();
+                          return 'clicked';
+                        })();
+                        """.trimIndent(),
+                    ) { value ->
+                        if (value == "\"clicked\"") return@evaluateJavascript
+                        if (attempt < CHAPTER_PAGER_MAX_ATTEMPTS) {
+                            scheduleNextPage(activeWebView, currentPage, attempt + 1)
+                        } else {
+                            fail(IOException("Could not advance MangaFire chapter pager from page $currentPage"))
+                        }
+                    }
+                },
+                CHAPTER_PAGE_DELAY_MS,
+            )
+        }
+
+        mainHandler.post {
+            webView = WebView(context)
+            val activeWebView = checkNotNull(webView)
+            activeWebView.settings.javaScriptEnabled = true
+            activeWebView.settings.domStorageEnabled = true
+            activeWebView.settings.loadsImagesAutomatically = false
+            activeWebView.settings.blockNetworkImage = true
+            activeWebView.settings.userAgentString = USER_AGENT
+            activeWebView.webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest,
+                ): WebResourceResponse? {
+                    if (request.url.host != HOST) {
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    val path = request.url.encodedPath
+                    if (path == "$titlePath/volumes") {
+                        return jsonResponse("""{"items":[],"meta":{"hasNext":false}}""")
+                    }
+                    if (path != titlePath && path != chaptersPath) {
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    if (request.url.getQueryParameter("vrf").isNullOrBlank()) {
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    if (path == titlePath) {
+                        titleBody.get()?.let { return jsonResponse(it) }
+                    } else {
+                        val requestedPage = request.url.getQueryParameter("page")?.toIntOrNull()
+                        requestedPage?.let(chapterBodies::get)?.let { return jsonResponse(it) }
+                    }
+
+                    return try {
+                        val body = executeProtectedRequest(request, detailUrl)
+                        if (path == titlePath) {
+                            titleBody.compareAndSet(null, body)
+                            finishIfComplete()
+                        } else {
+                            val response = JSONObject(body)
+                            val meta = response.optJSONObject("meta") ?: JSONObject()
+                            val page = meta.optInt("page", 1).coerceAtLeast(1)
+                            val lastPage = meta.optInt("lastPage", page).coerceAtLeast(page)
+                            lastChapterPage.set(lastPage)
+                            if (chapterBodies.putIfAbsent(page, body) == null) {
+                                if (page < lastPage) {
+                                    scheduleNextPage(activeWebView, page)
+                                }
+                                finishIfComplete()
+                            }
+                        }
+                        jsonResponse(body)
+                    } catch (throwable: Throwable) {
+                        fail(throwable)
+                        emptyJsonResponse()
+                    }
+                }
+            }
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(activeWebView, true)
+            activeWebView.loadUrl(detailUrl)
+        }
+
+        if (!latch.await(DETAIL_PAYLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            disposeWebView(webView)
+            throw IOException(
+                "MangaFire chapter collection timed out " +
+                    "(${chapterBodies.size}/${lastChapterPage.get()} pages)"
+            )
+        }
+        disposeWebView(webView)
+        error.get()?.let { throw it }
+        val allChapterItems = JSONArray()
+        chapterBodies.toSortedMap().values.forEach { pageBody ->
+            val items = JSONObject(pageBody).optJSONArray("items") ?: JSONArray()
+            for (index in 0 until items.length()) {
+                allChapterItems.put(items.opt(index))
+            }
+        }
+        return DetailPayload(
+            titleResponse = JSONObject(titleBody.get().orEmpty()),
+            chaptersResponse = JSONObject()
+                .put("items", allChapterItems)
+                .put(
+                    "meta",
+                    JSONObject()
+                        .put("total", allChapterItems.length())
+                        .put("page", 1)
+                        .put("lastPage", 1)
+                        .put("hasNext", false),
+                ),
+        )
     }
 
     fun fetchReaderData(providerId: String, chapterPath: String): ReaderData {
@@ -82,6 +248,87 @@ class MangaFireWebViewResolver(
             nextChapterPath = chapterContext?.nextPath,
             pages = pages,
         )
+    }
+
+    /**
+     * MangaFire now protects several JSON endpoints with a browser-issued
+     * token.  OkHttp cannot obtain that token, but a same-origin WebView can.
+     */
+    fun fetchJson(absoluteUrl: String, referer: String = BASE_URL): JSONObject {
+        val latch = CountDownLatch(1)
+        val result = mutableListOf<String>()
+        val errors = mutableListOf<Throwable>()
+        val captured = AtomicBoolean(false)
+        val targetPath = Uri.parse(absoluteUrl).path.orEmpty()
+        var webView: WebView? = null
+
+        mainHandler.post {
+            webView = WebView(context)
+            val activeWebView = checkNotNull(webView)
+            activeWebView.settings.javaScriptEnabled = true
+            activeWebView.settings.domStorageEnabled = true
+            activeWebView.settings.loadsImagesAutomatically = false
+            activeWebView.settings.blockNetworkImage = true
+            activeWebView.settings.userAgentString = USER_AGENT
+            activeWebView.webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest,
+                ): WebResourceResponse? {
+                    val isProtectedTarget =
+                        request.url.host == HOST &&
+                            request.url.encodedPath == targetPath &&
+                            request.url.getQueryParameter("vrf").isNullOrBlank().not()
+                    if (!isProtectedTarget || !captured.compareAndSet(false, true)) {
+                        return super.shouldInterceptRequest(view, request)
+                    }
+
+                    return try {
+                        val body = executeProtectedRequest(request, referer)
+                        result += body
+                        latch.countDown()
+                        jsonResponse(body)
+                    } catch (throwable: Throwable) {
+                        errors += throwable
+                        latch.countDown()
+                        emptyJsonResponse()
+                    }
+                }
+            }
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(activeWebView, true)
+            activeWebView.loadUrl(referer)
+        }
+
+        if (!latch.await(15, TimeUnit.SECONDS)) {
+            disposeWebView(webView)
+            throw IOException("MangaFire did not emit a protected request for $targetPath")
+        }
+        disposeWebView(webView)
+        errors.firstOrNull()?.let { throw it }
+        val body = result.firstOrNull().orEmpty()
+        return runCatching { JSONObject(body) }
+            .getOrElse { throw IOException("Could not parse MangaFire JSON response", it) }
+    }
+
+    private fun executeProtectedRequest(request: WebResourceRequest, referer: String): String {
+        val requestBuilder = Request.Builder()
+            .url(request.url.toString())
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .header("Referer", referer)
+            .header("X-Requested-With", "XMLHttpRequest")
+        cookieManager.getCookie(request.url.toString())
+            ?.takeIf { it.isNotBlank() }
+            ?.let { requestBuilder.header("Cookie", it) }
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IOException("MangaFire protected API returned HTTP ${response.code}")
+            }
+            JSONObject(body)
+            return body
+        }
     }
 
     fun searchCatalog(providerId: String, query: String, skip: Int, take: Int): List<MangaSummary> {
@@ -492,6 +739,9 @@ class MangaFireWebViewResolver(
         const val BASE_URL = "https://mangafire.to"
         const val HOST = "mangafire.to"
         const val FILE_SCHEME_PREFIX = "file://"
+        private const val CHAPTER_PAGE_DELAY_MS = 800L
+        private const val CHAPTER_PAGER_MAX_ATTEMPTS = 20
+        private const val DETAIL_PAYLOAD_TIMEOUT_SECONDS = 90L
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
