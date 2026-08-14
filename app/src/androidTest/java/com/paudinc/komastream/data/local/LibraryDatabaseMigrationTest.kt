@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,12 +35,17 @@ class LibraryDatabaseMigrationTest {
         createVersion10Database()
 
         val database = Room.databaseBuilder(context, LibraryDatabase::class.java, databaseName)
-            .addMigrations(LibraryDatabase.MIGRATION_10_11)
+            .addMigrations(
+                LibraryDatabase.MIGRATION_10_11,
+                LibraryDatabase.MIGRATION_11_12,
+                LibraryDatabase.MIGRATION_12_13,
+            )
             .build()
 
-        val dao = database.libraryDao()
-        val settings = requireNotNull(dao.readSettings())
-        val favorites = dao.readFavorites()
+        val (settings, favorites) = runBlocking {
+            val dao = database.libraryDao()
+            requireNotNull(dao.readSettings()) to dao.readFavorites()
+        }
         database.close()
 
         assertEquals("mangadotnet-en", settings.selectedProviderId)
@@ -49,6 +55,109 @@ class LibraryDatabaseMigrationTest {
         assertEquals("""["disabled-provider"]""", settings.disabledProviderIdsJson)
         assertEquals(1, favorites.size)
         assertEquals("/series/test", favorites.first().detailPath)
+    }
+
+    @Test
+    fun migrate12To13_rewritesLeerMangaEspUrlsAndPaths() {
+        createVersion12Database()
+
+        val database = Room.databaseBuilder(context, LibraryDatabase::class.java, databaseName)
+            .addMigrations(LibraryDatabase.MIGRATION_12_13)
+            .build()
+        val sqlite = database.openHelper.writableDatabase
+
+        sqlite.query(
+            "SELECT detail_path, cover_url, last_chapter_path FROM favorite_manga WHERE provider_id = 'leermangaesp-es'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("/info/test-series/", cursor.getString(0))
+            assertEquals(
+                "https://images.mangalect.org/file/leermangaesp/portadas/test.webp",
+                cursor.getString(1),
+            )
+            assertEquals("/lectura/test-series/3/", cursor.getString(2))
+        }
+        sqlite.query(
+            "SELECT chapter_path FROM chapter_progress WHERE provider_id = 'leermangaesp-es'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("/lectura/test-series/2/", cursor.getString(0))
+        }
+        sqlite.query(
+            "SELECT COUNT(*) FROM manga_detail_cache WHERE provider_id = 'leermangaesp-es'"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        database.close()
+    }
+
+    private fun createVersion12Database() {
+        if (databaseFile.exists()) {
+            databaseFile.delete()
+        }
+        val configuration = androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(databaseName)
+            .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(12) {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    createVersion10Schema(db)
+                    db.execSQL(
+                        "ALTER TABLE app_settings ADD COLUMN adult_only_providers_enabled INTEGER NOT NULL DEFAULT 0"
+                    )
+                    db.execSQL("ALTER TABLE favorite_manga ADD COLUMN last_read_at INTEGER")
+                    db.execSQL("ALTER TABLE reading_manga ADD COLUMN last_read_at INTEGER")
+                    seedVersion12LeerMangaEspData(db)
+                }
+
+                override fun onUpgrade(
+                    db: SupportSQLiteDatabase,
+                    oldVersion: Int,
+                    newVersion: Int,
+                ) = Unit
+            })
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(configuration)
+        helper.writableDatabase.close()
+        helper.close()
+    }
+
+    private fun seedVersion12LeerMangaEspData(db: SupportSQLiteDatabase) {
+        db.insert(
+            "favorite_manga",
+            0,
+            ContentValues().apply {
+                put("provider_id", "leermangaesp-es")
+                put("detail_path", "/manga/test-series/")
+                put("title", "Test Series")
+                put("cover_url", "https://images.leermangaesp.net/file/leermangaesp/portadas/test.webp")
+                put("favorite_status", "READING")
+                put("last_chapter_title", "Capítulo 3")
+                put("last_chapter_path", "/leer-m/test-series/3/")
+                put("order_index", 1L)
+            },
+        )
+        db.insert(
+            "chapter_progress",
+            0,
+            ContentValues().apply {
+                put("provider_id", "leermangaesp-es")
+                put("chapter_path", "/leer-m/test-series/2/")
+                put("page_index", 4)
+            },
+        )
+        db.insert(
+            "manga_detail_cache",
+            0,
+            ContentValues().apply {
+                put("provider_id", "leermangaesp-es")
+                put("detail_key", "leermangaesp-es::manga/test-series")
+                put("detail_path", "/manga/test-series/")
+                put("detail_json", "gz:stale")
+                put("chapter_count", 3)
+                put("updated_at", 1L)
+            },
+        )
     }
 
     private fun createVersion10Database() {

@@ -73,7 +73,7 @@ class Manhwa18Provider(
         return when (spec.type) {
             HomeSectionType.MANGAS -> HomeSectionPageResult(
                 type = HomeSectionType.MANGAS,
-                mangas = parseListingCards(document).map { it.manga },
+                mangas = parseMangaListing(document),
                 hasMore = hasNextPage(document),
             )
 
@@ -133,23 +133,31 @@ class Manhwa18Provider(
         val normalizedPath = normalizeStoredPath(detailPath)
         val detailDocument = getDocument(normalizedPath.ifBlank { "/" })
         val title = listOfNotNull(
+            detailDocument.selectFirst(".au-info-title")?.text()?.trim(),
             detailDocument.selectFirst(".series-name a")?.text()?.trim(),
             detailDocument.selectFirst("meta[property=og:title]")?.attr("content")?.trim(),
             detailDocument.selectFirst("h1")?.text()?.trim(),
             normalizedPath.trim('/').substringAfterLast('/').replace('-', ' ').trim(),
         ).firstOrNull { it.isNotBlank() }.orEmpty()
         val coverUrl = listOfNotNull(
+            detailDocument.selectFirst(".au-cover-art")?.let(::imageUrlFromElement),
             detailDocument.selectFirst(".series-cover .content[data-bg]")?.let(::imageUrlFromElement),
             detailDocument.selectFirst(".series-cover .content")?.let(::imageUrlFromElement),
             detailDocument.selectFirst(".series-cover img")?.let(::imageUrlFromElement),
             detailDocument.selectFirst("meta[property=og:image]")?.attr("content")?.trim(),
         ).firstOrNull { it.isNotBlank() }.orEmpty()
         val description = listOfNotNull(
+            detailDocument.selectFirst(".au-hero-desc")?.text()?.cleanText(),
             detailDocument.selectFirst("meta[property=og:description]")?.attr("content")?.trim(),
             detailDocument.selectFirst("meta[name=description]")?.attr("content")?.trim(),
             detailDocument.selectFirst(".summary")?.text()?.trim(),
         ).firstOrNull { it.isNotBlank() }.orEmpty()
-        val status = infoValue(detailDocument, "Status")
+        val status = listOfNotNull(
+            detailDocument.selectFirst(".au-info-eyebrow")?.text()?.substringBefore('·')?.cleanText(),
+            infoValue(detailDocument, "Status"),
+        ).firstOrNull { it.isNotBlank() }
+            ?.replace("On going", "Ongoing", ignoreCase = true)
+            .orEmpty()
         val publicationDate = ""
         val chapters = parseDetailChapters(detailDocument)
         val identification = normalizedPath.trim('/').substringAfterLast('/').ifBlank {
@@ -240,6 +248,9 @@ class Manhwa18Provider(
     override fun invalidateCaches() = Unit
 
     private fun parseHomeSections(document: Document): List<HomeFeedSection> {
+        if (document.select(".au-feed-panel").isNotEmpty()) {
+            return parseModernHomeSections(document)
+        }
         return document.select("main .card.card-dark")
             .mapNotNull { card ->
                 val title = card.selectFirst(".card-title")?.text()?.cleanText().orEmpty()
@@ -265,6 +276,63 @@ class Manhwa18Provider(
                     else -> null
                 }
             }
+    }
+
+    private fun parseModernHomeSections(document: Document): List<HomeFeedSection> {
+        val sections = mutableListOf<HomeFeedSection>()
+        val feedSpecs = listOf(
+            "manhwa" to (HOME_SECTION_LATEST_MAHNWA to "Latest Updates"),
+            "raw" to (HOME_SECTION_LATEST_RAW to "Latest Raw Sub Kor"),
+            "art" to (HOME_SECTION_LATEST_ART to "Latest Update Art"),
+            "new" to (HOME_SECTION_NEW to "New Manhwa"),
+        )
+        for ((feed, spec) in feedSpecs) {
+            val panel = document.selectFirst(".au-feed-panel[data-feed='$feed']") ?: continue
+            val mangas = panel.select(".au-feed-item").mapNotNull { item ->
+                val detailPath = normalizeStoredPath(item.attr("href"))
+                if (detailPath.isBlank()) return@mapNotNull null
+                val title = item.selectFirst(".au-feed-title")?.text()?.cleanText()
+                    .orEmpty()
+                    .ifBlank { detailPath.trim('/').substringAfterLast('/').replace('-', ' ') }
+                val coverUrl = item.selectFirst(".au-feed-cover")?.let(::imageUrlFromElement).orEmpty()
+                val latestChapter = item.selectFirst(".au-feed-chrow .au-chip")?.text()?.cleanText().orEmpty()
+                MangaSummary(id, title, detailPath, coverUrl, latestPublication = latestChapter)
+            }.distinctBy { it.detailPath }
+            if (mangas.isNotEmpty()) {
+                sections += HomeFeedSection(spec.first, spec.second, HomeSectionType.MANGAS, mangas = mangas)
+            }
+        }
+
+        val popular = document.select(".au-rank-row").mapNotNull { row ->
+            val detailPath = normalizeStoredPath(row.attr("href"))
+            if (detailPath.isBlank()) return@mapNotNull null
+            val title = row.selectFirst(".au-rank-title")?.text()?.cleanText()
+                .orEmpty()
+                .ifBlank { detailPath.trim('/').substringAfterLast('/').replace('-', ' ') }
+            MangaSummary(id, title, detailPath, row.selectFirst(".au-rank-cover")?.let(::imageUrlFromElement).orEmpty())
+        }.distinctBy { it.detailPath }
+        if (popular.isNotEmpty()) {
+            sections += HomeFeedSection(HOME_SECTION_POPULAR, "Popular manga", HomeSectionType.MANGAS, mangas = popular)
+        }
+        return sections
+    }
+
+    private fun parseMangaListing(document: Document): List<MangaSummary> {
+        val legacy = parseListingCards(document).map { it.manga }
+        if (legacy.isNotEmpty()) return legacy
+        return document.select(".au-rank-row").mapNotNull { row ->
+            val detailPath = normalizeStoredPath(row.attr("href"))
+            if (detailPath.isBlank()) return@mapNotNull null
+            val title = row.selectFirst(".au-rank-title")?.text()?.cleanText()
+                .orEmpty()
+                .ifBlank { detailPath.trim('/').substringAfterLast('/').replace('-', ' ') }
+            MangaSummary(
+                providerId = id,
+                title = title,
+                detailPath = detailPath,
+                coverUrl = row.selectFirst(".au-rank-cover")?.let(::imageUrlFromElement).orEmpty(),
+            )
+        }.distinctBy { it.detailPath }
     }
 
     private fun chapterSection(sectionId: String, title: String, cards: List<ListingCard>): HomeFeedSection? {
@@ -339,6 +407,7 @@ class Manhwa18Provider(
 
     private fun parseDetailChapters(document: Document): List<MangaChapter> {
         return document.select(
+            ".au-chtile[href], " +
             "ul.list-chapters.at-series a[href*='/manga/'], " +
                 ".list-chapters.at-series a[href*='/manga/'], " +
                 "#chap_list a[href], .rd_sidebar #chap_list a[href], " +
@@ -349,12 +418,13 @@ class Manhwa18Provider(
                 if (chapterPath.isBlank()) return@mapNotNull null
                 val chapterLabel = link.selectFirst(".chapter-name")?.text()?.cleanText()
                     .orEmpty()
+                    .ifBlank { link.selectFirst(".au-chtile-num")?.text()?.cleanText().orEmpty() }
                     .ifBlank {
                         link.attr("title").cleanText().ifBlank {
                             chapterPath.trim('/').substringAfterLast('/').replace('-', ' ')
                         }
                     }
-                val registrationDate = link.selectFirst(".chapter-time")?.text()?.cleanText().orEmpty()
+                val registrationDate = link.selectFirst(".chapter-time, .au-chtile-date")?.text()?.cleanText().orEmpty()
                 val chapterId = chapterPath.trim('/').substringAfterLast('/')
                 MangaChapter(
                     id = chapterId,

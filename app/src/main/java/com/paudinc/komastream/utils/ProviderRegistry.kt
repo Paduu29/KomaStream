@@ -66,6 +66,5 @@ fun createDefaultProviderRegistry(
             context?.let { add(Manhwa18Provider(it, sharedHttpClient)) }
             context?.let { add(ManhwaLatinoProvider(it, settingsState, sharedHttpClient)) }
             add(MangaBallProvider(settingsState, sharedHttpClient))
-            context?.let { add(AkaiComicProvider(it, sharedHttpClient)) }
         }
     )

@@ -3,6 +3,7 @@ package com.paudinc.komastream.provider.providers
 import android.content.Context
 import com.paudinc.komastream.data.model.*
 import com.paudinc.komastream.provider.MangaProvider
+import com.paudinc.komastream.utils.MangaFireWebViewResolver
 import com.paudinc.komastream.utils.normalizeStoredPath
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -15,11 +16,13 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.io.IOException
 
 class MangaFireProvider(
-    @Suppress("UNUSED_PARAMETER") context: Context? = null,
+    context: Context? = null,
     private val client: OkHttpClient = OkHttpClient(),
 ) : MangaProvider {
+    private val browserResolver = context?.let { MangaFireWebViewResolver(it.applicationContext, client) }
     override val id: String = "mangafire-en"
     override val displayName: String = "MangaFire"
     override val language: AppLanguage = AppLanguage.EN
@@ -44,9 +47,9 @@ class MangaFireProvider(
                 "limit" to HOME_PAGE_SIZE.toString(),
             ),
         ).items
-        val latestUpdates = latestTitles
-            .take(HOME_CHAPTER_LOOKUP_LIMIT)
-            .mapNotNull { summary -> fetchLatestChapterSummary(summary) }
+        // Chapter endpoints are protected individually. Resolving them here
+        // would launch one browser-token flow per title and block home startup.
+        val latestUpdates = emptyList<ChapterSummary>()
 
         val sections = listOf(
             HomeFeedSection(
@@ -144,11 +147,15 @@ class MangaFireProvider(
     override fun fetchMangaDetail(detailPath: String): MangaDetail {
         val normalizedPath = normalizePath(detailPath)
         val titleId = extractTitleId(normalizedPath)
-        val title = getJson("/api/titles/$titleId", referer = toAbsoluteUrl(normalizedPath))
-            .optJSONObject("data")
-            ?: JSONObject()
-        val chapters = fetchAllChapters(titleId, title.optString("url").ifBlank { normalizedPath })
+        val absoluteDetailUrl = toAbsoluteUrl(normalizedPath)
+        val browserPayload = browserResolver?.fetchDetailPayload(titleId, absoluteDetailUrl)
+        val titleResponse = browserPayload?.titleResponse
+            ?: getJson("/api/titles/$titleId", referer = absoluteDetailUrl)
+        val title = titleResponse.optJSONObject("data") ?: JSONObject()
         val titlePath = normalizePath(title.optString("url").ifBlank { normalizedPath })
+        val chapters = browserPayload?.chaptersResponse
+            ?.toMangaChapters(titlePath)
+            ?: fetchAllChapters(titleId, titlePath)
         val coverUrl = title.optJSONObject("poster")?.optString("large").orEmpty()
             .ifBlank { title.optJSONObject("poster")?.optString("medium").orEmpty() }
         val synopsis = Jsoup.parseBodyFragment(title.optString("synopsisHtml")).text().trim()
@@ -211,17 +218,6 @@ class MangaFireProvider(
         }
     }
 
-    private fun fetchLatestChapterSummary(summary: MangaSummary): ChapterSummary? =
-        runCatching {
-            val titleId = extractTitleId(summary.detailPath)
-            val response = getJson(
-                path = "/api/titles/$titleId/chapters?language=$LANGUAGE_CODE&sort=number&order=desc&page=1&limit=1",
-                referer = toAbsoluteUrl(summary.detailPath),
-            )
-            val chapter = response.optJSONArray("items")?.optJSONObject(0) ?: return null
-            chapter.toChapterSummary(summary)
-        }.getOrNull()
-
     private fun fetchAllChapters(titleId: String, detailPath: String): List<MangaChapter> {
         val chapters = mutableListOf<MangaChapter>()
         var page = 1
@@ -241,6 +237,16 @@ class MangaFireProvider(
             page += 1
         } while (hasNext && page <= MAX_CHAPTER_PAGES)
         return chapters.distinctBy { it.id }.sortedByDescending { it.chapterNumberUrl.toDoubleOrNull() ?: 0.0 }
+    }
+
+    private fun JSONObject.toMangaChapters(detailPath: String): List<MangaChapter> {
+        val items = optJSONArray("items") ?: JSONArray()
+        return buildList {
+            for (index in 0 until items.length()) {
+                items.optJSONObject(index)?.toMangaChapter(detailPath)?.let(::add)
+            }
+        }.distinctBy { it.id }
+            .sortedByDescending { it.chapterNumberUrl.toDoubleOrNull() ?: 0.0 }
     }
 
     private fun fetchTitleList(path: String, query: Map<String, String>): TitleListResult {
@@ -267,7 +273,13 @@ class MangaFireProvider(
             .header("X-Requested-With", "XMLHttpRequest")
             .build()
         client.newCall(request).execute().use { response ->
-            return JSONObject(response.body?.string().orEmpty())
+            val body = response.body?.string().orEmpty()
+            if (response.isSuccessful) return JSONObject(body)
+            if (response.code == 403 && body.contains("Missing token", ignoreCase = true)) {
+                return browserResolver?.fetchJson(absoluteUrl, referer)
+                    ?: throw IOException("MangaFire requires browser clearance")
+            }
+            throw IOException("MangaFire API returned HTTP ${response.code}")
         }
     }
 
@@ -332,24 +344,6 @@ class MangaFireProvider(
             languageCode = optString("language"),
             languageLabel = optString("language").uppercase(Locale.ROOT),
             uploaderLabel = optString("type").toDisplayLabel(),
-        )
-    }
-
-    private fun JSONObject.toChapterSummary(summary: MangaSummary): ChapterSummary {
-        val number = opt("number")?.toString().orEmpty()
-        val name = optString("name")
-        val chapterId = optLong("id").toString()
-        val path = chapterPath(detailPath = summary.detailPath, chapterId = chapterId, number = number)
-        return ChapterSummary(
-            providerId = id,
-            mangaTitle = summary.title,
-            chapterLabel = buildChapterLabel(number, name),
-            chapterNumberUrl = number,
-            chapterId = chapterId,
-            mangaPath = summary.detailPath,
-            chapterPath = path,
-            coverUrl = summary.coverUrl,
-            registrationLabel = formatTimestamp(optLong("createdAt", 0L)),
         )
     }
 
@@ -487,7 +481,6 @@ class MangaFireProvider(
         private const val BROWSE_PAGE_SIZE = 30
         private const val CHAPTER_PAGE_SIZE = 100
         private const val MAX_CHAPTER_PAGES = 20
-        private const val HOME_CHAPTER_LOOKUP_LIMIT = 10
         private const val DEFAULT_SORT = "chapter_updated_at:desc"
         private val DATE_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())

@@ -567,6 +567,11 @@ class KomaViewModel(
     fun requestBrowserBootstrap(providerId: String, force: Boolean = false) {
         Log.d(TAG, "requestBrowserBootstrap providerId=$providerId force=$force")
         if (!supportsCloudflareBootstrap(providerId)) return
+        val selectedProviderId = libraryController.uiState.value.state.selectedProviderId
+        if (selectedProviderId != providerId) {
+            Log.d(TAG, "ignoring bootstrap for stale provider=$providerId selected=$selectedProviderId")
+            return
+        }
         if (providerId == MangaBallProvider.PROVIDER_ID) {
             pendingBrowserBootstrapProviderId = providerId
         } else if (!force && cloudflareReady(providerId)) {
@@ -579,6 +584,10 @@ class KomaViewModel(
     fun resumePendingBrowserBootstrap(): Boolean {
         val providerId = pendingBrowserBootstrapProviderId ?: return false
         Log.d(TAG, "resumePendingBrowserBootstrap providerId=$providerId")
+        if (libraryController.uiState.value.state.selectedProviderId != providerId) {
+            pendingBrowserBootstrapProviderId = null
+            return false
+        }
         if (!supportsCloudflareBootstrap(providerId)) {
             pendingBrowserBootstrapProviderId = null
             return false
@@ -753,9 +762,7 @@ class KomaViewModel(
     }
 
     private fun requiresCloudflareBootstrap(providerId: String): Boolean {
-        return providerId == MangadotProvider.PROVIDER_ID ||
-            providerId == ManhwaLatinoProvider.PROVIDER_ID ||
-            providerId == MangaBallProvider.PROVIDER_ID
+        return providerId == ManhwaLatinoProvider.PROVIDER_ID
     }
 
     private fun supportsCloudflareBootstrap(providerId: String): Boolean {

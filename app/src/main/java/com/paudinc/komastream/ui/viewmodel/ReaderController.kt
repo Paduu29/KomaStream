@@ -388,7 +388,8 @@ class ReaderController(
             if (
                 providerId == ManhwaLatinoProvider.PROVIDER_ID ||
                     providerId == Manhwa18Provider.PROVIDER_ID ||
-                    providerId == "mkissa-en"
+                    providerId == "mkissa-en" ||
+                    providerId == "mangafire-en"
             ) {
                 if (cachedSnapshot.detail.chapters.isEmpty() || (providerId == "mkissa-en" && cachedSnapshot.detail.title.isBlank())) {
                     Log.d(tag, "loadDetail refreshing empty cached detail providerId=$providerId detailPath=$detailPath")

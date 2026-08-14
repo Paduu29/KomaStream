@@ -166,7 +166,13 @@ fun KomaStream() {
         is AppUpdateUiState.Downloaded -> state.release
         else -> null
     }
-    var browserBootstrapUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    // Scope the dialog URL to the selected provider. rememberSaveable without a
+    // provider key can restore the previous provider's URL after a provider
+    // switch, briefly opening (for example) MangaBall while Manhwa Latino is
+    // selected.
+    var browserBootstrapUrl by rememberSaveable(libraryState.selectedProviderId) {
+        mutableStateOf<String?>(null)
+    }
 
     LaunchedEffect(malCallbackUri) {
         if (viewModel.handleMalCallback(malCallbackUri)) {
@@ -215,6 +221,10 @@ fun KomaStream() {
     }
 
     LaunchedEffect(libraryState.selectedProviderId) {
+        // Never carry a pending WebView URL across provider changes. The second
+        // effect below will populate it from the newly selected provider if a
+        // bootstrap is actually required.
+        browserBootstrapUrl = null
         if (libraryState.selectedProviderId.isBlank()) {
             if (screen !is Screen.ProviderPicker) {
                 viewModel.pushScreen(Screen.ProviderPicker)
@@ -875,16 +885,18 @@ fun KomaStream() {
             }
         }
 
-        browserBootstrapUrl?.let { url ->
-            BrowserBootstrapDialog(
-                url = url,
-                title = currentProvider.displayName,
-                onClose = {
-                    browserBootstrapUrl = null
-                    viewModel.resumePendingBrowserBootstrap()
-                },
-            )
-        }
+        browserBootstrapUrl
+            ?.takeIf { it == currentProvider.websiteUrl }
+            ?.let { url ->
+                BrowserBootstrapDialog(
+                    url = url,
+                    title = currentProvider.displayName,
+                    onClose = {
+                        browserBootstrapUrl = null
+                        viewModel.resumePendingBrowserBootstrap()
+                    },
+                )
+            }
 
         if (isMalSyncBlocking) {
             val interactionSource = remember { MutableInteractionSource() }

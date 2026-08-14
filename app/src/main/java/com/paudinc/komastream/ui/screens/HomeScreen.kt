@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -162,10 +163,12 @@ fun HomeScreen(
                                 ) {
                                     val railCardHeight = mangaRailCardHeight(section.mangas) +
                                         if (providerId == "mangadotnet-en" && section.id == "top-rated") 20.dp else 0.dp
-                                    items(
+                                    itemsIndexed(
                                         section.mangas.take(10),
-                                        key = { "${it.providerId}:${homeMangaIdentityKey(providerId, section.id, it)}" },
-                                    ) { manga ->
+                                        key = { index, manga ->
+                                            "${manga.providerId}:${homeMangaIdentityKey(providerId, section.id, manga)}:$index"
+                                        },
+                                    ) { _, manga ->
                                         MangaCoverCard(
                                             manga = manga,
                                             strings = strings,

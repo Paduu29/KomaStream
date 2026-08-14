@@ -33,6 +33,7 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.io.IOException
 import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.HttpCookie
@@ -299,7 +300,6 @@ class MangadotProvider(
     }
 
     override fun downloadBytes(url: String, referer: String?): ByteArray {
-        ensureCloudflareReady()
         val request = Request.Builder()
             .url(url.toAbsoluteUrl())
             .header("User-Agent", USER_AGENT)
@@ -310,7 +310,18 @@ class MangadotProvider(
             }
             .build()
         client.newCall(request).execute().use { response ->
-            return response.body?.bytes() ?: ByteArray(0)
+            val bytes = response.body?.bytes() ?: ByteArray(0)
+            val contentType = response.header("Content-Type").orEmpty()
+            if (contentType.contains("text/html", ignoreCase = true)) {
+                val body = bytes.toString(Charsets.UTF_8)
+                if (looksLikeCloudflareChallenge(body)) {
+                    onCloudflareChallenge("image ${request.url}")
+                }
+            }
+            if (!response.isSuccessful) {
+                throw IOException("Mangadot returned HTTP ${response.code} for ${request.url}")
+            }
+            return bytes
         }
     }
 
@@ -359,11 +370,6 @@ class MangadotProvider(
             }
         }
         return true
-    }
-
-    private fun ensureCloudflareReady() {
-        if (cloudflareReady) return
-        waitForCloudflareCookie()
     }
 
     private fun snapshotWebkitCookies(): String {
@@ -1107,7 +1113,6 @@ class MangadotProvider(
     }
 
     private fun getJson(path: String): JSONObject {
-        ensureCloudflareReady()
         val request = Request.Builder()
             .url(path.toAbsoluteUrl())
             .header("User-Agent", USER_AGENT)
@@ -1119,15 +1124,16 @@ class MangadotProvider(
             val body = response.body?.string().orEmpty()
             val trimmed = body.trimStart()
 
+            if (looksLikeCloudflareChallenge(trimmed)) {
+                onCloudflareChallenge(path)
+            }
+            if (!response.isSuccessful) {
+                throw IOException("Mangadot returned HTTP ${response.code} for $path")
+            }
             if (!trimmed.startsWith("{")) {
-                if (looksLikeCloudflareChallenge(trimmed)) {
-                    invalidateCaches()
-                    throw IllegalStateException("Cloudflare challenge still active for $path; received HTML instead of JSON")
-                } else {
-                    throw IllegalStateException(
-                        "Expected JSON from $path but received ${trimmed.take(80)}"
-                    )
-                }
+                throw IllegalStateException(
+                    "Expected JSON from $path but received ${trimmed.take(80)}"
+                )
             }
 
             return JSONObject(body)
@@ -1135,14 +1141,25 @@ class MangadotProvider(
     }
 
     private fun getText(path: String): String {
-        ensureCloudflareReady()
         val request = Request.Builder()
             .url(path.toAbsoluteUrl())
             .header("User-Agent", USER_AGENT)
             .build()
         client.newCall(request).execute().use { response ->
-            return response.body?.string().orEmpty()
+            val body = response.body?.string().orEmpty()
+            if (looksLikeCloudflareChallenge(body)) {
+                onCloudflareChallenge(path)
+            }
+            if (!response.isSuccessful) {
+                throw IOException("Mangadot returned HTTP ${response.code} for $path")
+            }
+            return body
         }
+    }
+
+    private fun onCloudflareChallenge(path: String): Nothing {
+        invalidateCaches()
+        throw IllegalStateException("Cloudflare challenge still active for $path")
     }
 
     private fun String.toAbsoluteUrl(): String {
@@ -1169,10 +1186,11 @@ class MangadotProvider(
 
     private fun looksLikeCloudflareChallenge(body: String): Boolean {
         val lower = body.lowercase()
-        return lower.startsWith("<!doctype html") ||
-            lower.startsWith("<html") ||
+        return "cf-chl-" in lower ||
+            "_cf_chl_opt" in lower ||
             "just a moment" in lower ||
-            "cloudflare" in lower
+            ("attention required" in lower && "cloudflare" in lower) ||
+            ("verify you are human" in lower && "cloudflare" in lower)
     }
 
     private fun JSONArray.toMangaSummaries(): List<MangaSummary> {

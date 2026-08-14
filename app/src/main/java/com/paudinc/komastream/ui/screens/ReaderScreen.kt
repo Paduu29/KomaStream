@@ -1032,7 +1032,7 @@ private fun readerRequestHeaders(providerId: String, chapterPath: String): Heade
             .build()
         "leermangaesp-es" -> Headers.Builder()
             .add("User-Agent", com.paudinc.komastream.provider.providers.LeerMangaEspProvider.USER_AGENT)
-            .add("Referer", "https://leermangaesp.net$chapterPath")
+            .add("Referer", "https://mangalect.org$chapterPath")
             .add("Accept", com.paudinc.komastream.provider.providers.LeerMangaEspProvider.IMAGE_ACCEPT)
             .build()
         else -> null
