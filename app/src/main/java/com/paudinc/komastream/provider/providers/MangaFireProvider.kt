@@ -293,10 +293,10 @@ class MangaFireProvider(
         val group = categoryId.substringBefore(':', "genres")
         val value = categoryId.substringAfter(':', categoryId)
         val parameter = when (group) {
-            "themes" -> "themes[]"
+            "themes" -> "theme_ids[]"
             "demographics" -> "demographics[]"
-            "formats" -> "formats[]"
-            else -> "genres[]"
+            "formats" -> "genres_in[]"
+            else -> "genres_in[]"
         }
         addQueryParameter(parameter, value)
     }
@@ -338,7 +338,7 @@ class MangaFireProvider(
             id = chapterId,
             chapterLabel = buildChapterLabel(number, name),
             chapterNumberUrl = number,
-            path = chapterPath(detailPath = detailPath, chapterId = chapterId, number = number),
+            path = chapterPath(detailPath = detailPath, chapterId = chapterId),
             pagesCount = 0,
             registrationDate = formatTimestamp(optLong("createdAt", 0L)),
             languageCode = optString("language"),
@@ -406,16 +406,8 @@ class MangaFireProvider(
             }
         }
 
-    private fun chapterPath(detailPath: String, chapterId: String, number: String): String {
-        val suffix = buildString {
-            append(chapterId)
-            append("-chapter-")
-            append(number.ifBlank { "0" }.replace(".", "-"))
-            append("-")
-            append(LANGUAGE_CODE)
-        }
-        return "${normalizePath(detailPath).trimEnd('/')}/$suffix"
-    }
+    private fun chapterPath(detailPath: String, chapterId: String): String =
+        mangaFireChapterPath(normalizePath(detailPath), chapterId)
 
     private fun buildChapterLabel(number: String, name: String): String =
         listOf(
@@ -486,3 +478,6 @@ class MangaFireProvider(
             DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
     }
 }
+
+internal fun mangaFireChapterPath(detailPath: String, chapterId: String): String =
+    "${detailPath.trimEnd('/')}/chapter/$chapterId"

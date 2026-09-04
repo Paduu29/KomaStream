@@ -17,6 +17,8 @@ import android.webkit.WebViewClient
 import com.paudinc.komastream.data.model.MangaSummary
 import com.paudinc.komastream.data.model.ReaderData
 import com.paudinc.komastream.data.model.ReaderPage
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -256,11 +258,12 @@ class MangaFireWebViewResolver(
      */
     fun fetchJson(absoluteUrl: String, referer: String = BASE_URL): JSONObject {
         val latch = CountDownLatch(1)
-        val result = mutableListOf<String>()
-        val errors = mutableListOf<Throwable>()
-        val captured = AtomicBoolean(false)
-        val targetPath = Uri.parse(absoluteUrl).path.orEmpty()
+        val token = AtomicReference<String>()
+        val error = AtomicReference<Throwable>()
+        val completed = AtomicBoolean(false)
         var webView: WebView? = null
+        val escapedUrl = JSONObject.quote(absoluteUrl)
+        val callbackPath = "/__komastream_vrf"
 
         mainHandler.post {
             webView = WebView(context)
@@ -271,28 +274,94 @@ class MangaFireWebViewResolver(
             activeWebView.settings.blockNetworkImage = true
             activeWebView.settings.userAgentString = USER_AGENT
             activeWebView.webViewClient = object : WebViewClient() {
+                private var requestedToken = false
+
                 override fun shouldInterceptRequest(
                     view: WebView?,
                     request: WebResourceRequest,
                 ): WebResourceResponse? {
-                    val isProtectedTarget =
-                        request.url.host == HOST &&
-                            request.url.encodedPath == targetPath &&
-                            request.url.getQueryParameter("vrf").isNullOrBlank().not()
-                    if (!isProtectedTarget || !captured.compareAndSet(false, true)) {
+                    if (request.url.host != HOST || request.url.encodedPath != callbackPath) {
                         return super.shouldInterceptRequest(view, request)
                     }
-
-                    return try {
-                        val body = executeProtectedRequest(request, referer)
-                        result += body
+                    if (completed.compareAndSet(false, true)) {
+                        val resolvedToken = request.url.getQueryParameter("token").orEmpty()
+                        val tokenError = request.url.getQueryParameter("error").orEmpty()
+                        when {
+                            resolvedToken.isNotBlank() -> token.set(resolvedToken)
+                            tokenError.isNotBlank() -> error.set(IOException(tokenError))
+                            else -> error.set(IOException("MangaFire generated an empty token"))
+                        }
                         latch.countDown()
-                        jsonResponse(body)
-                    } catch (throwable: Throwable) {
-                        errors += throwable
-                        latch.countDown()
-                        emptyJsonResponse()
                     }
+                    return emptyJsonResponse()
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    if (requestedToken || view == null || url.isNullOrBlank() || !url.startsWith(BASE_URL)) return
+                    requestedToken = true
+                    view.evaluateJavascript(
+                        """
+                        (async function() {
+                          const requested = new URL($escapedUrl);
+                          const moduleUrl = Array.from(
+                            document.querySelectorAll('link[rel="modulepreload"][href]')
+                          ).map(link => link.href).find(href => /\/polyfill-[^/]+\.js(?:\?|$)/.test(href));
+                          if (!moduleUrl) throw new Error('MangaFire token module was not found');
+
+                          const tokenModule = await import(moduleUrl);
+                          let transformRequest = null;
+                          tokenModule.a({
+                            interceptors: {
+                              request: {
+                                use: handler => { transformRequest = handler; }
+                              }
+                            }
+                          });
+                          if (typeof transformRequest !== 'function') {
+                            throw new Error('MangaFire token interceptor was not installed');
+                          }
+
+                          const params = {};
+                          for (const [rawKey, value] of requested.searchParams) {
+                            if (rawKey === 'vrf') continue;
+                            const bracket = rawKey.match(/^([^\[\]]+)\[([^\[\]]*)\]$/);
+                            if (bracket && bracket[2] === '') {
+                              (params[bracket[1]] ??= []).push(value);
+                            } else if (bracket) {
+                              (params[bracket[1]] ??= {})[bracket[2]] = value;
+                            } else if (Object.prototype.hasOwnProperty.call(params, rawKey)) {
+                              params[rawKey] = Array.isArray(params[rawKey])
+                                ? [...params[rawKey], value]
+                                : [params[rawKey], value];
+                            } else {
+                              params[rawKey] = value;
+                            }
+                          }
+
+                          const apiPath = requested.pathname.startsWith('/api/')
+                            ? requested.pathname.slice(4)
+                            : requested.pathname;
+                          const transformed = await transformRequest({
+                            url: apiPath,
+                            baseURL: '/api',
+                            method: 'get',
+                            params,
+                            headers: {}
+                          });
+                          const vrf = transformed && transformed.params && transformed.params.vrf;
+                          if (typeof vrf !== 'string' || !vrf) {
+                            throw new Error('MangaFire did not generate a token');
+                          }
+                          return vrf;
+                        })().then(vrf => {
+                          fetch('$callbackPath?token=' + encodeURIComponent(vrf));
+                        }).catch(cause => {
+                          const message = cause instanceof Error ? cause.message : String(cause);
+                          fetch('$callbackPath?error=' + encodeURIComponent(message));
+                        });
+                        """.trimIndent(),
+                        null,
+                    )
                 }
             }
             cookieManager.setAcceptCookie(true)
@@ -302,23 +371,35 @@ class MangaFireWebViewResolver(
 
         if (!latch.await(15, TimeUnit.SECONDS)) {
             disposeWebView(webView)
-            throw IOException("MangaFire did not emit a protected request for $targetPath")
+            throw IOException("MangaFire did not generate a token for the requested API URL")
         }
         disposeWebView(webView)
-        errors.firstOrNull()?.let { throw it }
-        val body = result.firstOrNull().orEmpty()
+        error.get()?.let { throw IOException("Could not generate MangaFire API token", it) }
+        val tokenizedUrl = mangaFireUrlWithVrf(
+            absoluteUrl = absoluteUrl,
+            vrf = token.get() ?: throw IOException("MangaFire did not generate a token"),
+        )
+        val body = executeProtectedRequest(tokenizedUrl, referer)
         return runCatching { JSONObject(body) }
             .getOrElse { throw IOException("Could not parse MangaFire JSON response", it) }
     }
 
     private fun executeProtectedRequest(request: WebResourceRequest, referer: String): String {
+        return executeProtectedRequest(
+            url = request.url.toString().toHttpUrlOrNull()
+                ?: throw IOException("Invalid MangaFire protected API URL"),
+            referer = referer,
+        )
+    }
+
+    private fun executeProtectedRequest(url: HttpUrl, referer: String): String {
         val requestBuilder = Request.Builder()
-            .url(request.url.toString())
+            .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "application/json")
             .header("Referer", referer)
             .header("X-Requested-With", "XMLHttpRequest")
-        cookieManager.getCookie(request.url.toString())
+        cookieManager.getCookie(url.toString())
             ?.takeIf { it.isNotBlank() }
             ?.let { requestBuilder.header("Cookie", it) }
         client.newCall(requestBuilder.build()).execute().use { response ->
@@ -745,4 +826,13 @@ class MangaFireWebViewResolver(
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
+}
+
+internal fun mangaFireUrlWithVrf(absoluteUrl: String, vrf: String): HttpUrl {
+    val requestedUrl = absoluteUrl.toHttpUrlOrNull()
+        ?: throw IOException("Invalid MangaFire API URL")
+    return requestedUrl.newBuilder()
+        .removeAllQueryParameters("vrf")
+        .addQueryParameter("vrf", vrf)
+        .build()
 }
