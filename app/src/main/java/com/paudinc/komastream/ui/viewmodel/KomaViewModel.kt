@@ -106,7 +106,6 @@ class KomaViewModel(
         providerRegistry = providerRegistry,
         libraryStore = libraryStore,
         offlineStore = offlineStore,
-        workManager = workManager,
         readerActionInteractor = readerActionInteractor,
         strings = strings,
     )
@@ -648,7 +647,10 @@ class KomaViewModel(
                 path = path,
                 index = index,
                 allowAutoReadMark = allowAutoReadMark,
-                onChapterMarkedRead = { libraryController.refreshState() },
+                onChapterMarkedRead = { chapterPaths ->
+                    libraryController.updateReadChaptersInUi(chapterPaths, providerId, read = true)
+                },
+                onLibraryChanged = { libraryController.refreshState() },
             )
         }
     }
@@ -659,20 +661,8 @@ class KomaViewModel(
             ?.chapterPath
             ?.takeIf { it.isNotBlank() }
             ?: currentPath
-        val activeDetail = readerController.uiState.value.selectedDetail?.takeIf {
-            it.providerId == providerId && sameMangaPath(providerId, it.detailPath, readerController.uiState.value.readerData?.mangaDetailPath.orEmpty())
-        }
         viewModelScope.launch {
             readerController.updateChapterReadState(providerId, activeChapterPath, markCurrentRead)
-            if (markCurrentRead && activeDetail != null) {
-                readerController.syncReadingSnapshot(
-                    providerId = providerId,
-                    detail = activeDetail,
-                    chapterPath = activeChapterPath,
-                    chapterTitle = readerController.uiState.value.readerData?.chapterTitle.orEmpty(),
-                )
-            }
-            libraryController.refreshState()
             openReader(providerId, targetPath, replace = true, resumeProgress = false)
         }
     }

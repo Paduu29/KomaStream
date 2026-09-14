@@ -93,8 +93,11 @@ import com.paudinc.komastream.data.model.ReaderPage
 import com.paudinc.komastream.ui.components.cardBorder
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.OfflineChapterStore
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -964,24 +967,30 @@ private suspend fun prefetchReaderPages(
 
     val loader = context.imageLoader
     val updatedPrefetchedKeys = alreadyPrefetchedKeys.toMutableSet()
-    for (index in fromIndex..toIndex) {
+    val pagesToPrefetch = (fromIndex..toIndex).mapNotNull { index ->
         val page = pages[index]
         val pageKey = "$providerId:$chapterPath:${page.id}"
-        if (!updatedPrefetchedKeys.add(pageKey)) continue
-        val offlineFile = withContext(Dispatchers.IO) {
-            offlineStore.getAvailableReaderPageFile(providerId, chapterPath, page)
-        }
-        val imageSource = offlineFile?.takeIf { it.exists() } ?: page.imageUrl
-        val sizeResolver = coil.size.SizeResolver(Size(targetWidthPx, Dimension.Undefined))
-        val request = ImageRequest.Builder(context)
-            .data(imageSource)
-            .size(sizeResolver)
-            .apply {
-                readerRequestHeaders(providerId, chapterPath)?.let { headers(it) }
+        if (updatedPrefetchedKeys.add(pageKey)) page else null
+    }
+    coroutineScope {
+        pagesToPrefetch.map { page ->
+            async(Dispatchers.IO) {
+                val offlineFile = offlineStore.getAvailableReaderPageFile(providerId, chapterPath, page)
+                page to offlineFile?.takeIf { it.exists() }
             }
-            .crossfade(false)
-            .build()
-        loader.enqueue(request)
+        }.awaitAll().forEach { (page, offlineFile) ->
+            val imageSource = offlineFile ?: page.imageUrl
+            val sizeResolver = coil.size.SizeResolver(Size(targetWidthPx, Dimension.Undefined))
+            val request = ImageRequest.Builder(context)
+                .data(imageSource)
+                .size(sizeResolver)
+                .apply {
+                    readerRequestHeaders(providerId, chapterPath)?.let { headers(it) }
+                }
+                .crossfade(false)
+                .build()
+            loader.enqueue(request)
+        }
     }
     return updatedPrefetchedKeys
 }

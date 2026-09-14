@@ -560,6 +560,18 @@ class LibraryController(
         return readingEntry
     }
 
+    fun updateReadChaptersInUi(
+        chapterPaths: Set<String>,
+        providerId: String,
+        read: Boolean,
+    ) {
+        applyReadChapterMutation(
+            providerId = providerId,
+            chapterPaths = chapterPaths,
+            read = read,
+        )
+    }
+
     fun selectProvider(providerId: String) {
         scope.launch {
             withContext(Dispatchers.IO) {

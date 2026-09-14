@@ -1,9 +1,6 @@
 package com.paudinc.komastream.ui.viewmodel
 
 import android.util.Log
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.paudinc.komastream.data.model.CommunityPage
 import com.paudinc.komastream.data.model.HomeFeed
 import com.paudinc.komastream.data.model.LibraryState
@@ -15,7 +12,6 @@ import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.CachedMangaDetailSnapshot
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
-import com.paudinc.komastream.utils.ReaderPagePrefetchWorker
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.Manhwa18Provider
@@ -24,18 +20,19 @@ import com.paudinc.komastream.utils.buildChapterPath
 import com.paudinc.komastream.utils.buildChapterPathForProvider
 import com.paudinc.komastream.utils.canonicalChapterKey
 import com.paudinc.komastream.utils.chapterPathProgressNumber
-import com.paudinc.komastream.utils.qualifyProviderValue
 import com.paudinc.komastream.utils.resolveMalReadCountForReadChapters
 import com.paudinc.komastream.utils.resolveReadThroughChapterPaths
 import com.paudinc.komastream.utils.toProgressChapterNumber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import java.util.concurrent.ConcurrentHashMap
 
 class ReaderController(
@@ -43,7 +40,6 @@ class ReaderController(
     private val providerRegistry: ProviderRegistry,
     private val libraryStore: LibraryStore,
     private val offlineStore: OfflineChapterStore,
-    private val workManager: WorkManager,
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
 ) {
@@ -52,6 +48,7 @@ class ReaderController(
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     private val readerDataCache = ConcurrentHashMap<String, CachedReaderData>()
+    private val progressSaveJobs = ConcurrentHashMap<String, Job>()
 
     fun openDetail(
         providerId: String,
@@ -294,16 +291,18 @@ class ReaderController(
         path: String,
         index: Int,
         allowAutoReadMark: Boolean,
-        onChapterMarkedRead: () -> Unit,
+        onChapterMarkedRead: (Set<String>) -> Unit,
+        onLibraryChanged: () -> Unit,
     ) {
-        _uiState.update { it.copy(currentPageIndex = index.coerceAtLeast(0)) }
-        libraryStore.saveChapterProgress(providerId, path, index)
+        val safeIndex = index.coerceAtLeast(0)
+        _uiState.update { it.copy(currentPageIndex = safeIndex) }
+        scheduleProgressSave(providerId, path, safeIndex)
         val totalPages = _uiState.value.readerData
             ?.takeIf { it.providerId == providerId && it.chapterPath == path }
             ?.pages
             ?.size
             ?: 0
-        if (allowAutoReadMark && totalPages > 0 && index >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
+        if (allowAutoReadMark && totalPages > 0 && safeIndex >= totalPages - 1 && !libraryStore.isChapterRead(providerId, path)) {
             val detail = _uiState.value.selectedDetail?.takeIf {
                 it.providerId == providerId && it.detailPath == _uiState.value.readerData?.mangaDetailPath
             }
@@ -316,8 +315,16 @@ class ReaderController(
                 )
             } ?: listOf(path)
             libraryStore.setChaptersRead(providerId, chaptersToMark, true)
-            detail?.let { syncReadingSnapshot(providerId, it, path, _uiState.value.readerData?.chapterTitle.orEmpty()) }
-            onChapterMarkedRead()
+            val chapterPathSet = chaptersToMark.toSet()
+            onChapterMarkedRead(chapterPathSet)
+            val resolvedDetail = detail
+            scope.launch(Dispatchers.IO) {
+                if (resolvedDetail != null) {
+                    val chapterTitle = _uiState.value.readerData?.chapterTitle.orEmpty()
+                    syncReadingSnapshot(providerId, resolvedDetail, path, chapterTitle)
+                }
+                onLibraryChanged()
+            }
         }
     }
 
@@ -543,19 +550,26 @@ class ReaderController(
                 isChapterLoading = false,
             )
         }
-        scope.launch(Dispatchers.IO) {
-            warmupReaderPreviewPages(providerId, resolvedData)
-            enqueueReaderPagePrefetchWork(providerId, resolvedData)
-        }
-        libraryStore.upsertReading(
-            readerActionInteractor.buildReadingEntry(
-                providerId = providerId,
-                readerData = resolvedData,
-                currentManga = currentManga,
-            )
-        )
-        onLibraryChanged()
         onSuccess()
+        val readingEntry = readerActionInteractor.buildReadingEntry(
+            providerId = providerId,
+            readerData = resolvedData,
+            currentManga = currentManga,
+        )
+        scope.launch(Dispatchers.IO) {
+            libraryStore.upsertReading(readingEntry)
+            onLibraryChanged()
+        }
+    }
+
+    private fun scheduleProgressSave(providerId: String, path: String, pageIndex: Int) {
+        val key = readerCacheKey(providerId, path)
+        progressSaveJobs[key]?.cancel()
+        progressSaveJobs[key] = scope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(PROGRESS_SAVE_DEBOUNCE_MS)
+            libraryStore.saveChapterProgress(providerId, path, pageIndex)
+            progressSaveJobs.remove(key, coroutineContext[Job])
+        }
     }
 
     private fun resolvePreferredDetailPath(providerId: String, path: String): String {
@@ -602,54 +616,6 @@ class ReaderController(
         return "$providerId::${canonicalChapterKey(providerId, path)}"
     }
 
-    private suspend fun warmupReaderPreviewPages(
-        providerId: String,
-        readerData: com.paudinc.komastream.data.model.ReaderData,
-    ) {
-        if (providerId == "mkissa-en") return
-        if (providerId == "leermangaesp-es") return
-        if (readerData.pages.isEmpty() || offlineStore.isChapterDownloaded(providerId, readerData.chapterPath)) return
-        val provider = providerRegistry.get(providerId)
-        readerData.pages.take(PREVIEW_PAGE_COUNT).forEach { page ->
-            if (offlineStore.getAvailableReaderPageFile(providerId, readerData.chapterPath, page) != null) return@forEach
-            runCatching {
-                val bytes = provider.downloadBytes(page.imageUrl, referer = readerData.chapterPath)
-                if (bytes.isNotEmpty()) {
-                    offlineStore.cachePreviewPage(providerId, readerData.chapterPath, page, bytes)
-                }
-            }
-        }
-    }
-
-    private fun enqueueReaderPagePrefetchWork(
-        providerId: String,
-        readerData: com.paudinc.komastream.data.model.ReaderData,
-    ) {
-        if (providerId == "mkissa-en") return
-        if (providerId == "leermangaesp-es") return
-        if (readerData.pages.size <= PREVIEW_PAGE_COUNT) return
-        if (offlineStore.isChapterDownloaded(providerId, readerData.chapterPath)) return
-        val request = OneTimeWorkRequestBuilder<ReaderPagePrefetchWorker>()
-            .setInputData(
-                androidx.work.Data.Builder()
-                    .putString(ReaderPagePrefetchWorker.KEY_PROVIDER_ID, providerId)
-                    .putString(ReaderPagePrefetchWorker.KEY_CHAPTER_PATH, readerData.chapterPath)
-                    .putInt(ReaderPagePrefetchWorker.KEY_START_INDEX, PREVIEW_PAGE_COUNT)
-                    .build()
-            )
-            .addTag(ReaderPagePrefetchWorker.TAG)
-            .build()
-        workManager.enqueueUniqueWork(
-            readerPrefetchWorkName(providerId, readerData.chapterPath),
-            ExistingWorkPolicy.KEEP,
-            request,
-        )
-    }
-
-    private fun readerPrefetchWorkName(providerId: String, chapterPath: String): String {
-        return "reader-prefetch:${qualifyProviderValue(providerId, canonicalChapterKey(providerId, chapterPath))}"
-    }
-
     private data class CachedReaderData(
         val readerData: com.paudinc.komastream.data.model.ReaderData,
         val cachedAtMillis: Long,
@@ -658,6 +624,6 @@ class ReaderController(
     private companion object {
         private const val DETAIL_REVALIDATE_AFTER_MS = 30L * 60L * 1000L
         private const val READER_DATA_CACHE_TTL_MS = 2L * 60L * 1000L
-        private const val PREVIEW_PAGE_COUNT = 3
+        private const val PROGRESS_SAVE_DEBOUNCE_MS = 200L
     }
 }
