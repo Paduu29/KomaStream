@@ -28,6 +28,12 @@ class MangaDetailCacheCodec {
             .put("needsCloudflareClearance", detail.needsCloudflareClearance)
             .put("chapters", serializeChapters(detail.chapters))
             .put("chapterSources", serializeChapterSources(detail.chapterSources))
+            .put("authors", JSONArray(detail.authors))
+            .put("artists", JSONArray(detail.artists))
+            .put("genres", JSONArray(detail.genres))
+            .put("mangaBakaId", detail.mangaBakaId ?: JSONObject.NULL)
+            .put("mangaBakaRating", detail.mangaBakaRating ?: JSONObject.NULL)
+            .put("alternativeTitles", JSONArray(detail.alternativeTitles))
             .toString()
         return normalizeStoragePayload(rawPayload)
     }
@@ -49,6 +55,12 @@ class MangaDetailCacheCodec {
             chapterSources = parseChapterSources(json.optJSONArray("chapterSources") ?: JSONArray()),
             selectedChapterSourceId = json.optString("selectedChapterSourceId"),
             needsCloudflareClearance = json.optBoolean("needsCloudflareClearance", false),
+            authors = parseStringList(json.optJSONArray("authors")),
+            artists = parseStringList(json.optJSONArray("artists")),
+            genres = parseStringList(json.optJSONArray("genres")),
+            mangaBakaId = json.optLongOrNull("mangaBakaId"),
+            mangaBakaRating = json.optDoubleOrNull("mangaBakaRating"),
+            alternativeTitles = parseStringList(json.optJSONArray("alternativeTitles")),
         )
     }
 
@@ -65,6 +77,9 @@ class MangaDetailCacheCodec {
             left.periodicity == right.periodicity &&
             left.selectedChapterSourceId == right.selectedChapterSourceId &&
             left.needsCloudflareClearance == right.needsCloudflareClearance
+            && left.authors == right.authors && left.artists == right.artists && left.genres == right.genres
+            && left.mangaBakaId == right.mangaBakaId && left.mangaBakaRating == right.mangaBakaRating
+            && left.alternativeTitles == right.alternativeTitles
     }
 
     fun normalizeStoragePayload(value: String): String {
@@ -175,6 +190,19 @@ class MangaDetailCacheCodec {
             writer.write(value)
         }
         return GZIP_PREFIX + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+    }
+
+    private fun parseStringList(array: JSONArray?): List<String> = buildList {
+        if (array == null) return@buildList
+        for (i in 0 until array.length()) array.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+    }
+
+    private fun JSONObject.optLongOrNull(name: String): Long? = if (!has(name) || isNull(name)) null else opt(name).let {
+        when (it) { is Number -> it.toLong(); is String -> it.toLongOrNull(); else -> null }
+    }
+
+    private fun JSONObject.optDoubleOrNull(name: String): Double? = if (!has(name) || isNull(name)) null else opt(name).let {
+        when (it) { is Number -> it.toDouble(); is String -> it.toDoubleOrNull(); else -> null }
     }
 
     private companion object {

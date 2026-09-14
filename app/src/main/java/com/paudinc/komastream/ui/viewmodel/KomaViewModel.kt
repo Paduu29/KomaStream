@@ -31,6 +31,7 @@ import com.paudinc.komastream.provider.providers.MangadotProvider
 import com.paudinc.komastream.utils.AppStrings
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.MyAnimeListApi
+import com.paudinc.komastream.utils.MangaBakaMetadataResolver
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.buildChapterPath
@@ -52,6 +53,7 @@ class KomaViewModel(
     workManager: WorkManager,
     updater: GitHubReleaseUpdater,
     myAnimeListApi: MyAnimeListApi,
+    private val mangaBakaMetadataResolver: MangaBakaMetadataResolver,
     private val strings: AppStrings,
     initialNavigationStack: List<Screen>? = null,
     backupFileInteractor: BackupFileInteractor = BackupFileInteractor(context.contentResolver),
@@ -108,6 +110,8 @@ class KomaViewModel(
         offlineStore = offlineStore,
         readerActionInteractor = readerActionInteractor,
         strings = strings,
+        mangaBakaMetadataResolver = mangaBakaMetadataResolver,
+        onLibraryMetadataChanged = ::refreshLibraryUi,
     )
     val backupController = BackupController(
         scope = viewModelScope,

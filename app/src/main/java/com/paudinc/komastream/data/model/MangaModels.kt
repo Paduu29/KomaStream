@@ -97,6 +97,12 @@ data class MangaDetail(
     val chapterSources: List<ChapterSourceOption> = emptyList(),
     val selectedChapterSourceId: String = "",
     val needsCloudflareClearance: Boolean = false,
+    val authors: List<String> = emptyList(),
+    val artists: List<String> = emptyList(),
+    val genres: List<String> = emptyList(),
+    val mangaBakaId: Long? = null,
+    val mangaBakaRating: Double? = null,
+    val alternativeTitles: List<String> = emptyList(),
 )
 
 data class ChapterSourceOption(
@@ -265,6 +271,7 @@ data class SavedManga(
     val lastChapterPath: String = "",
     val lastProgressChapterNumber: Double? = null,
     val malMangaId: Long? = null,
+    val mangaBakaId: Long? = null,
     val lastReadChapterNumber: Int? = null,
     val lastReadAt: Long? = null,
 )

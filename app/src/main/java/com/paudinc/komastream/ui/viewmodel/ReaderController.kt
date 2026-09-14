@@ -13,6 +13,7 @@ import com.paudinc.komastream.utils.CachedMangaDetailSnapshot
 import com.paudinc.komastream.utils.LibraryStore
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
+import com.paudinc.komastream.utils.MangaBakaMetadataResolver
 import com.paudinc.komastream.provider.providers.ManhwaLatinoProvider
 import com.paudinc.komastream.provider.providers.Manhwa18Provider
 import com.paudinc.komastream.provider.providers.MangaBallProvider
@@ -42,6 +43,8 @@ class ReaderController(
     private val offlineStore: OfflineChapterStore,
     private val readerActionInteractor: ReaderActionInteractor,
     private val strings: AppStrings,
+    private val mangaBakaMetadataResolver: MangaBakaMetadataResolver,
+    private val onLibraryMetadataChanged: () -> Unit = {},
 ) {
     private val tag = "ReaderController"
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -187,12 +190,34 @@ class ReaderController(
                 val currentSourceId = _uiState.value.selectedDetail
                     ?.takeIf { it.providerId == providerId && it.detailPath == path }
                     ?.selectedChapterSourceId
-                val resolvedDetail = detail.withSelectedChapterSource(
+                val resolvedDetail = withContext(Dispatchers.IO) {
+                    mangaBakaMetadataResolver.resolve(
+                        detail.copy(
+                            title = cachedDetail.title,
+                            coverUrl = cachedDetail.coverUrl,
+                            bannerUrl = cachedDetail.bannerUrl,
+                            description = cachedDetail.description,
+                            status = cachedDetail.status,
+                            publicationDate = cachedDetail.publicationDate,
+                            periodicity = cachedDetail.periodicity,
+                            authors = cachedDetail.authors,
+                            artists = cachedDetail.artists,
+                            genres = cachedDetail.genres,
+                            alternativeTitles = cachedDetail.alternativeTitles,
+                            mangaBakaId = cachedDetail.mangaBakaId ?: libraryStore.getMangaBakaId(providerId, path),
+                            mangaBakaRating = cachedDetail.mangaBakaRating,
+                        ),
+                        libraryStore.getMangaMalId(providerId, path),
+                    )
+                }.withSelectedChapterSource(
                     preferredSourceId = preferredChapterSourceId(providerId),
                     currentSourceId = currentSourceId,
                 )
                 val changed = withContext(Dispatchers.IO) {
                     libraryStore.cacheMangaDetail(resolvedDetail)
+                }
+                if (withContext(Dispatchers.IO) { libraryStore.updateMangaMetadata(resolvedDetail) }) {
+                    onLibraryMetadataChanged()
                 }
                 if (changed || _uiState.value.selectedDetail == null || _uiState.value.selectedDetail?.detailPath == cachedDetail.detailPath) {
                     _uiState.update { it.copy(selectedDetail = resolvedDetail) }
@@ -362,6 +387,7 @@ class ReaderController(
                     ?: chapterTitle.toProgressChapterNumber(),
                 lastReadChapterNumber = lastReadChapterNumber,
                 lastReadAt = System.currentTimeMillis(),
+                mangaBakaId = detail.mangaBakaId,
             )
         )
     }
@@ -427,12 +453,18 @@ class ReaderController(
         Log.d(tag, "loadDetail provider=${provider.id} detailPath=$detailPath")
         runCatching { withContext(Dispatchers.IO) { provider.fetchMangaDetail(detailPath) } }
             .onSuccess { detail ->
-                val resolvedDetail = detail.withSelectedChapterSource(
+                val resolvedDetail = withContext(Dispatchers.IO) {
+                    mangaBakaMetadataResolver.resolve(
+                        detail.copy(mangaBakaId = libraryStore.getMangaBakaId(providerId, detailPath)),
+                        libraryStore.getMangaMalId(providerId, detailPath),
+                    )
+                }.withSelectedChapterSource(
                     preferredSourceId = preferredSourceId,
                     currentSourceId = currentSourceId,
                 )
                 withContext(Dispatchers.IO) {
                     libraryStore.cacheMangaDetail(resolvedDetail)
+                    if (libraryStore.updateMangaMetadata(resolvedDetail)) onLibraryMetadataChanged()
                 }
                 _uiState.update {
                     it.copy(

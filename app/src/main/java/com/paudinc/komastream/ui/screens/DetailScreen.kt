@@ -269,6 +269,16 @@ fun DetailScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            val metadata = buildList {
+                                if (detail.authors.isNotEmpty()) add("Author: ${detail.authors.joinToString()}")
+                                if (detail.artists.isNotEmpty()) add("Artist: ${detail.artists.joinToString()}")
+                                if (detail.genres.isNotEmpty()) add("Genres: ${detail.genres.joinToString()}")
+                                detail.mangaBakaRating?.let { add("Rating: $it") }
+                                if (detail.alternativeTitles.isNotEmpty()) add("Also known as: ${detail.alternativeTitles.joinToString()}")
+                            }
+                            metadata.forEach { text ->
+                                Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 DetailStatCard(
                                     modifier = Modifier.weight(1f),

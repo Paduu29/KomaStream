@@ -5,6 +5,7 @@ import androidx.work.WorkManager
 import com.paudinc.komastream.updater.GitHubReleaseUpdater
 import com.paudinc.komastream.utils.LibrarySettingsState
 import com.paudinc.komastream.utils.LibraryStore
+import com.paudinc.komastream.utils.MangaBakaApi
 import com.paudinc.komastream.utils.MyAnimeListApi
 import com.paudinc.komastream.utils.OfflineChapterStore
 import com.paudinc.komastream.utils.ProviderRegistry
@@ -24,5 +25,6 @@ class AppGraph(
     val offlineStore: OfflineChapterStore = OfflineChapterStore(this.appContext)
     val workManager: WorkManager = WorkManager.getInstance(this.appContext)
     val myAnimeListApi: MyAnimeListApi = MyAnimeListApi(sharedHttpClient)
+    val mangaBakaApi: MangaBakaApi = MangaBakaApi(sharedHttpClient)
     val updater: GitHubReleaseUpdater = GitHubReleaseUpdater(this.appContext, sharedHttpClient)
 }

@@ -100,6 +100,7 @@ fun KomaStream() {
             workManager = appGraph.workManager,
             updater = appGraph.updater,
             myAnimeListApi = appGraph.myAnimeListApi,
+            mangaBakaMetadataResolver = MangaBakaMetadataResolver(appGraph.mangaBakaApi),
             strings = strings,
             initialNavigationStack = savedNavigationStack,
         )
@@ -684,7 +685,7 @@ fun KomaStream() {
                                         onSetMalMangaId = { malMangaId ->
                                             viewModel.setMangaMalId(detail.providerId, detail.detailPath, malMangaId)
                                         },
-                                        onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl)) },
+                                        onToggleFavorite = { viewModel.toggleFavorite(SavedManga(detail.providerId, detail.title, detail.detailPath, detail.coverUrl, mangaBakaId = detail.mangaBakaId)) },
                                         onToggleChapterRead = { path -> viewModel.toggleChapterRead(detail.providerId, path, detail) },
                                         onSetAllChaptersRead = { read -> viewModel.setAllChaptersRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, read) },
                                         onSetUntilChapterRead = { value, read -> viewModel.setUntilChapterRead(detail.providerId, detail.detailPath, detail.title, detail.coverUrl, detail.chapters, value, read) },

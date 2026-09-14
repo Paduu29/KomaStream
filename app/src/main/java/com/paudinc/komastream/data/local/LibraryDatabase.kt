@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppSettingsEntity::class,
         MangaDetailCacheEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -36,7 +36,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .build()
                     .also { INSTANCE = it }
             }
@@ -334,6 +334,13 @@ abstract class LibraryDatabase : RoomDatabase() {
 
                 // Cached detail JSON may be gzip encoded, so force a clean fetch instead of leaving stale routes.
                 db.execSQL("DELETE FROM manga_detail_cache WHERE provider_id = ?", arrayOf(providerId))
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE favorite_manga ADD COLUMN manga_baka_id INTEGER")
+                db.execSQL("ALTER TABLE reading_manga ADD COLUMN manga_baka_id INTEGER")
             }
         }
 

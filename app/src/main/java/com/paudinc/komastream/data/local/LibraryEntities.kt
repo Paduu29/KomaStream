@@ -26,6 +26,8 @@ data class FavoriteMangaEntity(
     val lastProgressChapterNumber: Double? = null,
     @ColumnInfo(name = "mal_manga_id")
     val malMangaId: Long? = null,
+    @ColumnInfo(name = "manga_baka_id")
+    val mangaBakaId: Long? = null,
     @ColumnInfo(name = "last_read_chapter_number")
     val lastReadChapterNumber: Int? = null,
     @ColumnInfo(name = "last_read_at")
@@ -54,6 +56,8 @@ data class ReadingMangaEntity(
     val lastProgressChapterNumber: Double? = null,
     @ColumnInfo(name = "mal_manga_id")
     val malMangaId: Long? = null,
+    @ColumnInfo(name = "manga_baka_id")
+    val mangaBakaId: Long? = null,
     @ColumnInfo(name = "last_read_chapter_number")
     val lastReadChapterNumber: Int? = null,
     @ColumnInfo(name = "last_read_at")
