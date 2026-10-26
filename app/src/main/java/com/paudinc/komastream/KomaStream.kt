@@ -542,7 +542,7 @@ fun KomaStream() {
                                     },
                                 )
                                     RootTab.Library -> LibraryScreen(
-                                        libraryState = allProvidersLibraryState,
+                                        libraryState = libraryState,
                                         strings = strings,
                                         selectedTab = LibraryTab.ContinueReading,
                                         providerNameForId = { providerId ->
@@ -601,7 +601,7 @@ fun KomaStream() {
                                     isFavorite = favoriteLookup,
                                 )
                                     RootTab.Favorites -> LibraryScreen(
-                                        libraryState = allProvidersLibraryState,
+                                        libraryState = libraryState,
                                         strings = strings,
                                         selectedTab = LibraryTab.Favorites,
                                 providerNameForId = { providerId ->

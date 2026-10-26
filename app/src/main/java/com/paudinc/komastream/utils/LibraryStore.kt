@@ -432,19 +432,29 @@ class LibraryStore(
         database.withTransaction {
             val normalized = chapterPaths.filter { it.isNotBlank() }.map { canonicalChapterKey(providerId, it) }.distinct()
             if (normalized.isEmpty()) return@withTransaction
-            dao.deleteReadChapters(providerId, normalized)
-            if (read) {
-                var nextReadOrder = (dao.readMaxReadOrderForProvider(providerId) ?: 0L) + 1L
-                dao.upsertReadChapters(
-                    normalized.map { chapterPath ->
-                        ReadChapterEntity(
-                            providerId = providerId,
-                            chapterPath = chapterPath,
-                            readOrder = nextReadOrder++,
-                        )
-                    }
-                )
+            if (!read) {
+                dao.deleteReadChapters(providerId, normalized)
+                return@withTransaction
             }
+
+            // Read-through marking can submit thousands of chapters. Avoid replacing
+            // rows that are already read; only look up and insert the missing paths.
+            val existing = normalized.chunked(500)
+                .flatMap { chunk -> dao.readChapterPaths(providerId, chunk) }
+                .toHashSet()
+            val unreadPaths = normalized.filterNot(existing::contains)
+            if (unreadPaths.isEmpty()) return@withTransaction
+
+            var nextReadOrder = (dao.readMaxReadOrderForProvider(providerId) ?: 0L) + 1L
+            dao.insertReadChaptersIfAbsent(
+                unreadPaths.map { chapterPath ->
+                    ReadChapterEntity(
+                        providerId = providerId,
+                        chapterPath = chapterPath,
+                        readOrder = nextReadOrder++,
+                    )
+                }
+            )
         }
     }
 

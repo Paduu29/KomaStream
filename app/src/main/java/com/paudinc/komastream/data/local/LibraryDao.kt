@@ -70,11 +70,17 @@ interface LibraryDao {
     @Query("SELECT * FROM read_chapters WHERE provider_id = :providerId ORDER BY read_order DESC")
     suspend fun readChaptersForProvider(providerId: String): List<ReadChapterEntity>
 
+    @Query("SELECT chapter_path FROM read_chapters WHERE provider_id = :providerId AND chapter_path IN (:chapterPaths)")
+    suspend fun readChapterPaths(providerId: String, chapterPaths: List<String>): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertReadChapter(entity: ReadChapterEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertReadChapters(entities: List<ReadChapterEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertReadChaptersIfAbsent(entities: List<ReadChapterEntity>)
 
     @Query("DELETE FROM read_chapters WHERE provider_id = :providerId AND chapter_path = :chapterPath")
     suspend fun deleteReadChapter(providerId: String, chapterPath: String)
