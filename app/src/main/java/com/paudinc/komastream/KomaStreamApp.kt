@@ -14,7 +14,7 @@ import java.io.File
 
 class KomaStreamApp : Application(), ImageLoaderFactory {
     lateinit var appGraph: AppGraph
-        private set
+        internal set
 
     override fun attachBaseContext(base: Context) {
         val prefs = base.getSharedPreferences("manga_library", MODE_PRIVATE)

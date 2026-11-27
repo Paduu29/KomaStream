@@ -10,6 +10,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.await
 import com.paudinc.komastream.data.model.AppLanguage
 import com.paudinc.komastream.data.model.LibraryState
 import com.paudinc.komastream.data.model.MangaChapter
@@ -34,12 +35,15 @@ import com.paudinc.komastream.utils.resolveLatestReadChapterPath
 import com.paudinc.komastream.utils.sameMangaPath
 import com.paudinc.komastream.utils.toProgressChapterNumber
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -197,22 +201,15 @@ class LibraryController(
             }
             val orderedPaths = queuedPaths.reversed()
             val batchWorkName = batchWorkName(providerId, detailPath)
-            val safeFileName = batchWorkName.replace(Regex("[:/]"), "_")
-            val batchFile = File(context.cacheDir, "batch_${safeFileName}.txt")
-            withContext(Dispatchers.IO) {
-                batchFile.writeText(orderedPaths.joinToString("\n"))
+            val enqueued = try {
+                enqueueBatchDownload(batchWorkName, providerId, mangaTitle, orderedPaths)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(context, strings.downloadFailed, Toast.LENGTH_SHORT).show()
+                return@launch
             }
-            val data = Data.Builder()
-                .putString(BatchDownloadWorker.KEY_BATCH_FILE, batchFile.absolutePath)
-                .putString(BatchDownloadWorker.KEY_PROVIDER_ID, providerId)
-                .putString(BatchDownloadWorker.KEY_MANGA_TITLE, mangaTitle)
-                .build()
-            val request = OneTimeWorkRequestBuilder<BatchDownloadWorker>()
-                .setInputData(data)
-                .addTag(BatchDownloadWorker.TAG)
-                .addTag(DownloadChapterWorker.TAG)
-                .build()
-            workManager.enqueueUniqueWork(batchWorkName, ExistingWorkPolicy.KEEP, request)
+            if (!enqueued) return@launch
             _uiState.update {
                 it.copy(
                     isBatchDownloading = true,
@@ -225,6 +222,42 @@ class LibraryController(
                 strings.chapterDownloadsQueued(orderedPaths.size),
                 Toast.LENGTH_SHORT,
             ).show()
+        }
+    }
+
+    private suspend fun enqueueBatchDownload(
+        workName: String,
+        providerId: String,
+        mangaTitle: String,
+        chapterPaths: List<String>,
+    ): Boolean = withContext(Dispatchers.IO) {
+        // Resolve queue-file ownership even if the screen closes during enqueue.
+        withContext(NonCancellable) {
+            val batchFile = File.createTempFile("batch_", ".txt", context.cacheDir)
+            var keepFile = false
+            try {
+                batchFile.writeText(chapterPaths.joinToString("\n"))
+                val data = Data.Builder()
+                    .putString(BatchDownloadWorker.KEY_BATCH_FILE, batchFile.absolutePath)
+                    .putString(BatchDownloadWorker.KEY_PROVIDER_ID, providerId)
+                    .putString(BatchDownloadWorker.KEY_MANGA_TITLE, mangaTitle)
+                    .build()
+                val request = OneTimeWorkRequestBuilder<BatchDownloadWorker>()
+                    .setInputData(data)
+                    .addTag(BatchDownloadWorker.TAG)
+                    .addTag(DownloadChapterWorker.TAG)
+                    .build()
+                keepFile = true
+                try {
+                    workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request).await()
+                } finally {
+                    // KEEP can succeed without inserting this request.
+                    keepFile = workManager.getWorkInfoByIdFlow(request.id).first() != null
+                }
+                keepFile
+            } finally {
+                if (!keepFile) batchFile.delete()
+            }
         }
     }
 

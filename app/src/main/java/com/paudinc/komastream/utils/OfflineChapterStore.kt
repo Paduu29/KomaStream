@@ -29,7 +29,7 @@ class OfflineChapterStore(val context: Context) {
 
     fun getDownloadedChapterPaths(): Set<String> {
         ensureMigrated()
-        return rootDir.listFiles()
+        return listChapterDirectories()
             ?.mapNotNull { directory ->
                 readManifest(directory)?.let { manifest ->
                     val providerId = manifest.optString("providerId")
@@ -192,11 +192,11 @@ class OfflineChapterStore(val context: Context) {
     }
 
     private fun chapterStagingDir(providerId: String, chapterPath: String): File {
-        return File(rootDir, "${chapterDirectoryName(providerId, chapterPath)}.staging")
+        return File(rootDir, "${chapterDirectoryName(providerId, chapterPath)}$STAGING_SUFFIX")
     }
 
     private fun chapterBackupDir(providerId: String, chapterPath: String): File {
-        return File(rootDir, "${chapterDirectoryName(providerId, chapterPath)}.backup")
+        return File(rootDir, "${chapterDirectoryName(providerId, chapterPath)}$BACKUP_SUFFIX")
     }
 
     private fun readerCacheChapterDir(providerId: String, chapterPath: String): File {
@@ -322,9 +322,14 @@ class OfflineChapterStore(val context: Context) {
         return generator.generateKey()
     }
 
+    private fun listChapterDirectories(): Array<File>? = rootDir.listFiles { directory ->
+        directory.isDirectory &&
+            !directory.name.endsWith(STAGING_SUFFIX) &&
+            !directory.name.endsWith(BACKUP_SUFFIX)
+    }
+
     private fun migrateLegacyChapterDirs() {
-        rootDir.listFiles()?.forEach { directory ->
-            if (!directory.isDirectory) return@forEach
+        listChapterDirectories()?.forEach { directory ->
             val manifest = readManifest(directory) ?: return@forEach
             val providerId = manifest.optString("providerId")
             val chapterPath = canonicalChapterPathKey(providerId, manifest.optString("chapterPath"))
@@ -349,6 +354,8 @@ class OfflineChapterStore(val context: Context) {
     }
 
     companion object {
+        private const val STAGING_SUFFIX = ".staging"
+        private const val BACKUP_SUFFIX = ".backup"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "komastream_offline_key"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"

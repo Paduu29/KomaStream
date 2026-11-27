@@ -11,11 +11,13 @@ import com.paudinc.komastream.utils.ProviderRegistry
 import com.paudinc.komastream.utils.createDefaultProviderRegistry
 import okhttp3.OkHttpClient
 
-class AppGraph(
+class AppGraph internal constructor(
     appContext: Context,
+    val sharedHttpClient: OkHttpClient,
 ) {
+    constructor(appContext: Context) : this(appContext, OkHttpClient())
+
     val appContext: Context = appContext.applicationContext
-    val sharedHttpClient: OkHttpClient = OkHttpClient()
     val librarySettingsState: LibrarySettingsState =
         LibrarySettingsState.fromPreferences(this.appContext.getSharedPreferences("manga_library", Context.MODE_PRIVATE))
     val providerRegistry: ProviderRegistry =

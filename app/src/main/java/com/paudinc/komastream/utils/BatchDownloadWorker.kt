@@ -1,6 +1,7 @@
 package com.paudinc.komastream.utils
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -15,11 +16,15 @@ import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ForegroundInfo
+import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import androidx.work.WorkManager
 import com.paudinc.komastream.R
 import com.paudinc.komastream.KomaStreamApp
+import com.paudinc.komastream.provider.MangaProvider
 import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 class BatchDownloadWorker(
     appContext: Context,
@@ -27,113 +32,122 @@ class BatchDownloadWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val batchFile = inputData.getString(KEY_BATCH_FILE)?.takeIf { it.isNotBlank() } ?: return Result.failure()
-        val providerId = inputData.getString(KEY_PROVIDER_ID)?.takeIf { it.isNotBlank() } ?: return Result.failure()
-        val mangaTitle = inputData.getString(KEY_MANGA_TITLE) ?: ""
-
-        val chapterPaths = try {
-            File(batchFile).readLines().filter { it.isNotBlank() }
-        } catch (e: Exception) {
-            return Result.failure()
-        }
-
-        if (chapterPaths.isEmpty()) {
-            File(batchFile).delete()
-            return Result.success()
-        }
-
-        val total = chapterPaths.size
-        val appGraph = (applicationContext as KomaStreamApp).appGraph
-        val provider = appGraph.providerRegistry.get(providerId)
-        val offlineStore = appGraph.offlineStore
-
-        createChannel()
-
+        val batchFile = inputData.getString(KEY_BATCH_FILE)
+            ?.takeIf { it.isNotBlank() }?.let(::File) ?: return Result.failure()
+        var total = 0
         var successCount = 0
-        var failCount = 0
 
-        setForeground(
-            createForegroundInfo(
-                title = mangaTitle.ifBlank { applicationContext.getString(R.string.downloading_chapters) },
-                chapterIndex = 0,
-                totalChapters = total,
-                chapterProgress = 0,
-                chapterTitle = "",
-            )
-        )
-
-        for (i in chapterPaths.indices) {
-            ensureStopped()
-            val chapterPath = chapterPaths[i]
-
-            runCatching {
-                val reader = provider.fetchReaderData(chapterPath)
-                val totalPages = reader.pages.size.coerceAtLeast(1)
-                val startedAt = SystemClock.elapsedRealtime()
-                var downloadedBytes = 0L
-                val session = offlineStore.openChapterWriteSession(reader)
-
-                try {
-                    reader.pages.forEachIndexed { index, page ->
-                        ensureStopped()
-                        val pageBytes = provider.downloadBytes(page.imageUrl, referer = chapterPath)
-                        downloadedBytes += pageBytes.size.toLong()
-                        session.writePage(index, page, pageBytes)
-                        val downloadedPages = index + 1
-                        val chapterProgress = (((index + 1) * 100f) / totalPages).toInt().coerceIn(0, 100)
-                        val elapsedMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(1L)
-                        val bytesPerSecond = downloadedBytes * 1000.0 / elapsedMs.toDouble()
-
-                        setProgress(
-                            batchProgressData(
-                                providerId = providerId,
-                                chapterPath = chapterPath,
-                                chapterProgress = chapterProgress,
-                                batchCurrent = i + 1,
-                                batchTotal = total,
-                            )
-                        )
-                        setForeground(
-                            createForegroundInfo(
-                                title = reader.chapterTitle.ifBlank { applicationContext.getString(R.string.downloading) },
-                                chapterIndex = i + 1,
-                                totalChapters = total,
-                                chapterProgress = chapterProgress,
-                                chapterTitle = reader.chapterTitle.ifBlank { "" },
-                                speed = bytesPerSecond,
-                            )
-                        )
-                    }
-
-                    ensureStopped()
-                    session.commit()
-                } catch (e: Throwable) {
-                    session.abort()
-                    throw e
-                }
-
-                successCount++
-            }.onFailure { error ->
-                if (isStopped) {
-                    postCompletionNotification(
-                        title = applicationContext.getString(R.string.download_all_cancelled),
-                        message = applicationContext.getString(R.string.batch_download_cancelled_message, successCount, total),
-                        success = false,
-                    )
-                    File(batchFile).delete()
-                    return Result.failure()
-                }
-                failCount++
+        try {
+            val providerId = inputData.getString(KEY_PROVIDER_ID)
+                ?.takeIf { it.isNotBlank() } ?: return Result.failure()
+            val mangaTitle = inputData.getString(KEY_MANGA_TITLE).orEmpty()
+            val chapterPaths = try {
+                batchFile.readLines().filter { it.isNotBlank() }
+            } catch (e: IOException) {
+                return Result.failure()
             }
-        }
+            if (chapterPaths.isEmpty()) return Result.success()
 
-        File(batchFile).delete()
-        postCompletionNotification(
-            title = applicationContext.getString(R.string.download_complete),
-            message = applicationContext.getString(R.string.batch_download_complete_message, successCount, total),
-            success = true,
-        )
-        return Result.success()
+            total = chapterPaths.size
+            val appGraph = (applicationContext as KomaStreamApp).appGraph
+            val provider = appGraph.providerRegistry.get(providerId)
+            val offlineStore = appGraph.offlineStore
+
+            createChannel()
+            setForeground(
+                createForegroundInfo(
+                    title = mangaTitle.ifBlank { applicationContext.getString(R.string.downloading_chapters) },
+                    chapterIndex = 0,
+                    totalChapters = total,
+                    chapterProgress = 0,
+                )
+            )
+
+            for ((index, chapterPath) in chapterPaths.withIndex()) {
+                ensureRunning()
+                try {
+                    downloadChapter(provider, offlineStore, providerId, chapterPath, index + 1, total)
+                    successCount++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ensureRunning()
+                }
+            }
+
+            ensureRunning()
+            val success = successCount > 0
+            postCompletionNotification(
+                title = applicationContext.getString(if (success) R.string.download_complete else R.string.download_failed),
+                message = applicationContext.getString(R.string.batch_download_complete_message, successCount, total),
+                success = success,
+            )
+            return if (success) Result.success() else Result.failure()
+        } catch (e: CancellationException) {
+            if (cancelledByApp()) {
+                postCompletionNotification(
+                    title = applicationContext.getString(R.string.download_all_cancelled),
+                    message = applicationContext.getString(R.string.batch_download_cancelled_message, successCount, total),
+                    success = false,
+                )
+            }
+            throw e
+        } finally {
+            if (!isStopped || cancelledByApp()) batchFile.delete()
+        }
+    }
+
+    private suspend fun downloadChapter(
+        provider: MangaProvider,
+        offlineStore: OfflineChapterStore,
+        providerId: String,
+        chapterPath: String,
+        chapterIndex: Int,
+        total: Int,
+    ) {
+        val reader = provider.fetchReaderData(chapterPath)
+        val totalPages = reader.pages.size.coerceAtLeast(1)
+        val startedAt = SystemClock.elapsedRealtime()
+        var downloadedBytes = 0L
+        val session = offlineStore.openChapterWriteSession(reader)
+
+        try {
+            reader.pages.forEachIndexed { index, page ->
+                ensureRunning()
+                val pageBytes = provider.downloadBytes(page.imageUrl, referer = chapterPath)
+                downloadedBytes += pageBytes.size.toLong()
+                session.writePage(index, page, pageBytes)
+                val chapterProgress = (((index + 1) * 100f) / totalPages).toInt().coerceIn(0, 100)
+                val elapsedMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(1L)
+                val bytesPerSecond = downloadedBytes * 1000.0 / elapsedMs.toDouble()
+
+                setProgress(
+                    batchProgressData(
+                        providerId = providerId,
+                        chapterPath = chapterPath,
+                        chapterProgress = chapterProgress,
+                        batchCurrent = chapterIndex,
+                        batchTotal = total,
+                    )
+                )
+                setForeground(
+                    createForegroundInfo(
+                        title = reader.chapterTitle.ifBlank { applicationContext.getString(R.string.downloading) },
+                        chapterIndex = chapterIndex,
+                        totalChapters = total,
+                        chapterProgress = chapterProgress,
+                        chapterTitle = reader.chapterTitle,
+                        speed = bytesPerSecond,
+                    )
+                )
+            }
+
+            ensureRunning()
+            session.commit()
+        } catch (e: Throwable) {
+            session.abort()
+            throw e
+        }
     }
 
     private fun createForegroundInfo(
@@ -224,9 +238,13 @@ class BatchDownloadWorker(
     private fun createCancelPendingIntent(): PendingIntent =
         WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
 
-    private fun ensureStopped() {
-        if (isStopped) error("Worker stopped")
+    private fun ensureRunning() {
+        if (isStopped) throw CancellationException("Worker stopped")
     }
+
+    // WorkManager records app cancellation on all API levels and stores the reason in memory.
+    @SuppressLint("NewApi")
+    private fun cancelledByApp() = stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP
 
     companion object {
         const val TAG = "BatchDownloadWorker"
